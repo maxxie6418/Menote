@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeNote 横向滚动条 · 方案对比评审稿（2026-10-04）</title>
+<style>
+/* ============================================================
+   令牌：取值与 apps/web/src/app/theme/tokens.css 完全一致
+   （DESIGN.md v1.12 §3.3 / §4.3）。本稿是评审稿，不是实现；
+   实现时一律走 tokens.css，组件里不出现裸色值（DESIGN.md §3.2-1）。
+   ============================================================ */
+:root{
+  --bg:#ffffff; --bg-soft:#f7f7f7; --panel:#ffffff; --panel-2:#f2f2f2; --panel-3:#e8e8e8;
+  --line:#e0e0e0; --line-2:#c9c9c9;
+  --text:#1d1d1d; --text-2:#4a4a4a; --muted:#6b6b6b;
+  --primary:#f6821f; --primary-2:#e8720d;
+  --primary-soft:rgba(246,130,31,.12); --primary-line:rgba(246,130,31,.35);
+  --primary-grad:linear-gradient(140deg,var(--primary),var(--primary-2));
+  --primary-ink:#b45309; --on-primary:#1d1d1d;
+  --amber:#8a5a00; --amber-soft:rgba(138,90,0,.11); --amber-line:rgba(138,90,0,.26);
+  --green:#1f7a4d; --green-soft:rgba(31,122,77,.11); --green-line:rgba(31,122,77,.26);
+  --red:#c0392b; --red-soft:rgba(192,57,43,.1); --red-line:rgba(192,57,43,.26);
+  --purple:#6d47a8; --purple-soft:rgba(109,71,168,.12);
+  --hairline:rgba(29,29,29,.022);
+  --topbar-bg:rgba(255,255,255,.86);
+  --scrim:rgba(29,29,29,.42);
+  --shadow-1:0 4px 14px rgba(29,29,29,.07);
+  --shadow-2:0 16px 40px rgba(29,29,29,.13);
+  --shadow-3:0 28px 70px rgba(29,29,29,.2);
+  --topbar-h:54px; --fnbar-w:294px; --list-w:330px; --subbar-w:232px;
+  --radius-sm:6px; --radius:10px; --radius-lg:14px;
+  --radius-pill:99px; --radius-circle:50%;
+  --fs-display:20px; --fs-title:17px; --fs-body-lg:14px; --fs-body:13px;
+  --fs-small:12px; --fs-micro:11px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
+  --mono:"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+:root[data-theme="dark"]{
+  --bg:#161616; --bg-soft:#1e1e1e; --panel:#242424; --panel-2:#2d2d2d; --panel-3:#383838;
+  --line:#333333; --line-2:#4a4a4a;
+  --text:#f2f2f2; --text-2:#bdbdbd; --muted:#8f8f8f;
+  --primary:#f6821f; --primary-2:#fbad41;
+  --primary-soft:rgba(246,130,31,.16); --primary-line:rgba(246,130,31,.34);
+  --primary-grad:linear-gradient(140deg,var(--primary),var(--primary-2));
+  --primary-ink:#f6821f; --on-primary:#161616;
+  --amber:#e0a458; --amber-soft:rgba(224,164,88,.14); --amber-line:rgba(224,164,88,.3);
+  --green:#5cbf8a; --green-soft:rgba(92,191,138,.14); --green-line:rgba(92,191,138,.28);
+  --red:#f07167; --red-soft:rgba(240,113,103,.14); --red-line:rgba(240,113,103,.3);
+  --purple:#b5a2e0; --purple-soft:rgba(181,162,224,.16);
+  --hairline:rgba(255,255,255,.02);
+  --topbar-bg:rgba(22,22,22,.86);
+  --scrim:rgba(0,0,0,.55);
+  --shadow-1:0 4px 14px rgba(0,0,0,.35);
+  --shadow-2:0 16px 40px rgba(0,0,0,.45);
+  --shadow-3:0 28px 70px rgba(0,0,0,.55);
+}
+
+/* ---------- 评审页外壳（沿用 docs/scratch 里两份对比稿的写法） ---------- */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg-soft); color:var(--text); font-family:var(--sans);
+  font-size:var(--fs-body-lg); line-height:1.65;
+  padding:var(--sp-6) var(--sp-5) 80px;
+}
+.pagehead,.section{max-width:1180px;margin:0 auto}
+.pagehead h1{font-size:var(--fs-display);margin:0 0 var(--sp-2);letter-spacing:.2px}
+.pagehead p{margin:0;color:var(--text-2);max-width:940px}
+.pagehead .meta{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-4);margin-top:var(--sp-3);color:var(--muted);font-size:var(--fs-small)}
+.row-actions{display:flex;gap:var(--sp-2);align-items:center;margin-top:var(--sp-4);flex-wrap:wrap}
+.btn{
+  font:inherit;font-size:var(--fs-body);min-height:34px;padding:0 var(--sp-4);white-space:nowrap;
+  border-radius:var(--radius);border:1px solid var(--line-2);background:var(--panel);
+  color:var(--text);cursor:pointer
+}
+.btn:hover{background:var(--panel-2)}
+.btn--primary{background:var(--primary-grad);border-color:transparent;color:var(--on-primary);font-weight:600}
+:where(button,[tabindex]):focus-visible{outline:2px solid var(--primary-2);outline-offset:2px;border-radius:var(--radius-sm)}
+code{font-family:var(--mono);font-size:var(--fs-small);background:var(--panel-2);padding:0 4px;border-radius:4px}
+b{font-weight:600}
+
+.section{margin-top:var(--sp-6)}
+.section > h2{
+  font-size:var(--fs-title);margin:0 0 var(--sp-2);padding-bottom:var(--sp-2);
+  border-bottom:1px solid var(--line)
+}
+.lead{color:var(--text-2);margin:0 0 var(--sp-3);max-width:940px}
+
+/* ---------- 结论表 ---------- */
+.summary{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:var(--sp-4);box-shadow:var(--shadow-1);overflow-x:auto}
+table.sum{width:100%;border-collapse:collapse;font-size:var(--fs-body);min-width:760px}
+table.sum th,table.sum td{padding:var(--sp-2) var(--sp-3);border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.sum thead th{font-size:var(--fs-small);color:var(--muted);font-weight:600;white-space:nowrap}
+table.sum tbody tr:last-child td{border-bottom:0}
+table.sum td b{white-space:nowrap}
+.pick{color:var(--primary-ink);font-weight:600}
+
+.findings{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:var(--sp-4);box-shadow:var(--shadow-1)}
+.findings ol{margin:0;padding-left:1.2em}
+.findings li{margin-bottom:var(--sp-2)}
+.findings li:last-child{margin-bottom:0}
+.tag-defect{
+  display:inline-block;margin-left:6px;padding:0 6px;border-radius:var(--radius-pill);
+  font-size:var(--fs-micro);border:1px solid var(--red-line);background:var(--red-soft);color:var(--red)
+}
+.tag-fix{
+  display:inline-block;margin-left:6px;padding:0 6px;border-radius:var(--radius-pill);
+  font-size:var(--fs-micro);border:1px solid var(--amber-line);background:var(--amber-soft);color:var(--amber)
+}
+
+/* ---------- 方案块 ---------- */
+.opt{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
+  padding:var(--sp-5);box-shadow:var(--shadow-1);margin-bottom:var(--sp-5)
+}
+.opt[data-opt="base"]{box-shadow:none;background:transparent;border-style:dashed}
+.opt[data-picked="true"]{border-color:var(--primary);box-shadow:var(--shadow-2)}
+.opt__hd{display:flex;flex-wrap:wrap;gap:var(--sp-3);justify-content:space-between;align-items:flex-start}
+.opt__hd h3{font-size:var(--fs-title);margin:0}
+.opt__lead{color:var(--text-2);margin:var(--sp-1) 0 0;max-width:720px;font-size:var(--fs-body)}
+.badges{display:flex;flex-wrap:wrap;gap:var(--sp-1);margin:0;padding:0;list-style:none}
+.badges li{
+  font-size:var(--fs-micro);color:var(--text-2);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:var(--radius-pill);padding:1px var(--sp-2);white-space:nowrap
+}
+.badges li[data-kind="js"]{background:var(--primary-soft);border-color:var(--primary-line);color:var(--primary-ink)}
+.badges li[data-kind="zero"]{background:var(--green-soft);border-color:var(--green-line);color:var(--green)}
+
+.demos{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:var(--sp-4);margin-top:var(--sp-4)}
+.demo{min-width:0}
+.demo__cap{font-size:var(--fs-micro);color:var(--muted);margin-bottom:var(--sp-1)}
+.demo__cap b{color:var(--text-2);font-weight:600}
+
+.opt__two{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:var(--sp-4);margin-top:var(--sp-4)}
+.opt__two h4{font-size:var(--fs-body);margin:0 0 var(--sp-2);color:var(--text-2)}
+.snippet{
+  margin:0;padding:var(--sp-3);background:var(--panel-2);border:1px solid var(--line);
+  border-radius:var(--radius);font-family:var(--mono);font-size:var(--fs-micro);line-height:1.7;
+  overflow-x:auto;white-space:pre;color:var(--text-2)
+}
+.costs{margin:0;padding-left:1.15em;font-size:var(--fs-body);color:var(--text-2)}
+.costs li{margin-bottom:var(--sp-1)}
+
+/* ============================================================
+   演示件：照抄实现里的类名与尺寸（行高 34px、列最小 96px、
+   代码块 --panel-2 底 + --radius、对比行 mono/--fs-small）
+   ============================================================ */
+.hs{position:relative}
+.hs__box{
+  position:relative;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--bg);overflow:hidden
+}
+.hs__box--row{height:26px}
+.hs__tag{
+  position:absolute;right:6px;bottom:6px;z-index:3;font-size:var(--fs-micro);
+  color:var(--muted);background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius-pill);padding:0 6px;pointer-events:none
+}
+.hs__box--row .hs__tag{bottom:2px}
+
+/* —— 演示件 1：表格网格（.tablegrid__scroll）—— */
+.tblwrap{height:198px}
+.tbl{display:block;width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:var(--fs-body)}
+.tbl th{
+  position:sticky;top:0;z-index:1;min-width:96px;padding:var(--sp-2) var(--sp-3);
+  background:var(--bg-soft);border-bottom:1px solid var(--line);
+  font-size:var(--fs-small);font-weight:600;color:var(--text);text-align:left;white-space:nowrap
+}
+.tbl td{min-width:96px;padding:0;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl th.th--menu,.tbl td.td--menu{width:44px;min-width:44px}
+.tbl tbody tr:hover{background:var(--panel-2)}
+.tbl__cell{display:block;min-height:34px;padding:var(--sp-2) var(--sp-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl__cell--empty{color:var(--muted)}
+.tbl__cell--warn{color:var(--amber);font-size:var(--fs-micro);padding-top:0}
+.chip{
+  display:inline-block;margin:2px 4px 2px 0;padding:0 6px;border-radius:var(--radius-pill);
+  border:1px solid var(--line-2);font-size:var(--fs-micro);color:var(--text-2)
+}
+.chip--work{border-color:var(--primary-line);background:var(--primary-soft);color:var(--primary-ink)}
+.chip--ok{border-color:var(--green-line);background:var(--green-soft);color:var(--green)}
+
+/* —— 演示件 2：正文代码块（.markdown-body pre）—— */
+.codewrap{max-height:none}
+.code{
+  margin:0;padding:var(--sp-3);background:var(--panel-2);border-radius:var(--radius);
+  font-family:var(--mono);font-size:var(--fs-small);line-height:1.7;white-space:pre;overflow-x:auto
+}
+
+/* —— 演示件 3：版本对比（.versiondiff__scroll）—— */
+.diffwrap{height:132px}
+.diff{height:100%;overflow:auto}
+.diff__lines{margin:0;padding:var(--sp-2) 0;list-style:none;font-family:var(--mono);font-size:var(--fs-small);line-height:1.6}
+.diff__line{display:flex;gap:var(--sp-1);padding:0 var(--sp-3);white-space:pre}
+.diff__line--add{background:var(--green-soft);color:var(--green)}
+.diff__line--remove{background:var(--red-soft);color:var(--red)}
+.diff__line--same{color:var(--text-2)}
+
+/* —— 演示件 4：添加内容窗口属性行（.addentry__extras，DESIGN §2.2 固定 26px 不换行）—— */
+.extras{
+  display:flex;align-items:center;gap:var(--sp-1);height:26px;padding:0 var(--sp-2);
+  flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden
+}
+.extras__f{
+  flex:none;height:20px;padding:0 6px;border:1px solid var(--line-2);border-radius:var(--radius-sm);
+  font-size:var(--fs-micro);color:var(--text-2);display:inline-flex;align-items:center;white-space:nowrap
+}
+.extras__f--on{border-color:var(--primary-line);background:var(--primary-soft);color:var(--primary-ink)}
+
+/* ============================================================
+   方案 0 · 现状（照抄 app.css 现状：表格带 .scroll-thin，
+   代码块**没有**带 → 走系统默认粗条，属性行把条完全隐藏）
+   ============================================================ */
+.opt[data-opt="base"] .hscroll-thin{scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+.opt[data-opt="base"] .hscroll-thin::-webkit-scrollbar{width:8px;height:8px;background:transparent}
+.opt[data-opt="base"] .hscroll-thin::-webkit-scrollbar-thumb{
+  border:2px solid transparent;border-radius:var(--radius-pill);
+  background:var(--line-2);background-clip:content-box
+}
+.opt[data-opt="base"] .hscroll-thin::-webkit-scrollbar-thumb:hover{background:var(--muted);background-clip:content-box}
+.opt[data-opt="base"] .hscroll-none{scrollbar-width:none}
+.opt[data-opt="base"] .hscroll-none::-webkit-scrollbar{height:0;width:0}
+
+/* ============================================================
+   方案 A · 统一细轴：所有横向滚动处挂同一个类，轴 6px
+   ============================================================ */
+.hscroll-a{scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+.hscroll-a::-webkit-scrollbar{width:8px;height:6px;background:transparent}
+.hscroll-a::-webkit-scrollbar-thumb{
+  border:2px solid transparent;border-radius:var(--radius-pill);
+  background:var(--line-2);background-clip:content-box
+}
+.hscroll-a::-webkit-scrollbar-thumb:hover{background:var(--muted);background-clip:content-box}
+.hscroll-a::-webkit-scrollbar-corner{background:transparent}
+.opt[data-opt="a"] .hscroll-none{scrollbar-width:none}
+.opt[data-opt="a"] .hscroll-none::-webkit-scrollbar{height:0;width:0}
+
+/* ============================================================
+   方案 B · 细轴 + 悬停/滚动淡入：轴仍在（布局不跳），滑块静止透明
+   ============================================================ */
+.hscroll-b{scrollbar-width:thin;scrollbar-color:transparent transparent}
+.hscroll-b::-webkit-scrollbar{width:8px;height:6px;background:transparent}
+.hscroll-b::-webkit-scrollbar-thumb{
+  border:2px solid transparent;border-radius:var(--radius-pill);
+  background:transparent;background-clip:content-box
+}
+.hscroll-b:hover,.hscroll-b.is-scrolling,.hscroll-b:focus-within{scrollbar-color:var(--line-2) transparent}
+.hscroll-b:hover::-webkit-scrollbar-thumb,
+.hscroll-b.is-scrolling::-webkit-scrollbar-thumb,
+.hscroll-b:focus-within::-webkit-scrollbar-thumb{background:var(--line-2);background-clip:content-box}
+.hscroll-b:hover::-webkit-scrollbar-thumb:hover{background:var(--muted);background-clip:content-box}
+.hscroll-b::-webkit-scrollbar-corner{background:transparent}
+.opt[data-opt="b"] .hscroll-none{scrollbar-width:none}
+.opt[data-opt="b"] .hscroll-none::-webkit-scrollbar{height:0;width:0}
+
+/* ============================================================
+   方案 C · 零占位悬浮把手 + 边缘渐隐
+   ============================================================ */
+.hscroll-c{scrollbar-width:none}
+.hscroll-c::-webkit-scrollbar{display:none;width:0;height:0}
+.hs__fade{
+  position:absolute;top:0;bottom:0;z-index:2;width:30px;pointer-events:none;opacity:0;
+  transition:opacity .18s ease
+}
+.hs__fade{width:30px}
+.hs__fade--l{left:0;background:linear-gradient(90deg,var(--bg) 35%,transparent)}
+.hs__fade--r{right:0;background:linear-gradient(270deg,var(--bg) 35%,transparent)}
+/* 渐隐与把手都**只在悬停 / 滚动中**出现：常驻渐隐会永久盖住首列前 30px
+   （版本对比里那正是 +/- 符号所在的位置），不能常驻 */
+.hs.has-l:hover .hs__fade--l,.hs.has-l.is-scrolling .hs__fade--l,
+.hs.has-r:hover .hs__fade--r,.hs.has-r.is-scrolling .hs__fade--r{opacity:1}
+.hs__handle{
+  position:absolute;left:0;bottom:6px;z-index:3;height:5px;border-radius:var(--radius-pill);
+  background:var(--line-2);opacity:0;cursor:grab;transition:opacity .18s ease
+}
+.hs__handle:hover{background:var(--muted)}
+.hs__handle.is-drag{cursor:grabbing;background:var(--primary)}
+.hs.has-over:hover .hs__handle,.hs.has-over.is-scrolling .hs__handle{opacity:1}
+.hs__box--row .hs__fade{width:18px}
+
+/* ============================================================
+   方案 D · 表格专属「列导航条」并进既有状态行，其余走 A 的细轴
+   ============================================================ */
+.opt[data-opt="d"] .tblwrap{padding-bottom:0}
+.navstrip{
+  display:flex;align-items:center;gap:var(--sp-2);height:26px;padding:0 var(--sp-3);
+  border-top:1px solid var(--line);background:var(--panel);font-size:var(--fs-micro);color:var(--muted)
+}
+.navstrip__info{white-space:nowrap;flex:none}
+.navstrip__track{
+  position:relative;flex:1;min-width:80px;height:14px;display:flex;align-items:center;cursor:pointer
+}
+.navstrip__ticks{
+  position:absolute;left:0;right:0;top:50%;height:5px;transform:translateY(-50%);
+  border-radius:var(--radius-pill);
+  background:
+    repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px 9px),
+    var(--panel-3)
+}
+.navstrip__win{
+  position:absolute;top:50%;height:11px;transform:translateY(-50%);
+  border-radius:var(--radius-pill);background:var(--primary-soft);
+  border:1px solid var(--primary-line);min-width:22px
+}
+.navstrip__hint{flex:none;white-space:nowrap}
+.opt[data-opt="d"] .hscroll-none{scrollbar-width:none}
+.opt[data-opt="d"] .hscroll-none::-webkit-scrollbar{display:none;width:0;height:0}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+
+<header class="pagehead">
+  <h1>MeNote · 横向滚动条样式 · 方案对比</h1>
+  <p>
+    四个方案放在同一页、同一套真实场景里横向对比。<b>每个演示块都是能真滚的</b>——用滚轮横向 / 触控板 /
+    <code>Shift</code>+滚轮 / 拖动把手 / 点边缘按钮都行，鼠标移出后会看到各方案在"静止态"的差别。
+    令牌与 <code>apps/web/src/app/theme/tokens.css</code> 一致，尺寸照抄实现（表格行高 34px、列最小 96px、
+    属性行固定 26px），所以这几块看着就是现在 App 里的样子，不是美化过的插画。
+  </p>
+  <div class="meta">
+    <span>文档：评审稿（不是实现）</span>
+    <span>依据：DESIGN.md v1.12 §2.7 滚动归属 / §3.2 颜色令牌 / §2.2 结构尺寸</span>
+    <span>日期：2026-10-04</span>
+  </div>
+  <div class="row-actions">
+    <button class="btn" type="button" data-theme-toggle>切到深色</button>
+    <span style="font-size:var(--fs-small);color:var(--muted)">深浅两套都要看：滑块对比度是这次的关键，浅色下最容易暴露"灰条发脏"。</span>
+  </div>
+</header>
+
+<section class="section">
+  <h2>先说结论</h2>
+  <div class="summary">
+    <table class="sum">
+      <thead>
+        <tr>
+          <th>方案</th><th>静止时看得见吗</th><th>常驻占位</th><th>要不要 JS</th><th>改动面</th><th>主要风险</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>0 现状</b></td>
+          <td>表格 8px 常显；代码块是系统默认粗条</td>
+          <td>8px / 代码块 15–17px</td>
+          <td>无</td>
+          <td>—</td>
+          <td>就是现在这样</td>
+        </tr>
+        <tr>
+          <td><b>A 统一细轴</b></td>
+          <td>一直看得见（2px 细线）</td>
+          <td>6px</td>
+          <td>无</td>
+          <td>app.css 一处规则 + 4 处挂类</td>
+          <td>只是变细，静止时那条线仍在</td>
+        </tr>
+        <tr>
+          <td><b class="pick">B 细轴 + 悬停淡入</b> ← 建议</td>
+          <td>看不见（鼠标移入 / 一滚动就出现）</td>
+          <td>6px</td>
+          <td>1 个 hook（约 15 行）</td>
+          <td>app.css 一处规则 + 1 个新文件 + 4 处挂类</td>
+          <td>轴仍在，表格底部仍少 6px</td>
+        </tr>
+        <tr>
+          <td><b>C 零占位悬浮把手</b></td>
+          <td>看不见（悬停 / 滚动才浮出）</td>
+          <td>0px</td>
+          <td>复用控制器（约 70 行）</td>
+          <td>同上 + 把手要自绘并保证键盘可达</td>
+          <td>自绘控件；静止时没有"还有内容"的提示</td>
+        </tr>
+        <tr>
+          <td><b>D 表格列导航条</b></td>
+          <td>看得见，但并进既有状态行、不额外占一行</td>
+          <td>表格 0px / 其它 6px</td>
+          <td>表格专用（约 50 行）</td>
+          <td>表格屏专属 + 其它处走 A</td>
+          <td>最重；网格/图册两视图行为要一致</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section">
+  <h2>查出来的两处真问题（四个方案都会顺手修掉）</h2>
+  <div class="findings">
+    <ol>
+      <li>
+        <b>正文代码块没带细滚动条类</b><span class="tag-defect">违和主因</span><br />
+        <code>app.css:1071</code> 的 <code>.markdown-body pre</code> 只有 <code>overflow-x: auto</code>，
+        全仓库 11 个滚动条相关文件里唯独它没挂 <code>.scroll-thin</code>。结果：表格是 8px 细条、
+        代码块是 Windows 默认那根 15–17px 的粗条（灰轨道 + 深色滑块 + 边框），
+        <b>同一屏里两种滚动条并存</b>——这就是"违和"最刺眼的一处。
+      </li>
+      <li>
+        <b>属性行把条完全隐藏，截断后没有任何提示</b><span class="tag-fix">不是丑，是看不见</span><br />
+        <code>app.css:4608</code> 的 <code>.addentry__extras</code> 写着 <code>scrollbar-width: none</code> +
+        <code>::-webkit-scrollbar { height: 0 }</code>。DESIGN.md §2.2 已定「字段行固定 26px、不换行、
+        越界横向滚动」，所以<b>这里不能加会撑高的条</b>；但"越界了"这件事对用户完全不可见。
+        四个方案在这处统一改为：<b>保持 0 占位 + 加边缘渐隐提示</b>。
+      </li>
+      <li>
+        <b>四处横向滚动的口径现在不统一</b>：表格 <code>.tablegrid__scroll</code>（带细条）、
+        代码块 <code>.markdown-body pre</code>（无样式）、版本对比 <code>.versiondiff__scroll</code>
+        （带细条但和表格同一套）、属性行 <code>.addentry__extras</code>（隐藏）。
+        无论选哪个方案，第一步都是把它们收进<b>同一个共享类</b>，否则下次加新屏又会各写各的。
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================ 方案 0 ============================ -->
+<section class="opt" data-opt="base">
+  <div class="opt__hd">
+    <div>
+      <h3>方案 0 · 现状（基线）</h3>
+      <p class="opt__lead">
+        不改任何东西，作为对照。<b>请重点看代码块那块</b>：它是系统默认粗条，与旁边表格的细条并排出现；
+        属性行则完全没有提示，只看得出内容被切断了。
+      </p>
+    </div>
+    <ul class="badges">
+      <li>常驻占位 8px（代码块 15–17px）</li>
+      <li>不需要 JS</li>
+      <li>改动面：无</li>
+    </ul>
+  </div>
+  <div class="demos"></div>
+</section>
+
+<!-- ============================ 方案 A ============================ -->
+<section class="opt" data-opt="a">
+  <div class="opt__hd">
+    <div>
+      <h3>方案 A · 统一细轴（最小改动）</h3>
+      <p class="opt__lead">
+        把所有横向滚动处收进一个共享类，轴从 8px 收到 6px、滑块可见粗细 2px。
+        <b>完全不动布局、不加 JS、不加标记</b>——只是"全都变成同一根细条"。
+        这是最不容易出事的方案：视觉变化小，但"违和"和"代码块太粗"两个问题当场消失。
+      </p>
+    </div>
+    <ul class="badges">
+      <li>常驻占位 6px</li>
+      <li data-kind="js">不需要 JS</li>
+      <li>改动面：app.css 一处规则 + 4 处挂类</li>
+    </ul>
+  </div>
+  <div class="demos"></div>
+  <div class="opt__two">
+    <div>
+      <h4>CSS（进 app.css，组件只挂类名）</h4>
+      <pre class="snippet">/* 横向滚动统一口径：表格网格 / 正文代码块 / 版本对比 / 属性行 */
+.hscroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.hscroll::-webkit-scrollbar { width: 8px; height: 6px; background: transparent; }
+.hscroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;          /* 配合 content-box → 可见 2px */
+  border-radius: var(--radius-pill);
+  background: var(--line-2);
+  background-clip: content-box;
+}
+.hscroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: content-box;
+}
+.hscroll::-webkit-scrollbar-corner { background: transparent; }
+
+/* 属性行：DESIGN §2.2 固定 26px 不换行 → 不给条，改为边缘渐隐 */
+.addentry__extras { scrollbar-width: none; }
+.addentry__extras::-webkit-scrollbar { height: 0; }</pre>
+    </div>
+    <div>
+      <h4>代价与风险</h4>
+      <ul class="costs">
+        <li>静止时那条线<b>一直在</b>——表格底部永远少 6px 高的可视区，"占太多空间"只缓解 2px。</li>
+        <li>滑块对比度低（<code>--line-2</code> 压在 <code>--bg</code> 上 ≈ 1.6:1）：够克制，但也够难找。</li>
+        <li>不动 JS = 键盘聚焦时不会有额外提示（轴本来就在，可接受）。</li>
+        <li>需给代码块、版本对比两处补挂类；属性行的"截断无提示"只能靠渐隐补，不是这条规则能解决的。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 方案 B ============================ -->
+<section class="opt" data-opt="b">
+  <div class="opt__hd">
+    <div>
+      <h3>方案 B · 细轴 + 悬停 / 滚动淡入<span style="color:var(--primary-ink)">（建议）</span></h3>
+      <p class="opt__lead">
+        规则与 A 相同（同一份 CSS），只是<b>滑块静止时是透明的</b>：鼠标移进容器、或正在滚动、或键盘焦点进入时淡入，
+        停手约 0.9s 后淡出。<b>轴的位置仍然留着 6px</b>，所以不会出现"一滚动页面高度就跳一下"。
+        静止时那一行是干净的，而"能横滚"这件事在鼠标移入的瞬间就交代清楚。
+      </p>
+    </div>
+    <ul class="badges">
+      <li>常驻占位 6px（静止不可见）</li>
+      <li data-kind="js">需要 1 个 hook（约 15 行）</li>
+      <li>改动面：app.css 一处规则 + 1 个新文件 + 4 处挂类</li>
+    </ul>
+  </div>
+  <div class="demos"></div>
+  <div class="opt__two">
+    <div>
+      <h4>CSS + hook</h4>
+      <pre class="snippet">/* 与 A 同一条规则，只是滑块静止透明 */
+.hscroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;   /* Firefox：起手透明 */
+}
+.hscroll::-webkit-scrollbar { width: 8px; height: 6px; background: transparent; }
+.hscroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;                    /* 静止：不画 */
+  background-clip: content-box;
+}
+.hscroll:hover,
+.hscroll.is-scrolling,
+.hscroll:focus-within { scrollbar-color: var(--line-2) transparent; }
+.hscroll:hover::-webkit-scrollbar-thumb,
+.hscroll.is-scrolling::-webkit-scrollbar-thumb,
+.hscroll:focus-within::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  background-clip: content-box;
+}
+.hscroll:hover::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.hscroll::-webkit-scrollbar-corner { background: transparent; }
+
+/* app/dom/hscroll-reveal.ts —— 一个 hook，四处复用 */
+export function hScrollReveal<T extends HTMLElement>(el: T): T {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const show = (ms: number) => {
+    el.classList.add("is-scrolling");
+    clearTimeout(t);
+    t = setTimeout(() => el.classList.remove("is-scrolling"), ms);
+  };
+  el.addEventListener("scroll", () => show(900), { passive: true });
+  el.addEventListener("focusin", () => show(1600));   // 键盘可达也要看见
+  return el;
+}</pre>
+    </div>
+    <div>
+      <h4>代价与风险</h4>
+      <ul class="costs">
+        <li>空间上只比 A 少「静止时那 2px 细线」——<b>如果你的不满主要是"占高度"，B 和 A 一样要占 6px</b>。</li>
+        <li>静止时看不见滑块 = 可发现性略降；靠"鼠标移入即现"兜住，触屏本来就没有条（触摸拖拽直给）。</li>
+        <li>需要一个 15 行 hook；<code>prefers-reduced-motion</code> 下淡入会变瞬时（全局已有该规则），可接受。</li>
+        <li>Firefox 走 <code>scrollbar-color</code>：渐隐没有过渡，是硬切换；Chrome/Edge 无此问题。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 方案 C ============================ -->
+<section class="opt" data-opt="c">
+  <div class="opt__hd">
+    <div>
+      <h3>方案 C · 零占位悬浮把手 + 边缘渐隐</h3>
+      <p class="opt__lead">
+        原生条彻底隐藏，<b>不占任何高度</b>：鼠标移入或滚动时，内容上浮出一条细把手（可拖），
+        左右边缘按"那边还有内容"淡入渐隐，极窄的容器（代码块、属性行）只给渐隐、不给把手，避免压住字。
+        <b>空间账是四个方案里最干净的</b>，代价是把滚动条变成了自绘控件。
+      </p>
+    </div>
+    <ul class="badges">
+      <li data-kind="zero">常驻占位 0px</li>
+      <li data-kind="js">需要复用控制器（约 70 行）</li>
+      <li>改动面：共享类 + 控制器 + 4 处接入 + 键盘可达</li>
+    </ul>
+  </div>
+  <div class="demos"></div>
+  <div class="opt__two">
+    <div>
+      <h4>CSS + 控制器要点</h4>
+      <pre class="snippet">.hscroll { scrollbar-width: none; }
+.hscroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+.hs { position: relative; }
+.hs__fade {                            /* 边缘渐隐：只在悬停/滚动中出现，且只亮还有内容的那一侧 */
+  position: absolute; top: 0; bottom: 0; z-index: 2; width: 30px;
+  pointer-events: none; opacity: 0; transition: opacity .18s ease;
+}
+.hs__fade { width: 30px; pointer-events: none; }
+.hs__fade--l { left: 0;  background: linear-gradient(90deg,  var(--bg) 35%, transparent); }
+.hs__fade--r { right: 0; background: linear-gradient(270deg, var(--bg) 35%, transparent); }
+.hs__handle {                         /* 悬浮把手：压在内容上，不占布局 */
+  position: absolute; left: 0; bottom: 6px; height: 5px; z-index: 3;
+  border-radius: var(--radius-pill); background: var(--line-2);
+  opacity: 0; cursor: grab;
+}
+.hs:hover .hs__fade, .hs.is-scrolling .hs__fade,
+.hs:hover .hs__handle, .hs.is-scrolling .hs__handle { opacity: 1; }
+/* ↑ 但只在「那边真的还有内容」时才亮：JS 按 scrollLeft 打 .has-l / .has-r / .has-over
+ *   渐隐不能常驻 —— 常驻会永久盖住首列前 30px（版本对比里那正是 +/- 符号的位置） */
+
+/* app/dom/hscroll-overlay.ts（要点，非完整实现）
+ *  - 把手宽度  = max(28, clientWidth * clientWidth / scrollWidth)
+ *  - 把手位移  = (clientWidth - 把手宽) * scrollLeft / (scrollWidth - clientWidth)
+ *  - 拖动      = pointerdown 记偏移 → pointermove 改 scrollLeft（pointer capture）
+ *  - 键盘      = 容器 tabindex="0" + ArrowLeft/Right/Home/End（必须，DESIGN §6.1）
+ *  - 无障碍    = 把手带 role="slider" + aria-valuenow/valuemin/valuemax
+ *  - 窄容器（宽 < 240px）不挂把手，只给渐隐
+ */</pre>
+    </div>
+    <div>
+      <h4>代价与风险</h4>
+      <ul class="costs">
+        <li><b>自绘控件</b>：把手要自己算比例、拖拽、键盘、<code>role="slider"</code>，测试面比 B 大一个量级。</li>
+        <li>把手压在内容上（表格最后一行会短暂被压住），所以只在悬停/滚动时出现，不是常驻。</li>
+        <li>静止态没有条也没有渐隐，"还有内容"只靠<b>内容被裁切本身</b>来暗示；<b>没有悬停的场合（触屏）</b>提示最弱，而 DESIGN §6.1 又要求不以悬停为唯一入口 → 真要做，得再补一个可点的翻页出口。</li>
+        <li>容器高度很小时（属性行 26px）把手几乎贴边，实际只宜用渐隐。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 方案 D ============================ -->
+<section class="opt" data-opt="d">
+  <div class="opt__hd">
+    <div>
+      <h3>方案 D · 表格专属「列导航条」，其它处走 A</h3>
+      <p class="opt__lead">
+        表格是横滚的重灾区（列多就滚），所以给它一条<b>有信息量的横条</b>：不额外占一行，
+        并进表格底部既有的状态行（<code>.tablesizebar</code> 那一行），左边写「第 3–7 列 / 共 12」，
+        右边一条按列分的刻度，窗口块可点可拖。其它三处（代码块、版本对比、属性行）走 A 的统一细轴。
+      </p>
+    </div>
+    <ul class="badges">
+      <li data-kind="zero">表格占位 0px（并进既有行）</li>
+      <li data-kind="js">表格专用（约 50 行）</li>
+      <li>改动面：表格屏专属 + 其它处走 A</li>
+    </ul>
+  </div>
+  <div class="demos"></div>
+  <div class="opt__two">
+    <div>
+      <h4>结构与要点</h4>
+      <pre class="snippet">&lt;!-- 表格屏：横条并进既有状态行，不新增块（DESIGN §2.1 块顺序不变） --&gt;
+&lt;div class="tablesizebar"&gt;
+  &lt;div class="tablesizebar__foot"&gt;
+    &lt;span class="tablesizebar__count"&gt;128 行 · 12 列&lt;/span&gt;
+    &lt;span class="size-tag size-tag--soft"&gt;412 KB&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;div class="tablesizebar__nav"&gt;              &lt;!-- 新增：列导航条 --&gt;
+    &lt;span class="navstrip__info"&gt;第 3–7 列 / 共 12&lt;/span&gt;
+    &lt;div class="navstrip__track"&gt;              &lt;!-- 点击/拖动 = 横向滚动 --&gt;
+      &lt;div class="navstrip__ticks"&gt;&lt;/div&gt;      &lt;!-- 刻度按列宽分段 --&gt;
+      &lt;div class="navstrip__win"&gt;&lt;/div&gt;        &lt;!-- 当前可见区间 --&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+/* 要点：
+ *  1. 刻度分段来自**已知的列宽**（表格列定义里有），不是均分 —— 所以刻度是诚实的
+ *  2. 「实时计数必须可见」（DESIGN §5.4-2）本来就要求这一行有数字，列区间与它同族，不违和
+ *  3. 图册视图没有列，不挂这条（避免「两视图行为不一致」）
+ *  4. 其它三处仍走 .hscroll（A 的细轴），别把列导航条做成通用滚动条
+ */</pre>
+    </div>
+    <div>
+      <h4>代价与风险</h4>
+      <ul class="costs">
+        <li><b>最重的一个</b>：表格是虚拟滚动 + 列宽可拖的组合，刻度窗口要跟着列宽变化实时重算。</li>
+        <li>把"滚动条"和"状态/计数行"合并成同一块，这一行的信息密度会上升（要重排，不是加个条）。</li>
+        <li>网格与图册两种视图行为不同（图表没有列），需要明确"图册不显示"的规则，否则会被当成不一致。</li>
+        <li>代码块那处仍然只是 A 的细轴 → "违和"修掉了，但"占空间"只在表格这一屏解决。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2>三个需要你拍板的问题</h2>
+  <div class="findings">
+    <ol>
+      <li>
+        <b>你说的"占太多空间"，指的是高度还是视觉噪音？</b><br />
+        高度 → 只有 C（和 D 的表格部分）能把常驻占位降到 0，B 与 A 都还是 6px。
+        噪音 → B 就够了，且代价最小。选之前最好先明确这一条，因为四个方案的分歧点就在这。
+      </li>
+      <li>
+        <b>代码块要不要"永远看得见"那根条？</b><br />
+        代码块是<b>读长行</b>的地方，滚到一半很容易忘记右边还有内容。四个方案里我给代码块的建议是
+        保留细轴（A/B 的做法），把 C 的悬浮把手留给表格这类容器。如果你想全站零占位，这处要单独拍。
+      </li>
+      <li>
+        <b>属性行的"截断无提示"按哪种算修好？</b><br />
+        DESIGN §2.2 已定它固定 26px、不换行，所以任何会撑高的条都不行。我的默认做法是
+        <b>0 占位 + 边缘渐隐</b>（四个方案都这么做）。如果你觉得不够，可选：悬停时末项再渐隐一点、
+        或加一个可点的「›」翻页。
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="section">
+  <h2>我的建议</h2>
+  <div class="findings">
+    <p style="margin:0 0 var(--sp-2)">
+      <b>选 B。</b>它一次解决你说的两件事：<b>违和</b>——所有横向滚动处收进一个共享类，
+      代码块那根系统粗条被替掉；<b>占空间</b>——静止时那 6px 完全看不见，鼠标一移进去就交代清楚，
+      而且因为轴的位置留着，<b>不会出现滚动时内容高度跳一下</b>。
+    </p>
+    <p style="margin:0 0 var(--sp-2)">
+      <b>C 留作第二步。</b>如果做完 B 你还觉得表格底部那 6px 是浪费，再把表格一处升级成 C 的零占位悬浮把手
+      （表格是唯一值得为它自绘的容器）。D 我不建议现在做：它最重，而收益集中在表格一屏，
+      等真用起来觉得"想知道现在看到第几列"再单独提。
+    </p>
+    <p style="margin:0">
+      <b>无论选哪个，这三件事都要做</b>（四个方案都含）：① 建共享类收口四处横向滚动；
+      ② 给代码块补挂类（现在漏了）；③ 属性行加边缘渐隐，保持 26px 不变。
+    </p>
+  </div>
+</section>
+
+<script>
+/* ============================================================
+   演示件：所有方案用同一份内容、同一批类名，只换外层 data-opt，
+   保证左右对比的是同一块东西。
+   ============================================================ */
+var COLS = [
+  { k: 'name', t: '事项', w: 190 },
+  { k: 'own',  t: '负责人', w: 104 },
+  { k: 'st',   t: '状态', w: 104 },
+  { k: 'pr',   t: '优先级', w: 92 },
+  { k: 'sb',   t: '开始', w: 108 },
+  { k: 'due',  t: '截止', w: 108 },
+  { k: 'tag',  t: '标签', w: 150 },
+  { k: 'att',  t: '附件', w: 92 },
+  { k: 'prg',  t: '进度', w: 132 },
+  { k: 'note', t: '备注', w: 210 },
+  { k: 'rev',  t: '复核人', w: 104 },
+  { k: 'up',   t: '更新', w: 120 }
+];
+
+var ROWS = [
+  { name: 'M4 收口复核：表格 / 附件 / 版本历史 / 回收站', own: 'tokama', st: '已完成', pr: '高', sb: '08-12', due: '09-04',
+    tag: ['M4', '收口'], att: '2 个', prg: '100%', note: '四个域的收口清单与遗留项已回写 wiki', rev: '——', up: '09-04 18:20' },
+  { name: 'M5 分享 / 导出 / 备份三块联调', own: 'tokama', st: '进行中', pr: '高', sb: '09-05', due: '09-20',
+    tag: ['M5', '分享'], att: '—', prg: '72%', note: '带密码分享的派生值曾 100% 打不开（已修 v0.6.18）', rev: '家人 B', up: '09-19 09:05' },
+  { name: 'MCP 令牌管理与审计四态核对', own: 'tokama', st: '待人工', pr: '中', sb: '09-21', due: '10-02',
+    tag: ['MCP', '待验'], att: '1 个', prg: '90%', note: '需真客户端连一次（Cursor / Claude Code）', rev: '——', up: '10-02 21:40' },
+  { name: '移动端适配：三条阻塞项', own: '待定', st: '未开始', pr: '中', sb: '——', due: '——',
+    tag: ['移动端'], att: '—', prg: '待定', note: 'DESIGN §2.4 仍未定稿，本轮被排除', rev: '——', up: '09-28 11:12' },
+  { name: '定时自动备份：外部子请求 50 / invocation', own: 'tokama', st: '已完成', pr: '高', sb: '09-25', due: '09-30',
+    tag: ['M7', '备份'], att: '—', prg: '100%', note: '一轮一批、批内 ≤40 个外部 PUT', rev: '家人 A', up: '09-30 16:02' },
+  { name: '设置页信息架构：11 类 → 9 类', own: 'tokama', st: '已完成', pr: '低', sb: '09-29', due: '09-30',
+    tag: ['UI'], att: '—', prg: '100%', note: '撤销分类必须同步 LEGACY_SETTINGS_PAGES', rev: '——', up: '09-30 20:15' },
+  { name: '快捷菜单「立即备份」做成入口而非动作', own: 'tokama', st: '已完成', pr: '低', sb: '10-01', due: '10-02',
+    tag: ['UI', '备份'], att: '—', prg: '100%', note: '目标可有多个，一键推的话"推哪个"没答案', rev: '——', up: '10-02 10:30' },
+  { name: '性能预算校准：首屏 68.3 KB', own: 'tokama', st: '已完成', pr: '中', sb: '09-22', due: '09-24',
+    tag: ['M7', '性能'], att: '—', prg: '100%', note: '查出免费版外部子请求 50 / invocation', rev: '——', up: '09-24 15:48' },
+  { name: '分享恢复后链接复活：服务端真撤销', own: 'tokama', st: '已完成', pr: '高', sb: '09-18', due: '09-19',
+    tag: ['M6', '分享'], att: '—', prg: '100%', note: '软删 / 隐私标记置位时真撤销分享行', rev: '——', up: '09-19 12:00' },
+  { name: '每日维护的两个从未执行分支', own: 'tokama', st: '已完成', pr: '高', sb: '09-16', due: '09-17',
+    tag: ['缺陷'], att: '—', prg: '100%', note: 'audit_log / 幂等表从未建出；时间列写错导致维护崩', rev: '——', up: '09-17 08:55' }
+];
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function cellFor(c, r) {
+  if (c.k === 'tag') {
+    return '<span class="tbl__cell">' + r.tag.map(function (t, i) {
+      return '<span class="chip' + (i === 0 ? ' chip--work' : '') + '">' + esc(t) + '</span>';
+    }).join('') + '</span>';
+  }
+  /* 进度是数字列：`.tablegrid__cell--warn` 在实现里就是「数字列写了非数字」的**就地**警告 */
+  if (c.k === 'prg') {
+    return '<span class="tbl__cell">' + esc(r.prg) +
+      (r.prg === '待定' ? '<span class="tbl__cell--warn">应为数字</span>' : '') + '</span>';
+  }
+  var v = r[c.k];
+  if (v === '—' || v === '') return '<span class="tbl__cell tbl__cell--empty">—</span>';
+  return '<span class="tbl__cell">' + esc(v) + '</span>';
+}
+
+function tableHtml() {
+  var th = '<th class="th--menu"></th>' + COLS.map(function (c) {
+    return '<th style="width:' + c.w + 'px">' + esc(c.t) + '</th>';
+  }).join('');
+  var tr = ROWS.map(function (r) {
+    return '<tr><td class="td--menu"><span class="tbl__cell">⋮⋮</span></td>' +
+      COLS.map(function (c) { return '<td>' + cellFor(c, r) + '</td>'; }).join('') + '</tr>';
+  }).join('');
+  return '<div class="tblwrap"><div class="hscroll-x" tabindex="0" role="group" aria-label="表格网格，可横向滚动">' +
+    '<table class="tbl"><thead><tr>' + th + '</tr></thead><tbody>' + tr + '</tbody></table>' +
+    '</div></div>' + (optKey === 'd' ? navstripHtml() : '');
+}
+
+function navstripHtml() {
+  return '<div class="navstrip">' +
+    '<span class="navstrip__info" data-info>第 1–5 列 / 共 12</span>' +
+    '<div class="navstrip__track" data-track role="slider" tabindex="0" aria-label="列区间" aria-valuemin="1" aria-valuemax="12" aria-valuenow="1">' +
+      '<div class="navstrip__ticks"></div><div class="navstrip__win" data-win></div>' +
+    '</div>' +
+    '<span class="navstrip__hint">点或拖刻度</span>' +
+  '</div>';
+}
+
+var CODE = [
+  '// apps/worker/src/services/mcp.ts —— 写类工具的统一前置',
+  'export async function withWriteGuard(ctx: Ctx, tool: string, run: () => Promise<R>) {',
+  '  await sealVersion(ctx, { keep: 1, reason: "pre_mcp" });   // 写前封存，10 分钟节流',
+  '  const idem = await claimIdempotency(ctx, tool, ctx.requestId);',
+  '  if (!idem.fresh) return idem.replay;                       // 幂等：重放上次结果',
+  '  const startedAt = Date.now();',
+  '  try { const out = await run(); await audit(ctx, tool, "ok", startedAt); return out; }',
+  '  catch (err) { await audit(ctx, tool, "error", startedAt, err); throw err; }',
+  '}'
+].join('\n');
+
+var DIFF = [
+  { t: 'same',   s: '  const limit = 20;' },
+  { t: 'remove', s: '-   if (!token.startsWith("mn_")) return unauthorized();' },
+  { t: 'add',    s: '+   // 令牌哈希必须带 mn_ 前缀做域分隔：会话令牌是裸 32 字节 SHA-256' },
+  { t: 'add',    s: '+   // 而 MCP 令牌恰好也是 32 字节 base64url，两边都哈希裸字节的话' },
+  { t: 'add',    s: '+   // 一个会话令牌字符串就能冒充合法 MCP 令牌' },
+  { t: 'same',   s: '  const digest = await sha256(token);' },
+  { t: 'add',    s: '+   const row = await findToken("mn_" + digest);' }
+];
+
+var FIELDS = ['目标', '负责人', '优先级', '开始', '截止', '标签', '附件', '进度', '备注', '复核人', '更新'];
+
+var DEMOS = [
+  {
+    id: 'table',
+    cap: '表格网格 · 列多时横滚（<code>features/tables/ui/TableGrid.tsx</code> → <code>.tablegrid__scroll</code>，DESIGN §2.1-3）',
+    note: '本项目横向滚动的主战场',
+    build: tableHtml
+  },
+  {
+    id: 'pre',
+    cap: '正文代码块 · 长行（<code>app.css:1071</code> <code>.markdown-body pre</code>）',
+    note: '现状漏挂细滚动条类 → 系统默认粗条',
+    build: function () {
+      return '<div class="codewrap"><pre class="code hscroll-x" tabindex="0">' + esc(CODE) + '</pre></div>';
+    }
+  },
+  {
+    id: 'diff',
+    cap: '版本对比 · 长行（<code>app.css:5678</code> <code>.versiondiff__scroll</code>）',
+    note: '全文快照与行级对比都会长行',
+    build: function () {
+      return '<div class="diffwrap"><div class="hscroll-x diff" tabindex="0" role="group" aria-label="行级对比，可横向滚动"><ul class="diff__lines">' +
+        DIFF.map(function (d) { return '<li class="diff__line diff__line--' + d.t + '">' + esc(d.s) + '</li>'; }).join('') +
+        '</ul></div></div>';
+    }
+  },
+  {
+    id: 'extras',
+    cap: '添加内容窗口 · 属性行（<code>app.css:4608</code> <code>.addentry__extras</code>，DESIGN §2.2 固定 26px 不换行）',
+    note: '唯一不允许加会撑高的条的容器',
+    build: function () {
+      return '<div class="hs__box hs__box--row"><div class="hscroll-x extras" tabindex="0" role="group" aria-label="属性行，可横向滚动">' +
+        FIELDS.map(function (f, i) {
+          return '<span class="extras__f' + (i === 0 ? ' extras__f--on' : '') + '">' + esc(f) + '</span>';
+        }).join('') + '</div></div>';
+    }
+  }
+];
+
+/* ---------------- 现状：各容器按 app.css 现在真实的样子挂类 ---------------- */
+var BASELINE = {
+  table:  'hscroll-thin',
+  pre:    '',                 /* 现状就是没挂 → 系统默认粗条 */
+  diff:   'hscroll-thin',
+  extras: 'hscroll-none'
+};
+/* A / B：统一细轴（属性行按 §2.2 仍不给条） */
+var UNIFORM = { table: 'hscroll-a', pre: 'hscroll-a', diff: 'hscroll-a', extras: 'hscroll-none' };
+/* C：零占位（原生条全隐藏） */
+var ZERO   = { table: 'hscroll-c', pre: 'hscroll-c', diff: 'hscroll-c', extras: 'hscroll-c' };
+/* D：表格走列导航条（原生条隐藏），其它处走 A */
+var TMIX   = { table: 'hscroll-none', pre: 'hscroll-a', diff: 'hscroll-a', extras: 'hscroll-none' };
+
+var optKey = 'base';
+
+function wrapFor(opt, id) {
+  if (opt === 'base') return BASELINE[id];
+  if (opt === 'a' || opt === 'b') return UNIFORM[id];
+  if (opt === 'c') return ZERO[id];
+  if (opt === 'd') return TMIX[id];
+  return '';
+}
+
+function render() {
+  document.querySelectorAll('.opt').forEach(function (opt) {
+    var key = opt.dataset.opt;
+    optKey = key;
+    var host = opt.querySelector('.demos');
+    host.innerHTML = DEMOS.map(function (d) {
+      return '<div class="demo"><p class="demo__cap">' + d.cap + '<br /><b>' + esc(d.note) + '</b></p>' +
+        '<div class="hs"><div class="hs__box">' + d.build() + '</div></div></div>';
+    }).join('');
+
+    /* 按方案挂类 / 挂结构 */
+    host.querySelectorAll('.demo').forEach(function (box, i) {
+      var d = DEMOS[i];
+      var cls = wrapFor(key, d.id);
+      var hs = box.querySelector('.hs');
+      var scroll = box.querySelector('.hscroll-x');
+      if (scroll && cls) scroll.classList.add(cls);
+
+      /* 方案 D 的列导航条由 tableHtml() 直接产在 .hs__box 里（tblwrap 之后），无需搬动 */
+      if (key === 'b' && scroll) initReveal(scroll, hs);
+      if (key === 'c' && scroll) initOverlay(hs, box.querySelector('.hs__box'), scroll, d.id === 'table');
+      if (key === 'd' && d.id === 'table') initNavstrip(hs, box.querySelector('.hscroll-x'), box.querySelector('.navstrip'));
+    });
+  });
+}
+
+/* ---------------- B：悬停 / 滚动淡入 ---------------- */
+function initReveal(scroll, hs) {
+  var t;
+  function show(ms) {
+    hs.classList.add('is-scrolling');
+    scroll.classList.add('is-scrolling');
+    clearTimeout(t);
+    t = setTimeout(function () {
+      hs.classList.remove('is-scrolling');
+      scroll.classList.remove('is-scrolling');
+    }, ms);
+  }
+  scroll.addEventListener('scroll', function () { show(900); }, { passive: true });
+  scroll.addEventListener('focusin', function () { show(1600); });
+}
+
+/* ---------------- C：零占位悬浮把手 + 边缘渐隐 ---------------- */
+function initOverlay(hs, box, scroll, withHandle) {
+  var l = document.createElement('span'); l.className = 'hs__fade hs__fade--l';
+  var r = document.createElement('span'); r.className = 'hs__fade hs__fade--r';
+  box.appendChild(l); box.appendChild(r);
+
+  var el = null, win = 0, grab = 0;
+  if (withHandle) {
+    el = document.createElement('span');
+    el.className = 'hs__handle';
+    el.setAttribute('role', 'slider');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-label', '横向滚动位置');
+    box.appendChild(el);
+
+    el.addEventListener('pointerdown', function (e) {
+      el.classList.add('is-drag');
+      el.setPointerCapture(e.pointerId);
+      var b = el.getBoundingClientRect();
+      grab = e.clientX - b.left;
+      e.preventDefault();
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (!el.hasPointerCapture || !el.hasPointerCapture(e.pointerId)) return;
+      var max = scroll.clientWidth - win;
+      if (max <= 0) return;
+      var x = Math.min(Math.max(e.clientX - box.getBoundingClientRect().left - grab, 0), max);
+      scroll.scrollLeft = (x / max) * (scroll.scrollWidth - scroll.clientWidth);
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) {
+      el.addEventListener(ev, function () { el.classList.remove('is-drag'); });
+    });
+    el.addEventListener('keydown', function (e) {
+      var step = scroll.clientWidth * 0.4;
+      var over = scroll.scrollWidth - scroll.clientWidth;
+      if (e.key === 'ArrowRight') scroll.scrollLeft += step;
+      else if (e.key === 'ArrowLeft') scroll.scrollLeft -= step;
+      else if (e.key === 'Home') scroll.scrollLeft = 0;
+      else if (e.key === 'End') scroll.scrollLeft = over;
+      else return;
+      e.preventDefault();
+    });
+  }
+
+  function layout() {
+    var sw = scroll.scrollWidth, cw = scroll.clientWidth, x = scroll.scrollLeft, over = sw - cw;
+    /* 边缘是否可用：由 scrollLeft 决定（渐隐 / 把手都只在悬停或滚动中出现） */
+    hs.classList.toggle('has-l', x > 2);
+    hs.classList.toggle('has-r', over > 2 && x < over - 2);
+    hs.classList.toggle('has-over', over > 1);
+    if (!el) return;
+    win = Math.max(28, Math.round(cw * cw / sw));
+    el.style.width = win + 'px';
+    el.setAttribute('aria-valuenow', String(Math.round(x / over * 100)));
+    var max = Math.max(0, cw - win - 4);
+    el.style.transform = 'translateX(' + (4 + Math.round(max * (x / over))) + 'px)';
+  }
+  scroll.addEventListener('scroll', function () {
+    hs.classList.add('is-scrolling');
+    layout();
+    clearTimeout(layout._t);
+    layout._t = setTimeout(function () { hs.classList.remove('is-scrolling'); }, 900);
+  }, { passive: true });
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(scroll);
+  layout();
+}
+
+/* ---------------- D：表格列导航条 ---------------- */
+function initNavstrip(hs, scroll, strip) {
+  if (!strip) return;
+  var track = strip.querySelector('[data-track]');
+  var winEl = strip.querySelector('[data-win]');
+  var info = strip.querySelector('[data-info]');
+  var n = COLS.length;
+
+  function layout() {
+    var sw = scroll.scrollWidth, cw = scroll.clientWidth, x = scroll.scrollLeft, over = Math.max(1, sw - cw);
+    var start = Math.floor(x / over * (n - 1)) + 1;
+    var end = Math.min(n, Math.ceil((x + cw) / over * (n - 1)) + 1);
+    info.textContent = '第 ' + start + '–' + end + ' 列 / 共 ' + n;
+    var span = Math.max(0.1, cw / sw);
+    winEl.style.left = (x / sw * 100) + '%';
+    winEl.style.width = (span * 100) + '%';
+    track.setAttribute('aria-valuenow', String(start));
+  }
+  function seek(clientX) {
+    var b = track.getBoundingClientRect();
+    var ratio = Math.min(Math.max((clientX - b.left) / b.width, 0), 1);
+    scroll.scrollLeft = ratio * (scroll.scrollWidth - scroll.clientWidth);
+  }
+  var dragging = false;
+  track.addEventListener('pointerdown', function (e) {
+    dragging = true; track.setPointerCapture(e.pointerId); seek(e.clientX); e.preventDefault();
+  });
+  track.addEventListener('pointermove', function (e) { if (dragging) seek(e.clientX); });
+  ['pointerup', 'pointercancel'].forEach(function (ev) {
+    track.addEventListener(ev, function () { dragging = false; });
+  });
+  track.addEventListener('keydown', function (e) {
+    var page = scroll.clientWidth;
+    if (e.key === 'ArrowRight') scroll.scrollLeft += page * 0.4;
+    else if (e.key === 'ArrowLeft') scroll.scrollLeft -= page * 0.4;
+    else if (e.key === 'Home') scroll.scrollLeft = 0;
+    else if (e.key === 'End') scroll.scrollLeft = scroll.scrollWidth;
+    else return;
+    e.preventDefault();
+  });
+  scroll.addEventListener('scroll', layout, { passive: true });
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(scroll);
+  layout();
+}
+
+/* ---------------- 主题切换 + 选中标记（沿用对比稿的交互） ---------------- */
+document.querySelector('[data-theme-toggle]').addEventListener('click', function (btn) {
+  var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  btn.textContent = next === 'dark' ? '切到浅色' : '切到深色';
+});
+
+document.querySelectorAll('.opt').forEach(function (opt) {
+  var hd = opt.querySelector('.opt__hd');
+  if (!hd) return;
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn';
+  b.textContent = '选这个';
+  b.style.alignSelf = 'center';
+  b.addEventListener('click', function () {
+    document.querySelectorAll('.opt').forEach(function (o) { o.removeAttribute('data-picked'); });
+    opt.setAttribute('data-picked', 'true');
+    b.textContent = '已选';
+  });
+  hd.appendChild(b);
+});
+
+render();
+</script>
+</body>
+</html>
