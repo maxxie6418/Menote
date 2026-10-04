@@ -1119,6 +1119,40 @@ button {
   align-items: start;
   padding: 3px 0;
 }
+/* 折叠 / 展开：整条属性栏一个按钮，不给每行各配一个 */
+.itemprops__toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 0;
+  margin-bottom: 2px;
+  cursor: pointer;
+  text-align: left;
+}
+.itemprops__toggle:hover {
+  color: var(--text-2);
+}
+.itemprops__toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.itemprops__summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 折起时那一行就是全部：不用虚线等「这里可以展开」的暗示，可点性由 hover / focus 反馈给出 */
+.itemprops__toggle--collapsed {
+  color: var(--text-2);
+  margin-bottom: 0;
+}
 .itemprops__label,
 .itemprops__key {
   color: var(--muted);

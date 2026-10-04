@@ -21,6 +21,7 @@
  * `DESIGN.md` §5.3 已定「条目属性（标签、截止、优先级、状态）→ 胶囊 `chip`」，所以复用
  * 现成的 `Chip`（`variant="tag"`），不新造控件。
  */
+import { useState } from "react";
 import {
   deriveTaskFields,
   frontmatterText,
@@ -33,6 +34,7 @@ import {
   type TaskStatus,
 } from "@menote/mdcore";
 import { Chip } from "../../../app/ui/Chip";
+import { readPropsCollapsed, writePropsCollapsed } from "../props-collapse";
 
 export interface ItemPropsProps {
   /** 编辑器当前文本（含 front matter）。卡片是纯显示的，数据全从这里来 */
@@ -102,6 +104,21 @@ export function shouldShowItemProps(body: string): boolean {
   return frontmatterText(body) !== null;
 }
 
+/**
+ * 折起来时那一行摘要。
+ *
+ * **不给「属性」两个字就完事**——用户会以为这里本来就没东西。折起时仍要看得见
+ * 「有几项、是什么」，这是折叠该省的空间，不是该省的信息。口径都在既有数据上算，
+ * 不额外派生：标签取卡片显示的那份（front matter 里的），状态取清单字段。
+ */
+function collapsedSummary(props: ReturnType<typeof readItemProps>): string {
+  const parts: string[] = [];
+  if (props.tags.length > 0) parts.push(`${props.tags.length} 个标签`);
+  if (props.task) parts.push(TASK_STATUS_LABELS[(props.task.status ?? "todo") as TaskStatus] ?? "清单");
+  if (props.foreign.length > 0) parts.push(`${props.foreign.length} 项其他属性`);
+  return parts.length > 0 ? `属性 · ${parts.join(" · ")}` : "属性";
+}
+
 export function ItemProps({
   body,
   editable,
@@ -113,8 +130,18 @@ export function ItemProps({
   onForeignAdd,
   onError,
 }: ItemPropsProps) {
-  const { tags, task, foreign } = readItemProps(body);
+  const props = readItemProps(body);
+  const { tags, task, foreign } = props;
   const disabled = !editable;
+
+  // 折叠状态记在本机（`props-collapse.ts`）：设备级偏好，且切档很频繁，不该上行
+  const [collapsed, setCollapsed] = useState(readPropsCollapsed);
+  const toggle = (): void => {
+    setCollapsed((previous) => {
+      writePropsCollapsed(!previous);
+      return !previous;
+    });
+  };
 
   function guard(action: () => void): void {
     if (!editable) return;
@@ -158,7 +185,34 @@ export function ItemProps({
 
   return (
     <section className="itemprops" aria-label="属性">
-      <div className="itemprops__group">
+      {collapsed ? (
+        // 折起来：只留一行摘要 + 展开按钮，属性本体不渲染（省地方，也省一次解析之外的绘制）
+        <button
+          type="button"
+          className="itemprops__toggle itemprops__toggle--collapsed"
+          aria-expanded={false}
+          onClick={toggle}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+          <span className="itemprops__summary">{collapsedSummary(props)}</span>
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="itemprops__toggle"
+            aria-expanded
+            onClick={toggle}
+            title="折叠属性"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+            <span className="itemprops__summary">属性</span>
+          </button>
+          <div className="itemprops__group">
         <div className="itemprops__row">
           <span className="itemprops__label" id="itemprops-tags">
             标签
@@ -336,6 +390,8 @@ export function ItemProps({
           ) : null}
         </div>
       ) : null}
+        </>
+      )}
     </section>
   );
 }

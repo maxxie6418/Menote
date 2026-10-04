@@ -14,7 +14,7 @@ import "fake-indexeddb/auto";
  *
  * 3. **键名原样**（`ItemProps`）：不翻译、不改写。
  */
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deriveTags, updateMenoteKeys } from "@menote/mdcore";
 import { createLocalItem, db, getLocalItem } from "../src/data/db";
@@ -207,6 +207,52 @@ describe("卡片在 DOM 里的位置", () => {
     expect(propsStart).toBeGreaterThan(-1);
     // 卡片在滚动容器**之前**（它是不随正文滚动的一条带）
     expect(propsStart).toBeLessThan(bodyStart);
+  });
+});
+
+describe("整条属性栏折叠 / 展开（用户 2026-10-04 要求）", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("默认展开：属性本体在", () => {
+    render(<ItemProps body={OB} editable {...noop} />);
+    expect(screen.getByText("claude")).toBeTruthy();
+    expect(screen.getByRole("button", { expanded: true })).toBeTruthy();
+  });
+
+  it("折起来只留一行摘要——不是光秃秃一个「属性」", () => {
+    render(<ItemProps body={OB} editable {...noop} />);
+    fireEvent.click(screen.getByRole("button", { expanded: true }));
+
+    // 属性本体没了
+    expect(screen.queryByText("claude")).toBeNull();
+    // 但摘要说得清「有几项、是什么」——用户不会以为这里本来就没东西
+    expect(screen.getByText(/1 个标签/)).toBeTruthy();
+    expect(screen.getByText(/3 项其他属性/)).toBeTruthy();
+  });
+
+  it("再点一次展开回来", () => {
+    render(<ItemProps body={OB} editable {...noop} />);
+    fireEvent.click(screen.getByRole("button", { expanded: true }));
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.getByText("claude")).toBeTruthy();
+  });
+
+  it("折叠状态记在本机，重挂载后仍是折着的", () => {
+    const { unmount } = render(<ItemProps body={OB} editable {...noop} />);
+    fireEvent.click(screen.getByRole("button", { expanded: true }));
+    expect(localStorage.getItem("menote:notes:props-collapsed")).toBe("1");
+    unmount();
+
+    render(<ItemProps body={OB} editable {...noop} />);
+    expect(screen.queryByText("claude")).toBeNull();
+  });
+
+  it("本机记的值不认识时回落成展开（不因为坏值把属性藏起来）", () => {
+    localStorage.setItem("menote:notes:props-collapsed", "乱写的值");
+    render(<ItemProps body={OB} editable {...noop} />);
+    expect(screen.getByText("claude")).toBeTruthy();
   });
 });
 
