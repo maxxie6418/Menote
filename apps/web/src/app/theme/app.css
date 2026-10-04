@@ -1055,6 +1055,143 @@ button {
   outline-offset: 1px;
 }
 
+/*
+  条目属性卡片（2026-10-04，`features/notes/ui/ItemProps.tsx`）。
+
+  形态是 DESIGN.md §5.3 已定的那一行「条目属性 → 胶囊 chip」，所以卡片自己**不带框**——
+  一张带框的卡套着一堆胶囊，是两个层级的东西摆在一起。分区靠**一条细分隔线**：
+  上半是 MeNote 自己的键（标签 / 状态 / 截止 / 优先级），下半是外部工具写进来的
+  「其他属性」，底色略深一点，一眼能看出那堆不是 MeNote 写的。
+*/
+.itemprops {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-small);
+}
+.itemprops__group--foreign {
+  border-top: 1px solid var(--line);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-1);
+}
+.itemprops__head {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding: var(--sp-1) 0;
+}
+.itemprops__row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: 3px 0;
+}
+.itemprops__label,
+.itemprops__key {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding-top: 5px;
+}
+/* 外来键用等宽：它就是文件里的一个键名，不是界面文案 */
+.itemprops__key {
+  font-family: var(--mono);
+  word-break: break-all;
+}
+.itemprops__vals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+  min-width: 0;
+}
+.itemprops__field,
+.itemprops__value {
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  min-height: 26px;
+  min-width: 0;
+}
+.itemprops__value {
+  flex: 1 1 220px;
+}
+.itemprops__value--block {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  resize: vertical;
+}
+.itemprops__field:focus,
+.itemprops__value:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+  border-color: var(--primary-line);
+}
+.itemprops__field:disabled,
+.itemprops__value[readonly] {
+  background: var(--bg-soft);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.itemprops__add {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.itemprops__add:hover {
+  color: var(--primary-ink);
+  border-color: var(--primary-line);
+  background: var(--primary-soft);
+}
+/* 标签上的删除：点它就是删这个标签，不放 hover 才出现（触屏没有 hover） */
+.itemprops__x {
+  display: inline-flex;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 2px;
+  color: inherit;
+  opacity: .6;
+  cursor: pointer;
+  line-height: 1;
+}
+.itemprops__x:hover {
+  opacity: 1;
+}
+/* 外来键行上的删除是独立按钮（不在 chip 里），给足命中区；悬停走危险色（破坏性操作） */
+.itemprops__x--row {
+  flex: none;
+  margin-left: 0;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  opacity: 1;
+}
+.itemprops__x--row:hover {
+  color: var(--red);
+  background: var(--red-soft);
+}
+.itemprops__x:focus-visible,
+.itemprops__add:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.itemprops__none {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding: 5px 0;
+}
+.itemprops__foot {
+  padding: var(--sp-1) 0 0 76px;
+}
+
 /* 代码块：编辑器侧只上底色，围栏与语言保持源码可见（首期不做语言高亮） */
 .cm-live-codeblock {
   background: var(--bg-soft);

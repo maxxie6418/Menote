@@ -440,6 +440,10 @@ export function NotesPane({
           shared={workspace.selectedId !== null && sharedItemIds.has(workspace.selectedId)}
           // 移除附件引用（M10-新 · M6 批 2b）：只删正文那一条引用，**不删文件**（也不动本地元数据行）
           onRemoveAttachmentRef={(body) => setRemoveRefBody(body)}
+          // 属性卡片（2026-10-04）：句柄由这里持有，所以**传下去**给卡片改 md 用，
+          // 不在 NoteWorkspace 里再存一份（两份不同步的句柄 = 写进了没人看见的那份）
+          editorHandle={editorHandle}
+          onPropsError={(message) => onToast(message, "error")}
         />
         )
       }

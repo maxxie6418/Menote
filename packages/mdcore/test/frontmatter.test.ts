@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocument,
   deriveTitle,
+  frontmatterText,
   parseMenoteMeta,
+  readForeignKeys,
+  removeForeignKey,
   stripFrontmatter,
   updateMenoteKeys,
+  writeForeignKey,
 } from "../src/frontmatter";
 import { parseTableDocument, renderTableDocument } from "../src/table";
 
@@ -398,5 +402,149 @@ describe("Memo 转笔记的关联键（Q10）", () => {
     const removed = updateMenoteKeys(added, { convertedTo: null });
     expect(removed).not.toContain("converted_to");
     expect(removed).toContain("  tags: [工作]");
+  });
+});
+
+/**
+ * 外来顶层键的读 / 写 / 删（2026-10-04，《笔记属性卡片》设计稿 §4-§5）。
+ *
+ * **核心底线是「按原格式」**：不把值解析成结构再拼回去（那才要引 YAML 库），
+ * 只认出这个键占哪几行，然后把用户写的原文按原样写回同一位置。所以下面每条用例
+ * 都在盯两件事：**形状不变**（块仍是块、单行仍是单行）与**原位**（不挪到别处）。
+ */
+describe("外来顶层键：读 / 写 / 删", () => {
+  it("列出外来键，MeNote 自己的三个键不在其中", () => {
+    const keys = readForeignKeys(OB);
+    expect(keys.map((k) => k.key)).toEqual([
+      "url",
+      "author",
+      "captured",
+      "like",
+      "comment",
+      "status",
+    ]);
+    // title / tags 是 MeNote 的（各有专门的行），menote 是表格结构
+    expect(keys.map((k) => k.key)).not.toContain("title");
+    expect(keys.map((k) => k.key)).not.toContain("tags");
+    expect(keys.map((k) => k.key)).not.toContain("menote");
+  });
+
+  it("认出单行与块两种形状，值是原文不加工", () => {
+    const keys = readForeignKeys(OB);
+    const url = keys.find((k) => k.key === "url");
+    const author = keys.find((k) => k.key === "author");
+    const comment = keys.find((k) => k.key === "comment");
+
+    expect(url?.block).toBe(false);
+    expect(url?.value).toBe('"https://x.com/akshay_pachaar/status/2035341800739877091"');
+    // 块序列：子行连缩进一起原样给出（外来文件可能是 4 空格，剥掉再补就改了格式）
+    expect(author?.block).toBe(true);
+    expect(author?.value).toBe('  - "Unknown"');
+    // 空值也是值，不能因为空就当没有这个键
+    expect(comment?.value).toBe("");
+  });
+
+  it("没有外来键 / 没有 front matter 时返回空数组（不抛错）", () => {
+    expect(readForeignKeys("# 正文")).toEqual([]);
+    expect(readForeignKeys("---\ntitle: 只有标题\ntags: [a]\n---\n\n正文")).toEqual([]);
+  });
+
+  it("单行键原位改写：形状不变，其它键与 menote 块一字不动", () => {
+    const next = writeForeignKey(OB, "status", { value: "read", block: false });
+
+    expect(next).toContain("status: read");
+    // 原位：url 仍在 author 之前
+    expect(next.indexOf("url:")).toBeLessThan(next.indexOf("author:"));
+    // 别人的值与块序列一字不改
+    expect(next).toContain('author:\n  - "Unknown"');
+    expect(next).toContain("captured: 2026-03-25");
+    expect(next).toContain("正文第一段。");
+  });
+
+  it("块序列改写后仍是块序列（这是「按原格式」最容易被做坏的一条）", () => {
+    const next = writeForeignKey(OB, "author", { value: '- "Alice"\n- "Bob"', block: true });
+
+    expect(next).toContain('author:\n  - "Alice"\n  - "Bob"');
+    // 写完仍是块（值行以缩进的 - 开头，不是 author: - "Alice"）
+    expect(next).not.toContain('author: - "Alice"');
+    expect(readForeignKeys(next).find((k) => k.key === "author")?.block).toBe(true);
+  });
+
+  it("引号与空格原样保留——不解析、不重新转义、不自动加引号", () => {
+    const next = writeForeignKey(OB, "url", { value: "'https://a.b/c?x=1'", block: false });
+    expect(next).toContain("url: 'https://a.b/c?x=1'");
+  });
+
+  it("键不存在时追加到外来段末尾，位置仍在 menote 块之前", () => {
+    // OB 那篇没有 menote 块，所以拿一篇有块的来验位置
+    const withBlock = '---\ntitle: T\nurl: u\nmenote:\n  type: note\n---\n\n正文';
+    const next = writeForeignKey(withBlock, "rating", { value: "5", block: false });
+
+    expect(next).toContain("rating: 5");
+    expect(next.indexOf("rating:")).toBeLessThan(next.indexOf("menote:"));
+    expect(parseMenoteMeta(next).meta.type).toBe("note");
+  });
+
+  it("外来文件用 4 空格缩进时，读写往返不改缩进", () => {
+    const wide = '---\nauthor:\n    - "Alice"\n---\n\n正文';
+    const key = readForeignKeys(wide).find((k) => k.key === "author");
+    expect(key?.block).toBe(true);
+    // 值带着原缩进，写回时原样落回——不能补成 2 格
+    expect(writeForeignKey(wide, "author", { value: key?.value ?? "", block: true })).toContain(
+      'author:\n    - "Alice"',
+    );
+  });
+
+  it("删一个键：只删它自己和缩进子行，其余一字不动", () => {
+    const next = removeForeignKey(OB, "author");
+
+    expect(next).not.toContain("author");
+    expect(next).not.toContain('- "Unknown"');
+    expect(next).toContain("url:");
+    expect(next).toContain("captured: 2026-03-25");
+    expect(next).toContain("正文第一段。");
+  });
+
+  it("删 MeNote 自己的键要拒绝（menote 删了等于毁表格结构）", () => {
+    for (const key of ["title", "tags", "menote"]) {
+      expect(() => removeForeignKey(OB, key)).toThrow(/是 MeNote 自己的键/);
+    }
+  });
+
+  it("键名非法要拒绝，并说清为什么（不是默默不写）", () => {
+    for (const key of ["my key", "a:b", "", "带空格 的键"]) {
+      expect(() => writeForeignKey(OB, key, { value: "x", block: false })).toThrow(/字母、数字/);
+    }
+  });
+
+  it("撞上 MeNote 自己的键要拒绝，指向上面已有的行", () => {
+    expect(() => writeForeignKey(OB, "title", { value: "x", block: false })).toThrow(
+      /MeNote 自己的键/,
+    );
+  });
+
+  it("单行值里含「: 」或「 #」要拒绝（写出去就是非法 YAML）", () => {
+    expect(() => writeForeignKey(OB, "url", { value: "a: b", block: false })).toThrow(/引号/);
+    expect(() => writeForeignKey(OB, "url", { value: "a # b", block: false })).toThrow(/引号/);
+    // 块序列里缩进了，冒号不截断 —— 放行
+    expect(() => writeForeignKey(OB, "author", { value: "- a: b", block: true })).not.toThrow();
+    // 网址不带冒号加空格，安全
+    expect(() => writeForeignKey(OB, "url", { value: "https://a.b/c", block: false })).not.toThrow();
+  });
+
+  it("frontmatterText 取出整段原文（含围栏与收尾换行），没有则为 null", () => {
+    const text = frontmatterText(OB);
+    expect(text?.startsWith("---\n")).toBe(true);
+    expect(text?.endsWith("---\n")).toBe(true);
+    expect(OB.startsWith(text ?? "x")).toBe(true);
+    expect(frontmatterText("# 正文")).toBeNull();
+  });
+
+  it("外来键的往返：读 → 改 → 读，形状与位置都稳", () => {
+    const edited = writeForeignKey(OB, "status", { value: "read", block: false });
+    const keys = readForeignKeys(edited);
+    expect(keys.find((k) => k.key === "status")?.value).toBe("read");
+    expect(keys.find((k) => k.key === "author")?.value).toBe('  - "Unknown"');
+    expect(parseMenoteMeta(edited).body.trim()).toBe("正文第一段。");
   });
 });

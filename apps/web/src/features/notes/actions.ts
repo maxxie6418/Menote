@@ -56,3 +56,51 @@ export async function writeItemTitle(itemId: string, title: string): Promise<boo
   await enqueueMetaPatch(itemId, item.meta_rev, now);
   return true;
 }
+
+/**
+ * 只更新**派生列**并入队 meta 补丁——**不碰草稿**（2026-10-04）。
+ *
+ * 属性卡片改的是 md，而**md 那一路走编辑器**（设计稿 §6）：卡片算出新的 front matter，
+ * 交给 `EditorHandle.replaceFrontmatter` 推进编辑器，编辑器既有的自动保存负责落草稿与入队 body。
+ * 那样草稿永远只有一个写者，标签不会被「下一次自动保存」用旧正文覆盖掉。
+ *
+ * 所以这里只管**列**：列是派生的第二份拷贝，与正文通道各写各的字段，本来就是两回事。
+ *
+ * 标签这一列尤其要跟上——它进 `items.tags`（列表、标签视图、搜索都读它）。
+ */
+export async function patchItemTags(itemId: string, tags: readonly string[]): Promise<boolean> {
+  const item = await getLocalItem(itemId);
+  if (!item || item.type === "memo") return false;
+  const next = [...tags];
+  if (JSON.stringify(item.tags) === JSON.stringify(next)) return false;
+
+  const now = Date.now();
+  await db.items.update(itemId, { tags: next, updated_at: now });
+  await enqueueMetaPatch(itemId, item.meta_rev, now);
+  return true;
+}
+
+/**
+ * 只更新**清单字段的派生列**并入队 meta 补丁——**不碰草稿**（理由同 `patchItemTags`）。
+ *
+ * 与 `features/tasks/actions.ts` 的 `writeTaskFields` 分工：那个自己管 md（待办视图里
+ * 没有编辑器句柄，正文那一路只能它自己走）；这个只管列，md 交给编辑器（属性卡片在正文区，
+ * 那边有句柄）。**两者不要混用**——都写 md 会互相覆盖。
+ */
+export async function patchItemTaskFields(
+  itemId: string,
+  next: { status: string | null; due: string | null; priority: string | null } | null,
+): Promise<boolean> {
+  const item = await getLocalItem(itemId);
+  if (!item || item.type === "memo") return false;
+  const now = Date.now();
+  await db.items.update(itemId, {
+    is_task: next === null ? 0 : 1,
+    task_status: next?.status ?? null,
+    task_due: next?.due ?? null,
+    task_priority: next?.priority ?? null,
+    updated_at: now,
+  });
+  await enqueueMetaPatch(itemId, item.meta_rev, now);
+  return true;
+}

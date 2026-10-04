@@ -16,6 +16,8 @@ import { initialEditorMode, writeLastEditorMode } from "../editor-mode";
 import type { NoteEditorSnapshot } from "../model";
 import { DocStatusBar } from "./DocStatusBar";
 import { buildMoreMenuItems } from "./moreMenuItems";
+import { ItemProps, shouldShowItemProps } from "./ItemProps";
+import { useItemProps } from "../useItemProps";
 import { TitleInput } from "./TitleInput";
 import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
 import { useTableDoc } from "../../tables/useTableDoc";
@@ -163,6 +165,15 @@ export interface NoteWorkspaceProps {
   attachmentsMeta?: Record<string, { size: number; hasThumb: boolean }>;
   /** 编辑器句柄（附件占位替换要用它改正文） */
   onEditorReady?: (handle: EditorHandle) => void;
+  /**
+   * 编辑器句柄（**由宿主传下来**，不是自己再存一份）。
+   *
+   * 属性卡片改完 md 要靠它把改动推进编辑器（设计稿 §6）——宿主已经为移除附件引用存了
+   * 一份（`NotesPane` 的 `editorHandle`），这里再存第二份会出现两份不同步的句柄。
+   */
+  editorHandle?: EditorHandle | null;
+  /** 属性改动失败时的提示出口（校验没过、正文已变等） */
+  onPropsError?: (message: string) => void;
 }
 
 export function NoteWorkspace({
@@ -192,6 +203,8 @@ export function NoteWorkspace({
   onFiles,
   attachmentsMeta,
   onEditorReady,
+  editorHandle = null,
+  onPropsError,
 }: NoteWorkspaceProps) {
   /** 用户在设置里**开着**的档（`editor_modes`）；这里同时收口"产品允许哪几档" */
   const available = useMemo(() => normalizeEditorModes(availableModes), [availableModes]);
@@ -233,6 +246,24 @@ export function NoteWorkspace({
   // 打开条目时的初始正文；之后由 handleInput 持续跟上编辑器的最新内容
   const [previewSource, setPreviewSource] = useState(initialBody);
 
+  /** 加密且本次未解密：正文区换占位，编辑器不挂载 */
+  const bodyLocked = encryption?.encrypted === true && !encryption.unlocked;
+
+  /*
+    属性卡片（2026-10-04）：编排交给 hook，这里只把它给的回调递给组件。
+    锁定态与 Memo 不给卡片——锁着的时候正文是密文，解析出来的东西没有意义；
+    而 Memo 的 `items.title` 必须为 null，本来也没有独立属性可改。
+
+    **必须在下面那个早返回之前调**（Hook 不能条件调用）。它只依赖 `item?.id`，
+    没有条目时传 `null` 就变成只读，不会出问题。
+  */
+  const propsApi = useItemProps({
+    itemId: item?.id ?? null,
+    body: previewSource,
+    handle: bodyLocked ? null : editorHandle,
+    onError: onPropsError,
+  });
+
   if (!item) {
     return (
       <div className="docpane">
@@ -241,8 +272,8 @@ export function NoteWorkspace({
     );
   }
 
-  /** 加密且本次未解密：正文区换占位，编辑器不挂载 */
-  const bodyLocked = encryption?.encrypted === true && !encryption.unlocked;
+  const showProps =
+    item.type !== "memo" && shouldShowItemProps(previewSource);
 
   function handleInput(text: string): void {
     setPreviewSource(text);
@@ -409,6 +440,19 @@ export function NoteWorkspace({
       </div>
 
       <div className="docpane__body">
+        {showProps ? (
+          <ItemProps
+            body={previewSource}
+            editable={propsApi.editable}
+            readOnlyReason={propsApi.readOnlyReason}
+            onTagsChange={propsApi.onTagsChange}
+            onTaskChange={propsApi.onTaskChange}
+            onForeignChange={propsApi.onForeignChange}
+            onForeignRemove={propsApi.onForeignRemove}
+            onForeignAdd={propsApi.onForeignAdd}
+            onError={onPropsError}
+          />
+        ) : null}
         {bodyLocked && encryption ? (
           <LockedDocPanel onUnlock={encryption.onUnlock} />
         ) : isTable && table.state.kind === "table" ? (

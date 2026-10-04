@@ -287,6 +287,185 @@ export function parseMenoteMeta(markdown: string): ParsedDocument {
   return { meta, body: split.body, raw: split.raw };
 }
 
+/** 一个外来顶层键（外部 Markdown 工具写进来的那些）的原样视图 */
+export interface ForeignKey {
+  key: string;
+  /**
+   * 值的**原文**（不含 `key:` 那一行）。
+   *
+   * **不解析成结构**——解析了再拼回去就得引 YAML 库，而「拼错了就丢字段」正是本模块
+   * 一直避免的事（文件头「为什么自己写解析而不引 YAML 库」）。这里只把原文带着走。
+   */
+  value: string;
+  /** 该键带缩进子行（块形状，如 `author:` 下面跟 `- "Unknown"`） */
+  block: boolean;
+}
+
+/** 键名只能用字母、数字、下划线、连字符——含 `:` 或空格会让整块 YAML 坏掉 */
+const FOREIGN_KEY_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/** 不许通过外来键入口改的键：`title` / `tags` 是 MeNote 自己的（各有专门的行），`menote` 删了等于毁表格 */
+const RESERVED_KEYS: ReadonlySet<string> = new Set([...TOP_LEVEL_KEYS, MENOTE_KEY]);
+
+function foreignKeyError(reason: string): Error {
+  return new Error(reason);
+}
+
+/** 外来键的取值校验。只挡**真的会写出坏 YAML** 的两种，单行值里的 `: ` 与 ` #`（YAML 纯量里会截断） */
+function assertForeignValue(value: string, block: boolean): void {
+  if (block) return; // 缩进子行里的冒号不截断
+  if (value.includes(": ") || value.includes(" #")) {
+    throw foreignKeyError("值里有「: 」或「 #」，会截断成别的内容；想保留就在值里自己加引号。");
+  }
+}
+
+function assertForeignKey(key: string): void {
+  if (!FOREIGN_KEY_PATTERN.test(key)) {
+    throw foreignKeyError("键名只能用字母、数字、下划线、连字符——含冒号或空格的键写进去会让整块 YAML 坏掉。");
+  }
+  if (RESERVED_KEYS.has(key)) {
+    throw foreignKeyError(`「${key}」是 MeNote 自己的键，上面已经有它的位置了。`);
+  }
+}
+
+/**
+ * 列出 front matter 里**外来**的顶层键（`title` / `tags` / `menote` 不在内）。
+ *
+ * 给「属性卡片」用：它要把这些键列出来给人看、给人改（设计稿 §4）。
+ * 没有 front matter、或只有 MeNote 自己的键时返回空数组——不抛错。
+ */
+export function readForeignKeys(markdown: string): ForeignKey[] {
+  const split = splitFences(markdown);
+  if (!split) return [];
+
+  const blockLines = split.raw.split("\n");
+  const menoteIndex = blockLines.findIndex((line) => /^menote\s*:/.test(line));
+  const outerLines = menoteIndex === -1 ? blockLines : blockLines.slice(0, menoteIndex);
+  const { segments } = splitSegments(outerLines);
+
+  const out: ForeignKey[] = [];
+  for (const segment of segments) {
+    if (RESERVED_KEYS.has(segment.key)) continue;
+    const head = segment.lines[0] ?? "";
+    const value = head.slice(head.indexOf(":") + 1).trim();
+    out.push({
+      key: segment.key,
+      // 块的子行**连缩进一起原样给出**（不含 `key:` 那一行）：外来文件可能用 4 空格缩进，
+      // 剥掉再补 2 格就改了格式，而「按原格式」是这块的全部承诺
+      value: segment.lines.length > 1 ? segment.lines.slice(1).join("\n") : value,
+      block: segment.lines.length > 1,
+    });
+  }
+  return out;
+}
+
+/** 把外来键那一段渲染成写入用的行；`block` 决定是 `key: v` 还是 `key:` + 缩进子行 */
+function renderForeignSegment(key: string, value: string, block: boolean): string[] {
+  if (!block) return [`${key}: ${value}`];
+  /*
+    **已经带缩进的行原样写回**——外来文件可能是 4 空格缩进，补成 2 格就改了格式，
+    而「按原格式」是这块的全部承诺。调用方给的是未缩进的值时，这里补标准的 2 格。
+    **只能去行尾空白**：先 `trim()` 再判断有没有缩进的话，缩进已经被削掉了，判断永远为假。
+  */
+  const inner = value
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""))
+    .filter((line) => line.trim() !== "");
+  return [`${key}:`, ...inner.map((line) => (/^\s/.test(line) ? line : `  ${line}`))];
+}
+
+/** 切出「外来段 + menote 段」两块，交给 `compose` 重组 */
+function splitBlocks(markdown: string): { foreign: string[]; inner: string[] } | null {
+  const split = splitFences(markdown);
+  if (!split) return null;
+  const blockLines = split.raw.split("\n");
+  const menoteIndex = blockLines.findIndex((line) => /^menote\s*:/.test(line));
+  return {
+    foreign: menoteIndex === -1 ? blockLines : blockLines.slice(0, menoteIndex),
+    inner: menoteIndex === -1 ? [] : blockLines.slice(menoteIndex + 1),
+  };
+}
+
+/** 用重组后的两块重新拼出整篇（外来键在前、`menote:` 在后，与 `updateMenoteKeys` 同一形状） */
+function compose(markdown: string, foreign: readonly string[], inner: readonly string[]): string {
+  const body = splitFences(markdown)?.body ?? markdown;
+  const head = [...foreign];
+  if (inner.length > 0) head.push(`${MENOTE_KEY}:`, ...inner);
+  if (head.length === 0) return body;
+  return `${FRONTMATTER_FENCE}\n${head.join("\n")}\n${FRONTMATTER_FENCE}\n\n${body}`;
+}
+
+/**
+ * 写一个外来键的值——**原位替换，形状保留**（设计稿 §4）。
+ *
+ * 值按用户写的原文写入，**不解析、不重新转义、不自动加引号**。所以：
+ * - 原来是块序列（带缩进子行）→ 传 `block: true`，仍是块序列；
+ * - 原来是一行 → 传 `block: false`，仍是一行。
+ *
+ * 键不存在则追加到外来段末尾。没有 front matter 的文档**不在这里建**（那属于
+ * `updateMenoteKeys` 的活）——本函数只改已有 front matter 里的外来键。
+ */
+export function writeForeignKey(
+  markdown: string,
+  key: string,
+  input: { value: string; block: boolean },
+): string {
+  assertForeignKey(key);
+  assertForeignValue(input.value, input.block);
+
+  const blocks = splitBlocks(markdown);
+  if (!blocks) throw foreignKeyError("这一篇还没有属性（front matter），先在正文里用标题或标签建一个。");
+
+  const { segments } = splitSegments(blocks.foreign);
+  const out: string[] = [];
+  let replaced = false;
+
+  for (const segment of segments) {
+    if (segment.key === key && !replaced) {
+      out.push(...renderForeignSegment(key, input.value, input.block));
+      replaced = true;
+      continue;
+    }
+    out.push(...segment.lines);
+  }
+  if (!replaced) out.push(...renderForeignSegment(key, input.value, input.block));
+
+  return compose(markdown, out, blocks.inner);
+}
+
+/** 删掉一个外来键（连同它的缩进子行）。其它外来键、`menote:` 块与正文一字不动 */
+export function removeForeignKey(markdown: string, key: string): string {
+  if (RESERVED_KEYS.has(key)) {
+    throw foreignKeyError(`「${key}」是 MeNote 自己的键，不能从这里删。`);
+  }
+  const blocks = splitBlocks(markdown);
+  if (!blocks) return markdown;
+
+  const { segments } = splitSegments(blocks.foreign);
+  const out: string[] = [];
+  for (const segment of segments) {
+    if (segment.key === key) continue;
+    out.push(...segment.lines);
+  }
+  return compose(markdown, out, blocks.inner);
+}
+
+/**
+ * 从 md 里取出 front matter 整段原文（**含两侧 `---` 与收尾那个换行**）；没有则返回 null。
+ *
+ * 卡片与编辑器之间靠它对齐（设计稿 §6）：先取出这一段、再算出新的那一段，然后交给
+ * `EditorHandle.replaceFrontmatter` 原位替换。所以它必须与 `splitFences` 的判据一致，
+ * 否则会算出长度不对的区间。
+ */
+export function frontmatterText(markdown: string): string | null {
+  const split = splitFences(markdown);
+  if (!split) return null;
+  // `---\n` + raw + `\n` + `---`，再带上收尾换行（文档恰好结束在围栏上时没有）
+  const fenceEnd = 4 + split.raw.length + 1 + FRONTMATTER_FENCE.length;
+  const end = markdown[fenceEnd] === "\n" ? fenceEnd + 1 : fenceEnd;
+  return markdown.slice(0, end);
+}
+
 /** 只取正文（去掉 front matter） */
 export function stripFrontmatter(markdown: string): string {
   return parseMenoteMeta(markdown).body;

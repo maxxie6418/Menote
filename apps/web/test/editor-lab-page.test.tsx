@@ -56,6 +56,11 @@ vi.mock("../src/app/editor/Editor", async (importOriginal) => {
         read: () => valueRef.current,
         insert: (text) => apply(valueRef.current + text),
         replace: (marker, text) => apply(valueRef.current.replace(marker, text)),
+        replaceFrontmatter: (expected, next) => {
+          if (!valueRef.current.startsWith(expected)) return false;
+          apply(next + valueRef.current.slice(expected.length));
+          return true;
+        },
         applyFormat: (command) => {
           const caret = textareaRef.current?.selectionStart ?? valueRef.current.length;
           const result = actual.applyFormatAt(valueRef.current, { from: caret, to: caret }, command);

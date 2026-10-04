@@ -41,6 +41,16 @@ export interface EditorHandle {
    * 命令菜单选中之后由宿主调用——编辑器不认识菜单。
    */
   applyFormat(command: FormatCommandId): void;
+  /**
+   * 把**文档开头**的 front matter 整段换成 `next`（含两侧 `---`）。
+   *
+   * **只在文档确实以 `expected` 开头时才替换**；对不上就**什么都不做并返回 `false`**。
+   *
+   * 为什么不用 `replace`：那个方法的兜底是「标记不在就在光标处插入」——那是为附件占位
+   * 设计的（占位被用户删了也得把结果放进去）。属性卡片走它的话，一次对不上就会把整段
+   * front matter 插进正文中间。所以这里宁可不写，也不给调用方一个「写坏了但报告成功」的结果。
+   */
+  replaceFrontmatter(expected: string, next: string): boolean;
 }
 
 /**
@@ -404,6 +414,13 @@ function makeHandle(view: EditorView): EditorHandle {
         return;
       }
       view.dispatch({ changes: { from: index, to: index + marker.length, insert: text } });
+    },
+    replaceFrontmatter: (expected, next) => {
+      // **只看文档开头**：front matter 一定在开头，用 startsWith 而不是 indexOf，
+      // 否则正文里恰好出现过同样一段文字时会替换错位置
+      if (!view.state.doc.toString().startsWith(expected)) return false;
+      view.dispatch({ changes: { from: 0, to: expected.length, insert: next } });
+      return true;
     },
     applyFormat: (command) => {
       const text = view.state.doc.toString();
