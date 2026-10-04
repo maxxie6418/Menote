@@ -46,8 +46,12 @@ export function useItemProps(input: UseItemPropsInput) {
   const editable = itemId !== null && handle !== null;
 
   /**
-   * 把新 front matter 推进编辑器。**对不上就报出来，不装作成功**——
-   * 这就是句柄那个方法不退回插入的原因（见 `EditorHandle.replaceFrontmatter`）。
+   * 把新 front matter 推进编辑器。
+   *
+   * **只有「编辑器没挂上」才算失败**（那是调用方该拦的：预览档只读）。区间由句柄从
+   * 视图自己的文档算出，所以不存在「比对不上」这一类失败——早先在这里拿 `expected` 做
+   * `startsWith` 比对，结果用户什么都没干也一直弹「正文已经变了」（见
+   * `EditorHandle.replaceFrontmatter` 的说明）。
    */
   const applyMd = useCallback(
     (nextBody: string): boolean => {
@@ -56,14 +60,14 @@ export function useItemProps(input: UseItemPropsInput) {
         onError?.("算不出新的属性段，请重新打开这一篇再试。");
         return false;
       }
-      const expected = frontmatterText(body) ?? "";
-      if (!handle?.replaceFrontmatter(expected, next)) {
-        onError?.("正文已经变了，没写进去；重新打开这一篇再试。");
+      if (!handle) {
+        onError?.("切到「仅编辑」才能改属性");
         return false;
       }
+      handle.replaceFrontmatter(next);
       return true;
     },
-    [body, handle, onError],
+    [handle, onError],
   );
 
   /*

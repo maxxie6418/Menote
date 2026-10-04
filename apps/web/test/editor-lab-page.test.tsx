@@ -56,9 +56,12 @@ vi.mock("../src/app/editor/Editor", async (importOriginal) => {
         read: () => valueRef.current,
         insert: (text) => apply(valueRef.current + text),
         replace: (marker, text) => apply(valueRef.current.replace(marker, text)),
-        replaceFrontmatter: (expected, next) => {
-          if (!valueRef.current.startsWith(expected)) return false;
-          apply(next + valueRef.current.slice(expected.length));
+        replaceFrontmatter: (next) => {
+          // 区间从**替身自己的文本**算，不收 expected（与真 Editor 同口径）
+          const at = valueRef.current.indexOf("---", 3);
+          const end = at < 0 ? -1 : valueRef.current.indexOf("\n", at + 1);
+          if (end < 0) apply(next + valueRef.current);
+          else apply(next + valueRef.current.slice(end + 1));
           return true;
         },
         applyFormat: (command) => {

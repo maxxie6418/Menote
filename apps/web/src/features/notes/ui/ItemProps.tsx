@@ -185,6 +185,7 @@ export function ItemProps({
 
   return (
     <section className="itemprops" aria-label="属性">
+      <div className="itemprops__inner">
       {collapsed ? (
         // 折起来：只留一行摘要 + 展开按钮，属性本体不渲染（省地方，也省一次解析之外的绘制）
         <button
@@ -392,6 +393,7 @@ export function ItemProps({
       ) : null}
         </>
       )}
+      </div>
     </section>
   );
 }

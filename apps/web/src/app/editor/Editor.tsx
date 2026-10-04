@@ -25,7 +25,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import { type FormatCommandId } from "./format-commands";
-import { frontmatterHide } from "./frontmatter-hide";
+import { frontmatterHide, frontmatterRange } from "./frontmatter-hide";
 import { livePreview } from "./live-preview";
 import { editorBaseTheme } from "./theme";
 import { applyFormatAt, triggerAt } from "./trigger";
@@ -42,15 +42,20 @@ export interface EditorHandle {
    */
   applyFormat(command: FormatCommandId): void;
   /**
-   * 把**文档开头**的 front matter 整段换成 `next`（含两侧 `---`）。
+   * 把文档开头的 front matter 整段换成 `next`（含两侧 `---`）。
    *
-   * **只在文档确实以 `expected` 开头时才替换**；对不上就**什么都不做并返回 `false`**。
+   * **区间由视图自己的文档算出**，不由调用方传「我以为的开头是什么」。
    *
-   * 为什么不用 `replace`：那个方法的兜底是「标记不在就在光标处插入」——那是为附件占位
-   * 设计的（占位被用户删了也得把结果放进去）。属性卡片走它的话，一次对不上就会把整段
-   * front matter 插进正文中间。所以这里宁可不写，也不给调用方一个「写坏了但报告成功」的结果。
+   * 早先这里收一个 `expected` 并做 `doc.startsWith(expected)` 比对，理由是想拦住
+   * 「调用方看到的是旧正文」。实测那条路是**误报源**：两边只要有一瞬不一致（外部重新
+   * 载入、切条目时句柄还没换、编辑器尚未挂上），用户什么都没干也会被弹一句
+   * 「正文已经变了，没写进去」——而且因为视图不是从这条路径变的，重开之前它会一直错下去。
+   * 区间自己算就没有这个类别的失败：要么写进去，要么这个视图根本没挂上（`handle` 为 null，
+   * 那是调用方该拦的）。
+   *
+   * 文档本来就没有 front matter 时在开头插入（给第一篇还没有属性的笔记加第一个标签）。
    */
-  replaceFrontmatter(expected: string, next: string): boolean;
+  replaceFrontmatter(next: string): boolean;
 }
 
 /**
@@ -415,11 +420,15 @@ function makeHandle(view: EditorView): EditorHandle {
       }
       view.dispatch({ changes: { from: index, to: index + marker.length, insert: text } });
     },
-    replaceFrontmatter: (expected, next) => {
-      // **只看文档开头**：front matter 一定在开头，用 startsWith 而不是 indexOf，
-      // 否则正文里恰好出现过同样一段文字时会替换错位置
-      if (!view.state.doc.toString().startsWith(expected)) return false;
-      view.dispatch({ changes: { from: 0, to: expected.length, insert: next } });
+    replaceFrontmatter: (next) => {
+      const doc = view.state.doc.toString();
+      const range = frontmatterRange(doc);
+      if (range === null) {
+        // 本来就没有 front matter → 在文档开头插入（加第一个标签 / 第一个属性）
+        view.dispatch({ changes: { from: 0, insert: next } });
+        return true;
+      }
+      view.dispatch({ changes: { from: range.from, to: range.to, insert: next } });
       return true;
     },
     applyFormat: (command) => {

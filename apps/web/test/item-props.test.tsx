@@ -18,6 +18,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deriveTags, updateMenoteKeys } from "@menote/mdcore";
 import { createLocalItem, db, getLocalItem } from "../src/data/db";
+import { frontmatterRange } from "../src/app/editor/frontmatter-hide";
 import { ItemProps, readItemProps, shouldShowItemProps } from "../src/features/notes/ui/ItemProps";
 import { useItemProps } from "../src/features/notes/useItemProps";
 import type { EditorHandle } from "../src/app/editor/Editor";
@@ -45,7 +46,7 @@ beforeEach(async () => {
 
 afterEach(cleanup);
 
-/** 一个照着真 Editor 口径写的句柄替身：只认文档开头，对不上就 false，绝不插入 */
+/** 一个照着真 Editor 口径写的句柄替身：区间从**自己的文档**算，不收 expected */
 function makeHandle(initial: string) {
   const state = { text: initial, changes: 0 };
   const handle: EditorHandle = {
@@ -59,9 +60,13 @@ function makeHandle(initial: string) {
       state.text = state.text.slice(0, at) + text + state.text.slice(at + marker.length);
     },
     applyFormat: () => undefined,
-    replaceFrontmatter: (expected, next) => {
-      if (!state.text.startsWith(expected)) return false;
-      state.text = next + state.text.slice(expected.length);
+    replaceFrontmatter: (next) => {
+      const range = frontmatterRange(state.text);
+      if (range === null) {
+        state.text = next + state.text;
+      } else {
+        state.text = state.text.slice(0, range.from) + next + state.text.slice(range.to);
+      }
       state.changes += 1;
       return true;
     },
@@ -313,20 +318,32 @@ describe("useItemProps：改动必须经编辑器，不能自己存草稿", () =
     expect(state.text).toContain("url:");
   });
 
-  it("对不上时报错并说明，不装作成功（绝不退化成插入）", () => {
-    const { handle, state } = makeHandle("正文已经变了，没有 front matter");
+  it("编辑器还没挂上（预览档）→ 明确说切到「仅编辑」，不报「正文已经变了」", () => {
     const onError = vi.fn();
     let api: ReturnType<typeof useItemProps> | null = null;
-    render(
-      <Harness body={OB} handle={handle} onError={onError} capture={(value) => (api = value)} />,
-    );
+    render(<Harness body={OB} handle={null} onError={onError} capture={(value) => (api = value)} />);
 
     act(() => api!.onTagsChange(["x"]));
 
-    expect(state.changes).toBe(0);
-    // **最重要的一条**：没有把 front matter 插到正文中间
-    expect(state.text).toBe("正文已经变了，没有 front matter");
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining("正文已经变了"));
+    // 早先这里是「正文已经变了，没写进去；重新打开这一篇再试」——误报，用户什么都没干也一直弹
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("仅编辑"));
+    expect(onError).not.toHaveBeenCalledWith(expect.stringContaining("正文已经变了"));
+  });
+
+  it("视图里的正文与卡片看到的不一致时也写得进去（区间由视图自己算）", () => {
+    // 这正是之前一直误报的场景：两边一瞬不一致就永久失败
+    const { handle, state } = makeHandle(OB);
+    state.text = `---\ntitle: 视图里已经是新的了\ntags: [别的]\n---\n\n正文\n`;
+    let api: ReturnType<typeof useItemProps> | null = null;
+    const onError = vi.fn();
+    render(<Harness body={OB} handle={handle} onError={onError} capture={(value) => (api = value)} />);
+
+    act(() => api!.onTagsChange(["claude", "tooling"]));
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(state.text).toContain("tags: [claude, tooling]");
+    // 写进的是**视图里那份**的 front matter，不是拿旧文本去覆盖
+    expect(state.text).toContain("正文");
   });
 
   it("句柄不在（预览档）→ 只读，不改任何东西", () => {

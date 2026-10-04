@@ -130,10 +130,11 @@ function fakeHandle(doc: { text: string }, onChange: (text: string) => void): Ed
       onChange(doc.text);
     },
     applyFormat: noop,
-    // 与真 Editor 同口径：对不上就什么都不做并返回 false，绝不退化成插入
-    replaceFrontmatter: (expected: string, next: string): boolean => {
-      if (!doc.text.startsWith(expected)) return false;
-      doc.text = next + doc.text.slice(expected.length);
+    // 与真 Editor 同口径：区间从**替身自己的文本**算，不收 expected
+    replaceFrontmatter: (next: string): boolean => {
+      const at = doc.text.indexOf("---", 3);
+      const end = at < 0 ? -1 : doc.text.indexOf("\n", at + 1);
+      doc.text = end < 0 ? next + doc.text : next + doc.text.slice(end + 1);
       onChange(doc.text);
       return true;
     },
