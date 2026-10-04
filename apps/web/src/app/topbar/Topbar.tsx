@@ -37,6 +37,8 @@ export interface TopbarProps {
   onLock: () => void;
   /** 菜单里的「回收站」项（M4 已交付）：由 `App` 接路由 */
   onOpenTrash: () => void;
+  /** 菜单里的「立即备份」项（2026-10-04 接线）：由 `App` 接路由到「备份与导出」页 */
+  onOpenBackup: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
   /** 头像外圈使用的隐私状态；未启用时不显示状态圈 */
@@ -60,6 +62,7 @@ export function Topbar({
   onFocusSearch,
   onLock,
   onOpenTrash,
+  onOpenBackup,
   onOpenSettings,
   onLogout,
   privacy,
@@ -99,6 +102,7 @@ export function Topbar({
           onFocusSearch={onFocusSearch}
           onLock={onLock}
           onOpenTrash={onOpenTrash}
+          onOpenBackup={onOpenBackup}
           onOpenSettings={onOpenSettings}
           onLogout={onLogout}
           privacyStatus={privacyStatus}

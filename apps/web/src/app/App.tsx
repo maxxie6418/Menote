@@ -439,9 +439,11 @@ export default function App() {
               onFocusSearch: () => {
                 document.getElementById("search-input")?.focus();
               },
-              // 快捷菜单两个"死件"接线（M3 的立即锁定、M4 的回收站都早已交付）
+              // 快捷菜单三项接线：立即锁定（M3）、回收站（M4）、立即备份（2026-10-04，做成入口）
               onLock: privacy.lockAll,
               onOpenTrash: () => navigate({ name: "trash" }),
+              // 「立即备份」是**入口不是动作**：推哪个目标由用户在那一页自己选（目标可以有多个）
+              onOpenBackup: () => navigate({ name: "settings", page: "backup" }),
               onOpenSettings: () => navigate({ name: "settings", page: "general" }),
               onLogout: () => setConfirmLogout(true),
               privacy: null,

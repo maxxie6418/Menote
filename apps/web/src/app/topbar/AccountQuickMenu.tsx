@@ -8,11 +8,12 @@
  * 1. 显示哪些功能项由 设置 › 通用 › 快捷菜单 决定（`quick_menu` 数组），**即时生效**——
  *    菜单与设置页读的是同一份数据；
  * 2. 菜单里的**主题切换是一排三档**，且切完**不收起菜单**（便于连续比色）；
- * 3. 未实现的功能照常显示但**禁用并说明原因**（现在只剩「立即备份」，等 M5）。
+ * 3. **5 个候选至此全部可用**（2026-10-04）。最后一个是「立即备份」——它做成了**入口**
+ *    （去「备份与导出」页，推哪个目标由用户自己选），所以"未实现就禁用"这条分支已撤。
  *
  * 【2026-09-28 修复】此前「立即锁定」与「回收站」**硬编码禁用**并写着"将在 M3/M4 提供"——
  * 而 M3、M4 早已交付：菜单里点了没反应、设置页又写着"将在 M4 生效"，同一件事两处口径都是错的。
- * 现在两项都接线（锁定走隐私锁组装层、回收站走路由），只有真正未交付的「立即备份」保持禁用。
+ * 现在两项都接线（锁定走隐私锁组装层、回收站走路由）。
  */
 import type { QuickMenuFeature, UserSettings } from "@menote/shared";
 import { QUICK_MENU_FEATURES } from "@menote/shared";
@@ -42,6 +43,11 @@ export interface AccountQuickMenuProps {
   onLock: () => void;
   /** 「回收站」项（M4 已交付）：去回收站页 */
   onOpenTrash: () => void;
+  /**
+   * 「立即备份」项（**2026-10-04 接线**）：去「备份与导出」设置页。
+   * 它是**入口不是动作**——推哪个备份目标由用户在那页自己选（目标可以有多个）。
+   */
+  onOpenBackup: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
   privacyStatus?: { lockState: LockState; tier: PrivacyTier; expiresAt: number | null; durationMs: number };
@@ -76,6 +82,8 @@ interface FeatureActions {
   onFocusSearch: () => void;
   onLock: () => void;
   onOpenTrash: () => void;
+  /** 「立即备份」：去「备份与导出」页（**入口**，不是动作——见下） */
+  onOpenBackup: () => void;
 }
 
 export function AccountQuickMenu({
@@ -86,6 +94,7 @@ export function AccountQuickMenu({
   onFocusSearch,
   onLock,
   onOpenTrash,
+  onOpenBackup,
   onOpenSettings,
   onLogout,
   privacyStatus,
@@ -99,7 +108,7 @@ export function AccountQuickMenu({
   const items: MenuItemSpec[] = enabled
     .filter((feature) => feature.id !== "theme")
     .map((feature) =>
-      featureItem(feature.id, feature.pendingStep, { onFocusSearch, onLock, onOpenTrash }),
+      featureItem(feature.id, { onFocusSearch, onLock, onOpenTrash, onOpenBackup }),
     );
 
   // 定底两项：设置与退出登录（不进配置清单）
@@ -147,12 +156,16 @@ export function AccountQuickMenu({
   );
 }
 
-/** 把功能 id 映射成菜单项；**只有真正未交付的**才禁用并说明里程碑 */
-function featureItem(
-  id: QuickMenuFeature,
-  pendingStep: string | null,
-  actions: FeatureActions,
-): MenuItemSpec {
+/**
+ * 把功能 id 映射成菜单项。
+ *
+ * **【2026-10-04】不再接 `pendingStep` 参数**：5 个候选至此全部可用
+ * （立即备份做成了「入口」——去备份页推哪个目标由用户自己选），
+ * 于是"未实现就禁用并说明里程碑"这条分支**一个都不剩**，留着那个参数只会让人
+ * 以为还能配一个未交付的项。清单上的未实现标记仍在 `QUICK_MENU_FEATURES.pendingStep`
+ * 那一列——**将来加回未交付的候选时**，把它接回本函数即可。
+ */
+function featureItem(id: QuickMenuFeature, actions: FeatureActions): MenuItemSpec {
   if (id === "search") {
     return { id, label: "搜索", icon: "search", onSelect: actions.onFocusSearch };
   }
@@ -164,12 +177,8 @@ function featureItem(
     // M4 已交付：去回收站页
     return { id, label: "回收站", icon: "folder", onSelect: actions.onOpenTrash };
   }
-  return {
-    id,
-    label: "立即备份",
-    icon: "cloud-ok",
-    disabled: true,
-    title: `立即备份将在 ${pendingStep ?? "后续里程碑"} 提供`,
-    onSelect: () => undefined,
-  };
+  // 「立即备份」**是入口不是动作**（用户 2026-10-04 决定）：去「备份与导出」页，推哪个目标由用户自己选。
+  // 为什么不直接一键推：备份目标可以**有多个**（WebDAV / S3 各配一个），
+  // "立即备份"推哪个没有答案；真要做成动作得先给契约加"默认目标"概念并动服务端，那是新功能。
+  return { id, label: "立即备份", icon: "cloud-ok", onSelect: actions.onOpenBackup };
 }

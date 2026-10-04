@@ -69,6 +69,7 @@ describe("顶栏块位（DESIGN.md §2.5-1）", () => {
         onFocusSearch={vi.fn()}
         onLock={vi.fn()}
         onOpenTrash={vi.fn()}
+        onOpenBackup={vi.fn()}
         onOpenSettings={vi.fn()}
         onLogout={vi.fn()}
       />,
@@ -113,6 +114,7 @@ describe("顶栏块位（DESIGN.md §2.5-1）", () => {
         onFocusSearch={vi.fn()}
         onLock={vi.fn()}
         onOpenTrash={vi.fn()}
+        onOpenBackup={vi.fn()}
         onOpenSettings={onOpenSettings}
         onLogout={onLogout}
       />,

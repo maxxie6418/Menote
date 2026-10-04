@@ -38,6 +38,8 @@ export interface TopbarWiringInput {
   onOpenTrash: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
+  /** 「立即备份」菜单项（2026-10-04 接线）：去「备份与导出」页 */
+  onOpenBackup: () => void;
   /** 隐私锁弹窗/兼容插槽；头像状态单独传入 */
   privacy?: ReactNode;
   privacyStatus?: { lockState: PrivacyLockState; tier: PrivacyTier; expiresAt: number | null; durationMs: number };
@@ -72,6 +74,7 @@ export function topbarWiring(input: TopbarWiringInput): TopbarProps {
     onFocusSearch: input.onFocusSearch,
     onLock: input.onLock,
     onOpenTrash: input.onOpenTrash,
+    onOpenBackup: input.onOpenBackup,
     onOpenSettings: input.onOpenSettings,
     onLogout: input.onLogout,
     privacy: input.privacy,

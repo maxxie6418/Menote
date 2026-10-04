@@ -99,7 +99,7 @@ export const QUICK_MENU_FEATURES: ReadonlyArray<{
   label: string;
   /** 默认是否开启（M18-03：主题切换与立即锁定默认开，其余默认关，让菜单保持短小） */
   defaultOn: boolean;
-  /** 未实现时的说明（M2 里搜索可用；回收站与立即备份随各自里程碑） */
+  /** 未实现时的说明（`null` = 已可用） */
   pendingStep: string | null;
 }> = [
   { id: "theme", label: "主题切换", defaultOn: true, pendingStep: null },
@@ -107,7 +107,17 @@ export const QUICK_MENU_FEATURES: ReadonlyArray<{
   { id: "search", label: "搜索", defaultOn: false, pendingStep: null },
   // 2026-09-28：回收站（M4）已交付，接线完成 —— 这里曾写着 "M4"，菜单里也一直禁用
   { id: "trash", label: "回收站", defaultOn: false, pendingStep: null },
-  { id: "backup", label: "立即备份", defaultOn: false, pendingStep: "M5" },
+  /*
+    2026-10-04：这一项的 `pendingStep` 曾写着 "M5"——而 M5 早已收口，它属于**过期标记**。
+    但**不能直接改成 `null`**：菜单里这一项从未接线（`AccountQuickMenu` 硬编码 disabled），
+    标成"可用"等于给用户一个会失灵的入口。
+
+    按用户 2026-10-04 决定，**它是「入口」而不是「动作」**：点一下去「备份与导出」页，
+    推哪个目标由用户在那页自己选。理由是备份目标可以**有多个**（WebDAV / S3 各配一个），
+    "立即备份"一键推的话**推哪个**没有答案——真要做成动作得先加"默认目标"概念
+    （要动契约与服务端），那是新功能，不是一个标记的事。
+  */
+  { id: "backup", label: "立即备份", defaultOn: false, pendingStep: null },
 ];
 
 /** 隐私锁解锁档位（三档；「仅本次查看」已于 2026-09-27 作废，见《隐私锁设计》§4.2） */
