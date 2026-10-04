@@ -1116,11 +1116,23 @@ button {
 }
 .markdown-body pre.hscroll {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  /* 与共享类 `.hscroll` 同一套口径（这条选择器比 `.hscroll` 特异性高，
+     所以两轴在这里都要各自写一遍；改动请连 `app/editor/markdown.ts` 一起看，
+     那个类名是渲染器发出来的）。默认值同样取「可见」的一侧。 */
+  scrollbar-color: var(--line-2) transparent;
 }
 .markdown-body pre.hscroll:hover,
 .markdown-body pre.hscroll:focus-within {
   scrollbar-color: var(--line-2) transparent;
+}
+@media (hover: hover) {
+  .markdown-body pre.hscroll {
+    scrollbar-color: transparent transparent;
+  }
+  .markdown-body pre.hscroll:hover,
+  .markdown-body pre.hscroll:focus-within {
+    scrollbar-color: var(--line-2) transparent;
+  }
 }
 
 /* 正文底部状态栏（DESIGN.md §2.7：固定在正文区底部） */
@@ -1277,6 +1289,30 @@ button {
   overflow: auto;
 }
 
+/*
+  全站滚动条基线（2026-10-04）
+  ————————————————————————————————
+  **在这之前，全站只有 6 个容器套过 `.scroll-thin`，其余滚动容器一律走浏览器默认粗条**
+  （Windows 上约 15–17px、灰轨道、深色滑块、两端带箭头）。功能栏导航区
+  `.fnbar__scroll`、列表列 `.listpane__scroll`、正文区 `.docpane__body`、设置页、
+  首页、搜索、回收站……全都没套——它们长得一样，**因为它们全都是同一个"默认"**。
+  功能栏只有 294px 宽（`--fnbar-w`），一根 17px 的默认条吃掉将近 6%。
+
+  所以这里给一条**全站基线**：`scrollbar-width: thin` + `--line-2` 细滑块。
+  用 `:where()` 是为了**零特异性**——组件里任何显式声明都能覆盖它，
+  将来谁要给某个容器单独改，改自己那条即可，不会被这条基线压住。
+  **不逐个给容器加类**：那要动十几个组件，而且下次新增屏又会漏。
+
+  为什么纵向**常显**、横向才悬停显形（见下面 `.hscroll`）：
+  纵向滑块是「下面还有内容」的**常驻信号**——长正文、笔记本树、设置导航都靠它，
+  拿掉就丢了方向感；横向滑块只在你要横滚时才相关，静止时纯噪音。
+  这是按轴的两条规则，不是给某个容器开的特例。
+*/
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
 /* 细滚动条（原型 `.scroll-thin`）：滚动发生的地方都带上它，避免默认粗条压住内容 */
 .scroll-thin {
   scrollbar-width: thin;
@@ -1317,14 +1353,18 @@ button {
      还会因为没有通用规则而让浏览器整个回落到系统默认粗条）。而 `scrollbar-color` 本身
      也不分轴。所以**同一容器里纵条会跟着一起显隐**——表格是唯一两轴容器（`.tablegrid__scroll`），
      它的纵条因此也是「悬停/聚焦才出现」。做不到只治横轴，这是 CSS 的硬限制，不是漏写。
+     按 AGENTS.md「工作原则」里**可有可无的体验项按最简原则处理**那条：这里**不单开例外**，
+     纵条跟着横条一起变是共享规则的**自然结果**，比给表格另写一条规则省事；
+     真用起来觉得纵向提示太弱，再回来调这一处即可。
 
   另：**轴的位置仍然留着**（`scrollbar-width: thin` 不变），滑块只是不画——所以
   横条出现/消失**不会**让内容高度跳一下。这是选 B 而不是 C 的主要理由。
 */
 .hscroll {
   scrollbar-width: thin;
-  /* 静止：不画滑块（轨道透明） */
-  scrollbar-color: transparent transparent;
+  /* 默认**可见**。隐藏是"有精确指针时才做的优化"，所以默认值取安全的一侧：
+     不认 `hover` 特性的老浏览器、以及触屏，都落在这条上，横条照常看得见。 */
+  scrollbar-color: var(--line-2) transparent;
 }
 
 /* 悬停 / 键盘聚焦时显形。`focus-within` 不可省：横条改成悬停显形后，
@@ -1332,6 +1372,28 @@ button {
 .hscroll:hover,
 .hscroll:focus-within {
   scrollbar-color: var(--line-2) transparent;
+}
+
+/*
+  ③ **「藏」只对确定支持 hover 的设备生效**（2026-10-04 补，前一版漏了）。
+     上一版把 `transparent` 无条件写在 `.hscroll` 上——**触屏没有 hover**，
+     于是手机上这些横条会**永久隐形**：手指能拖，但"右边还有内容"一个像素都看不见，
+     违反 `DESIGN.md` §2.4「不以悬停为唯一入口」。那是本条自己引入的缺陷。
+     修法不是"再加一段把它打开"（那仍然依赖浏览器认不认 `hover`），
+     而是**把默认值放在可见的一侧、只在这里覆盖成透明**——
+     于是不认这个特性的老浏览器同样落在安全分支。
+     守卫：`layout-invariants.test.ts` 的「隐藏只对支持 hover 的设备生效」一条。
+*/
+@media (hover: hover) {
+  .hscroll {
+    /* 静止：不画滑块（轨道仍在，位置不变） */
+    scrollbar-color: transparent transparent;
+  }
+
+  .hscroll:hover,
+  .hscroll:focus-within {
+    scrollbar-color: var(--line-2) transparent;
+  }
 }
 
 

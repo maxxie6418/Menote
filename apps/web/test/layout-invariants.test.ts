@@ -495,6 +495,43 @@ describe("横向滚动条（`.hscroll`，2026-10-04）", () => {
     ).toMatch(/\.markdown-body pre\.hscroll\s*\{/);
   });
 
+  it("全站滚动条基线存在：此前只有 6 个容器套过样式，其余全是浏览器默认粗条", () => {
+    /*
+      2026-10-04 用户报「首页侧边栏、笔记目录侧栏、文章侧栏的滚动条样式都是一样的」——
+      查出来它们**确实一样，因为全都是同一个"默认"**：这三条（`.fnbar__scroll` /
+      `.listpane__scroll` / `.docpane__body`）从来没套过任何滚动条样式，走的是
+      Windows 默认那根约 15–17px、灰轨道、两端带箭头的粗条。功能栏只有 294px 宽
+      （`--fnbar-w`），一根 17px 的条吃掉将近 6%。
+
+      所以给一条**全站基线**而不是逐个容器加类（那要动十几个组件、下次新增屏又会漏）。
+      必须用 `:where()`：**零特异性**，组件里任何显式声明都能覆盖它。
+    */
+    expect(app, "缺少全站滚动条基线：未套样式的容器会退回浏览器默认粗条").toMatch(
+      /:where\(\*\)\s*\{[^}]*scrollbar-width:\s*thin[^}]*scrollbar-color:/,
+    );
+  });
+
+  it("「隐藏」只对确定支持 hover 的设备生效（默认值必须取可见的一侧）", () => {
+    /*
+      这条钉的是本轮**自己引入又自己修掉**的一个缺陷：第一版把 `transparent`
+      无条件写在 `.hscroll` 上，而**触屏没有 hover** —— 手机上横条会永久隐形，
+      手指能拖却看不见"右边还有内容"，违反 `DESIGN.md` §2.4「不以悬停为唯一入口」。
+
+      修法不是「再加一段把它打开」（那仍然依赖浏览器认不认 `hover` 特性），
+      而是**默认值可见、只在 `@media (hover: hover)` 里覆盖成透明**——
+      于是不认该特性的老浏览器也落在安全分支。
+    */
+    const hscroll = /\.hscroll\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
+    expect(
+      hscroll,
+      "`.hscroll` 的默认值必须是可见的（否则触屏与老浏览器上横条永久隐形）",
+    ).toMatch(/scrollbar-color:\s*var\(--line-2\)\s+transparent/);
+    expect(
+      app,
+      "`.hscroll` 的隐藏必须包在 `@media (hover: hover)` 里",
+    ).toMatch(/@media\s*\(hover:\s*hover\)\s*\{[^@]*?\.hscroll\s*\{[^}]*scrollbar-color:\s*transparent/);
+  });
+
   it("属性行保持 0 占位 + 边缘渐隐（DESIGN §2.2 固定 26px，不允许画条）", () => {
     /*
       这一行**不能**改成画滚动条：DESIGN.md §2.2 已定它固定 26px、不换行，
