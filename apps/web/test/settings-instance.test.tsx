@@ -99,9 +99,13 @@ describe("实例管理：注册开关与到期自动关闭", () => {
     expect(screen.getByText("先打开注册开关，才能设到期时间")).toBeTruthy();
   });
 
-  it("未实现的项保持**可见**的里程碑标记（不能只靠悬停）", () => {
+  it("未实现的项保持**可见**的标记（不能只靠悬停），且不再指向已过去的里程碑（v0.8.4）", () => {
     render(<SettingsPanel {...baseProps()} />);
-    expect(screen.getByText("M6")).toBeTruthy();
+    // 【v0.8.4】由「M6」改为「尚未提供」：M6 已于 v0.7.0 收口且没做这件事，
+    // 继续挂着那个编号等于宣称"已排期、只是没到"。占位行本身保留——
+    // 让用户知道这个能力被考虑过，比悄悄消失好。
+    expect(screen.getByText("尚未提供")).toBeTruthy();
+    expect(screen.queryByText("M6")).toBeNull();
     // 背景收进 ⓘ（用途/口径类说明不平铺）
     expect(screen.getByRole("button", { name: "成员账户管理说明" })).toBeTruthy();
   });

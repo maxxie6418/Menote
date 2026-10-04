@@ -4340,6 +4340,26 @@ button.chip--tag:hover {
   font-weight: 400;
 }
 
+/*
+  设置项的**作用域标记**（v0.8.4；`docs/modules/Menote-M8-设置页信息架构-v1.md` §2.2）。
+  标"这一项是跟着这台设备走，还是跟着账号走"。
+
+  为什么不能直接复用 `.badge`：那条带 `margin-left: auto`，靠它把徽标顶到行尾；
+  作用域标记要**紧跟在设置项名称后面**（读名称时顺带读到范围），放进 column 布局的
+  `.setrow__label` 里会被 auto 外边距甩到右边。所以这里只复用它的**视觉**（同一套 token），
+  不复用那条 auto 外边距 —— 两者的定位目的本来就不同。
+*/
+.scope-tag {
+  align-self: flex-start;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .settings__body {
   flex: 1;
   min-width: 0;
@@ -4416,6 +4436,10 @@ button.chip--tag:hover {
 
 .setrow__name {
   font-size: var(--fs-body);
+  /* 名称行可以内联带一个作用域标记（v0.8.4），所以给它留出对齐与间距 */
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 .setrow__desc {

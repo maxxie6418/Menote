@@ -430,52 +430,89 @@ describe("设置壳", () => {
     onNavigate: vi.fn(),
   };
 
-  it("owner 能看到 M2 已实现的分类；通用页有主题三档且当前档被选中", () => {
+  it("owner 能看到全部 9 个分类；通用页有主题三档且当前档被选中", () => {
     render(<SettingsPanel {...baseProps} page="general" />);
 
     const nav = screen.getByRole("navigation", { name: "设置分类" });
-    // 「编辑试验」2026-10-01 暂时收起（用户 2026-10-01），故不在下列清单里；
-    // 「备份与导出」同日新增（M5）
+    // 「编辑试验」2026-10-01 暂时收起（用户 2026-10-01），故不在下列清单里。
+    // **【v0.8.4】11 类 → 9 类**：「编辑器」与「关于」不再是独立分类（内容并进「通用」），
+    // 原「数据管理」改名「附件」。
     for (const label of [
       "通用",
       "账户与安全",
-      "编辑器",
       "备份与导出",
       "隐私锁",
       "版本与回收站",
       "MCP",
+      "附件",
       "实例管理",
-      "关于",
     ]) {
       expect(within(nav).getByRole("button", { name: label })).toBeTruthy();
     }
     expect(within(nav).queryByRole("button", { name: "编辑试验" })).toBeNull();
     // 「备份」是旧名，现在的分类叫「备份与导出」（2026-10-01 改），不该再出现
     expect(within(nav).queryByRole("button", { name: "备份" })).toBeNull();
+    // 被撤销的两个分类不该再作为一级入口出现（老 hash 由 LEGACY_SETTINGS_PAGES 接住）
+    expect(within(nav).queryByRole("button", { name: "编辑器" })).toBeNull();
+    expect(within(nav).queryByRole("button", { name: "关于" })).toBeNull();
+    // 「数据管理」已改名「附件」，旧名不该再出现
+    expect(within(nav).queryByRole("button", { name: "数据管理" })).toBeNull();
 
     const light = screen.getByRole("button", { name: "浅色" });
     expect(light.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("页头收成一条：`h1` 标题 + **可见的分类计数** + 说明收进 ⓘ（2026-09-28 设置页 B 批）", () => {
+  it("页头收成一条：`h1` 标题 + 说明收进 ⓘ，**不显示分类计数**（v0.8.4）", () => {
     render(<SettingsPanel {...baseProps} page="general" />);
 
     // 标题与其它屏同级（首页 `.pane-head h1` / 待办 `.tkhead`）——此前这里是 h2
     expect(screen.getByRole("heading", { level: 1, name: "通用" })).toBeTruthy();
-    // 实时计数保持**可见**，不进 ⓘ（DESIGN.md §5.4-2）。11 = 定稿的 11 类，
-    // 「MCP」M6 批 4（v0.6.26）补齐后不再有"没做的分类"
-    expect(screen.getByText("共 11 个分类")).toBeTruthy();
     // 口径说明收进 ⓘ（可点开的按钮），不在正文里平铺
     expect(screen.getByRole("button", { name: "通用分类说明" })).toBeTruthy();
+    // **【v0.8.4】删掉「共 N 个分类」**：那个数字对用户零信息量，还会随角色变化
+    // （owner 10 / member 9），容易被误读成"漏了分类"。
+    expect(screen.queryByText(/共 \d+ 个分类/)).toBeNull();
   });
 
-  it("关于页：显示版本号与项目仓库地址", () => {
-    render(<SettingsPanel {...baseProps} page="about" />);
+  it("作用域标记：设备级标「本机」、账号级标「跟随账号」，且平铺可见（v0.8.4）", () => {
+    render(<SettingsPanel {...baseProps} page="general" />);
+
+    // 主题是**设备级**偏好，其余几项跟随账号——这正是过去只写在 ⓘ 里、界面上看不出来的那条差别
+    const themeRow = screen.getByText("主题").closest(".setrow") as HTMLElement;
+    expect(within(themeRow).getByText("本机")).toBeTruthy();
+
+    for (const name of ["启动视图", "时区", "待办筛选条", "笔记本树结构"]) {
+      const row = screen.getByText(name).closest(".setrow") as HTMLElement;
+      expect(within(row).getByText("跟随账号"), name).toBeTruthy();
+      // 作用域是**标识**不是说明文字，不进 ⓘ（DESIGN.md §5.4-1 管的是说明性文字）
+      expect(within(row).queryByText("本机"), name).toBeNull();
+    }
+
+    // 编辑体验卡里两种作用域并存：开关跟账号、"上次用的那一档"记本机
+    const modeRow = screen.getByRole("switch", { name: "仅编辑" }).closest(".setrow") as HTMLElement;
+    expect(within(modeRow).getByText("跟随账号")).toBeTruthy();
+    const lastUsed = screen.getByText("打开时用哪一档").closest(".setrow") as HTMLElement;
+    expect(within(lastUsed).getByText("本机")).toBeTruthy();
+  });
+
+  it("「关于」并进「通用」页底部：版本号与项目仓库地址（v0.8.4）", () => {
+    render(<SettingsPanel {...baseProps} page="general" />);
 
     expect(screen.getByText(`v${APP_VERSION}`)).toBeTruthy();
     const link = screen.getByRole("link", { name: PROJECT_REPO_URL }) as HTMLAnchorElement;
     expect(link.href).toBe(PROJECT_REPO_URL);
     expect(link.target).toBe("_blank");
+  });
+
+  it("「编辑体验」并进「通用」页：三个编辑模式开关与那张卡都在（v0.8.4）", () => {
+    render(<SettingsPanel {...baseProps} page="general" />);
+
+    // 按**卡片的 aria-label** 定位而不是标题：卡片标题里内嵌着 ⓘ 按钮，
+    // 它的可访问名不等于纯文本（`getByRole("heading", {name})` 会取不到）
+    const card = within(screen.getByRole("region", { name: "编辑体验" }));
+    for (const mode of ["仅编辑", "仅预览", "即时渲染"]) {
+      expect(card.getByRole("switch", { name: mode }), mode).toBeTruthy();
+    }
   });
 
   it("通用页：启动视图与快捷菜单开关都会即时回调", async () => {

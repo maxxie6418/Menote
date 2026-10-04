@@ -1,18 +1,22 @@
 /**
  * 设置（结构见 `docs/modules/Menote-M1-界面稿-v1.md` §六；DESIGN.md §2.7：左列分类导航与右侧内容各自滚动）。
  *
- * M1 只放 3 个分类（通用 / 账户与安全 / 实例管理），其余分类在 M2/M6 补内容后再进导航——避免空入口。
+ * **【v0.8.4】11 类 → 9 类**（决定与影响面见 `docs/modules/Menote-M8-设置页信息架构-v1.md`）：
+ * 「编辑器」与「关于」不再是独立分类，内容并进「通用」；原「数据管理」改名「附件」。
+ * 理由是粒度严重不均——「编辑器」整页只有 3 个开关，而「隐私锁」有 5 张卡，差 12 倍。
+ *
+ * M1 起初只放 3 个分类（通用 / 账户与安全 / 实例管理），其余分类在 M2/M6 补内容后再进导航。
  * 「实例管理」仅 owner 可见。
  */
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { EditorMode, ProductEditorMode, StartView, TaskFilterForm, UserSettings } from "@menote/shared";
-import { PRODUCT_EDITOR_MODES, TASK_FILTER_FORMS, normalizeEditorModes } from "@menote/shared";
+import type { StartView, TaskFilterForm, UserSettings } from "@menote/shared";
+import { TASK_FILTER_FORMS } from "@menote/shared";
 import { Button, Field } from "../../../app/ui/Controls";
 import { InfoHint } from "../../../app/ui/InfoHint";
 import type { ThemeMode } from "../../../app/theme/useTheme";
 import { SETTINGS_PAGES, type SettingsPageId } from "../../../app/router";
-import { APP_VERSION, PROJECT_REPO_URL } from "../../../app/about";
 import { CardQuickMenu } from "./CardQuickMenu";
+import { AboutCard, EditorModesCard, ScopeTag } from "./GeneralCards";
 // 「编辑试验」暂时收起（2026-10-01，与 `router.ts` / `PAGE_META` 同步注释）：
 // import { EditorLabPage } from "../../editor-lab/ui/EditorLabPage";
 import { BackupPage } from "../../backup/ui/BackupPage";
@@ -27,14 +31,18 @@ import { InstancePage } from "./InstancePage";
  * `SETTINGS_PAGES` 是唯一真源，这里是**另一半**——漏改任一边会直接编译不过
  * （`Record<SettingsPageId, …>` 的守卫）。
  *
- * **【v0.6.26 补记】定稿的 11 类已全部落地**（M6 批 4 补上「MCP」）。
+ * **【v0.8.4 调整】9 类**（决定见 `docs/modules/Menote-M8-设置页信息架构-v1.md`）：
+ * 原 11 类里「编辑器」与「关于」被撤销、内容并进「通用」；原「数据管理」改名「附件」
+ * （**id 仍是 `data`**，只换显示名，老书签与深链照旧能用）。
  * 简述不进页面正文，只进页头那个 ⓘ（DESIGN.md §5.4-1：说明性文字不平铺）。
  */
 const PAGE_META: Record<SettingsPageId, { title: string; summary: string }> = {
-  general: { title: "通用", summary: "启动视图、时区、主题、笔记本树与快捷菜单" },
+  general: {
+    title: "通用",
+    summary: "界面与编辑偏好、启动视图、时区、快捷菜单，以及版本号",
+  },
   account: { title: "账户与安全", summary: "登录密码与会话" },
-  editor: { title: "编辑器", summary: "打开笔记时用哪一档、正文区能切到哪几档" },
-  backup: { title: "备份与导出", summary: "把数据导成 zip，或从备份恢复" },
+  backup: { title: "备份与导出", summary: "把数据送到外部备份，或从备份恢复" },
   shares: { title: "分享", summary: "管理生效中的分享链接：复制、改密、改期与撤销" },
   mcp: { title: "MCP", summary: "让 AI 工具读写你的内容：地址、令牌与调用记录" },
   // 「编辑试验」暂时收起（2026-10-01）：与 `router.ts` 的 `SETTINGS_PAGES` 同步注释。
@@ -44,14 +52,14 @@ const PAGE_META: Record<SettingsPageId, { title: string; summary: string }> = {
   // },
   privacy: { title: "隐私锁", summary: "加密空间、门禁与隐私密码" },
   versions: { title: "版本与回收站", summary: "版本封存与保留策略、回收站保留天数" },
-  data: { title: "数据管理", summary: "附件占用、孤儿附件与手动清理" },
-  instance: { title: "实例管理", summary: "本实例的注册开关与用量（仅管理员）" },
-  about: { title: "关于", summary: "版本号与项目地址" },
+  data: { title: "附件", summary: "附件占用、孤儿附件与清理" },
+  instance: { title: "实例管理", summary: "本实例的注册开关与分享子域（仅管理员）" },
 };
 
 /**
- * 导航顺序即功能拆解 M18-01 的 11 类定稿（顺序也照它），**只列出已实现的分类**（避免点进去空页面）：
- * 「MCP」类还没做，不进导航。**「关于」是用户 2026-09-27 追加的分类，放最后。**
+ * 导航顺序即当前生效的 9 类（v0.8.4 起，见 `docs/modules/Menote-M8-设置页信息架构-v1.md`）：
+ * 通用 / 账户与安全 / 隐私锁 / 版本与回收站 / 备份与导出 / 分享 / MCP / 附件 / 实例管理。
+ * 「实例管理」只对 owner 列出（见下方 `pages` 的过滤）。
  *
  * **清单直接引用路由那一份**：两处各写一份会漂移——M3 加「隐私锁」时只加了
  * 这里、没加路由白名单，点「隐私锁」会落到「通用」。
@@ -97,26 +105,12 @@ const START_VIEW_OPTIONS: ReadonlyArray<{ id: StartView; label: string }> = [
 ];
 
 /**
- * 编辑模式的**产品清单文案**：取值与顺序都来自契约的 `PRODUCT_EDITOR_MODES`，这里只给标签与说明。
+ * 编辑模式的**产品清单文案**已随「编辑体验」卡一并搬进 `GeneralCards.tsx`（v0.8.4）。
  *
- * 用 `Record<ProductEditorMode, …>` 收口：契约里加一档（例如阶段 C 把 `live` 放回产品清单）而这里
- * 忘了写文案，TypeScript 直接报错——不是等界面上少一个开关才发现（与 `TASK_FILTER_FORM_LABELS` 同做法）。
- *
- * **双栏（`split`）已退出产品**（编辑拓展阶段 A，阶段 C 也没让它回来），不再出现在设置里；
- * 旧行里存着的 `split` 只做读兼容，由契约的 `normalizeEditorModes` 静默滤掉。
- * **即时渲染（`live`）在阶段 C 回到产品清单**：用户验收过试验页之后才加的这一档。
+ * 这里原本有两份与它同源的清单（`EDITOR_MODE_COPY` / `EDITOR_MODE_OPTIONS`）和
+ * `patchEditorModes`；既然那张卡整个搬走，留着它们就成了没人调用的死代码——
+ * 而死代码里的"产品档清单"恰恰是最危险的那种：改了一处、另一处悄悄发着旧值。
  */
-const EDITOR_MODE_COPY: Record<ProductEditorMode, { label: string; desc: string }> = {
-  edit: { label: "仅编辑", desc: "只显示编辑区" },
-  preview: { label: "仅预览", desc: "只显示预览区" },
-  live: { label: "即时渲染", desc: "边写边渲染，代码块与表格回到源码" },
-};
-
-const EDITOR_MODE_OPTIONS: ReadonlyArray<{
-  id: ProductEditorMode;
-  label: string;
-  desc: string;
-}> = PRODUCT_EDITOR_MODES.map((id) => ({ id, ...EDITOR_MODE_COPY[id] }));
 
 /**
  * 待办筛选条的两形态（用户 2026-09-27 拍板：两种都留，在设置里自选——定稿原话如此）。
@@ -134,6 +128,11 @@ const THEME_OPTIONS: ReadonlyArray<{ id: ThemeMode; label: string; desc: string 
   { id: "dark", label: "深色", desc: "深色下单独核对语义色" },
   { id: "system", label: "跟随系统", desc: "随系统主题变化" },
 ];
+
+/**
+ * 「通用」页里那一长串偏好项的**作用域标记**（v0.8.4）已连同定义搬到 `GeneralCards.tsx`。
+ * 本文件只消费不定义——作用域规则一份就够了，两处各写一份必然漂。
+ */
 
 export interface SettingsPanelProps {
   page: SettingsPageId;
@@ -195,23 +194,6 @@ export function SettingsPanel({
   const pages = NAV_ORDER.filter((candidate) => candidate !== "instance" || role === "owner");
   const meta = PAGE_META[page];
 
-  /**
-   * 改「正文区能切到哪几档」（用户 2026-09-29 拍板改成开关组）。
-   *
-   * 两条纪律：①落库顺序一律走契约的规范顺序（`normalizeEditorModes`），不随点击次序漂；
-   * ②**至少留一档**——UI 已经把"最后开着的那一个"禁用掉，这里再挡一次（一个不变式不靠单点保证；
-   * 注意这里**不能**直接用归一化的兜底，那会把"关掉最后一个"变成"产品档全开"，与用户意图相反）。
-   *
-   * 【阶段 A】起算点是**归一化后的产品档**，不是存储里的原始数组：老行里可能存着 `split` / `live`，
-   * 若拿原始数组算，会出现"界面上两档都显示为关，点一下却把两档一起打开"的怪状态。
-   */
-  function patchEditorModes(id: EditorMode, on: boolean): void {
-    const current = normalizeEditorModes(userSettings.editor_modes);
-    const next = on ? [...current, id] : current.filter((mode) => mode !== id);
-    if (next.length === 0) return;
-    onPatchSettings({ editor_modes: normalizeEditorModes(next) });
-  }
-
   return (
     <div className="settings">
       <nav className="settings__nav" aria-label="设置分类">
@@ -249,13 +231,17 @@ export function SettingsPanel({
       <div className="settings__body">
         {/*
           页头收成一条（2026-09-28 设置页重构 B 批）：标题（`h1` + `--fs-title`/650，与其它屏的
-          页头同级）· 说明（**进 ⓘ**，不平铺）· **分类计数保持可见**（实时计数不靠悬停）· 出口在右端。
+          页头同级）· 说明（**进 ⓘ**，不平铺）· 出口在右端。
           此前这里是 `h2` + 一个平铺的 `p`，与首页 `.pane-head h1`、待办 `.tkhead` 三套写法。
+
+          **【v0.8.4】删掉原先这里的「共 N 个分类」计数**：那个数字对用户零信息量（左列一眼看得见），
+          还会**随角色变化**（owner 10 / member 9），容易被误读成"漏了分类"。
+          DESIGN.md §5.4-2 要求保持可见的是**有含义的状态计数**——回收站条目数（`VersionsTrashPage`）、
+          令牌数、附件占用、推送进度，那些全部保留。
         */}
         <header className="settings__head">
           <h1 className="settings__title">{meta.title}</h1>
           <InfoHint label={`${meta.title}分类说明`}>{meta.summary}</InfoHint>
-          <span className="settings__count">共 {pages.length} 个分类</span>
           {/*
             出口（2026-09-27 修复）：设置是**主操作区独立页**，此前除了"退出登录"没有别的路回笔记区——
             功能栏的视图切换只改笔记视图状态、搜索框的结果也被 `route === "settings"` 的分支挡住，
@@ -271,10 +257,23 @@ export function SettingsPanel({
         {page === "general" ? (
           <>
             <section className="setcard" aria-label="界面偏好">
-              <h3 className="setcard__title">界面偏好</h3>
+              <h3 className="setcard__title">
+                界面偏好
+                {/*
+                  作用域标记（v0.8.4）：这一卡里两类作用域混着，标记让"改完为什么另一台没变"
+                  不用去猜 ⓘ。`本机` = 只这台设备，`跟随账号` = 换设备登录也带过去。
+                */}
+                <InfoHint label="作用域说明">
+                  每项后面的标记说明它跟谁走：「本机」只影响这台设备；「跟随账号」会跟着账号同步到其它设备。
+                  主题是设备级偏好，其余都是账号级。
+                </InfoHint>
+              </h3>
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">主题</span>
+                  <span className="setrow__name">
+                    主题
+                    <ScopeTag scope="device" />
+                  </span>
                   {/* 实现口径（不改 DOM、不整页重渲染）收进 InfoHint（DESIGN.md §5.4-1） */}
                   <InfoHint label="主题说明">
                     切换只改 `data-theme` 属性与令牌，不重建页面；主题是**设备级**偏好，不跟随账号同步。
@@ -298,7 +297,10 @@ export function SettingsPanel({
 
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">启动视图</span>
+                  <span className="setrow__name">
+                    启动视图
+                    <ScopeTag scope="account" />
+                  </span>
                   <span className="setrow__desc">打开应用时先进哪个视图</span>
                 </div>
                 <div className="radioset" role="group" aria-label="启动视图">
@@ -318,7 +320,10 @@ export function SettingsPanel({
 
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">时区</span>
+                  <span className="setrow__name">
+                    时区
+                    <ScopeTag scope="account" />
+                  </span>
                   <span className="setrow__desc">Memo 时间轴与待办日期按它分天</span>
                 </div>
                 {/*
@@ -346,7 +351,10 @@ export function SettingsPanel({
               {/* 待办筛选条的形态（v0.5.2；定稿：两种都留，让用户自选） */}
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">待办筛选条</span>
+                  <span className="setrow__name">
+                    待办筛选条
+                    <ScopeTag scope="account" />
+                  </span>
                   <span className="setrow__desc">待办页顶部那排筛选怎么摆</span>
                 </div>
                 <div className="radioset" role="group" aria-label="待办筛选条形态">
@@ -371,7 +379,10 @@ export function SettingsPanel({
               */}
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">笔记本树结构</span>
+                  <span className="setrow__name">
+                    笔记本树结构
+                    <ScopeTag scope="account" />
+                  </span>
                   <span className="setrow__desc">选择左侧树是否把文档列在文件夹下</span>
                 </div>
                 <span className="setrow__control">
@@ -401,57 +412,31 @@ export function SettingsPanel({
               </div>
             </section>
 
+            {/*
+              「编辑体验」（v0.8.4 由原「编辑器」分类搬来，见 `docs/modules/Menote-M8-设置页信息架构-v1.md` §2.1）。
+              内容抽到 `GeneralCards.tsx`：原「编辑器」整页只有 3 个开关却独占一个一级分类，
+              而「隐私锁」有 5 张卡——粒度差 12 倍。搬运时控件与不变式一条没变。
+            */}
+            <EditorModesCard userSettings={userSettings} onPatchSettings={onPatchSettings} />
+
             <CardQuickMenu
               selected={userSettings.quick_menu}
               onChange={(quickMenu) => onPatchSettings({ quick_menu: quickMenu })}
             />
+
+            {/*
+              「关于」（v0.8.4 由原独立分类搬来，放在最底部）。位置是有讲究的：
+              版本号与仓库地址是**低频查阅**内容（通常只在报 bug 时要看），
+              放页头 ⓘ 会让"我是哪个版本"不可见，而版本号在反馈问题时有实际用途；
+              放最后则匹配它的频次——要主动往下滚才看得到。
+            */}
+            <AboutCard />
           </>
         ) : null}
 
         {/* 「编辑试验」暂时收起（2026-10-01，与 `router.ts` / `PAGE_META` 同步注释）：
             试验区按桌面稿排布，窄面板里会挤成一条。恢复时把这一行与 import 一起放回即可。 */}
         {/* {page === "editor-lab" ? <EditorLabPage /> : null} */}
-
-        {page === "editor" ? (
-          <section className="setcard" aria-label="编辑器">
-            <h3 className="setcard__title">
-              编辑模式
-              <InfoHint label="编辑模式说明">
-                开关决定正文区能切到哪几档；关掉的档不再出现在那条切换条里，至少要留一个。
-                打开笔记时用你上次用的那一档——这个"上次"记在本机，不跟随账号同步。
-              </InfoHint>
-            </h3>
-            {EDITOR_MODE_OPTIONS.map((option) => {
-              // 同上：按**归一化后的产品档**判断开关状态，老行里的 split / live 不参与
-              const active = normalizeEditorModes(userSettings.editor_modes);
-              const on = active.includes(option.id);
-              const lastOne = on && active.length === 1;
-              return (
-                <div className="setrow" key={option.id}>
-                  <div className="setrow__label">
-                    <span className="setrow__name">{option.label}</span>
-                    <span className="setrow__desc">{option.desc}</span>
-                    {/* 禁用不能只靠悬停（DESIGN.md §6.1）：最后开着的那一档把原因平铺出来 */}
-                    {lastOne ? (
-                      <span className="setrow__desc">至少保留一个模式，所以这一个不能再关</span>
-                    ) : null}
-                  </div>
-                  <span className="setrow__control">
-                    <button
-                      type="button"
-                      role="switch"
-                      className="toggle"
-                      aria-checked={on}
-                      aria-label={option.label}
-                      disabled={lastOne}
-                      onClick={() => patchEditorModes(option.id, !on)}
-                    />
-                  </span>
-                </div>
-              );
-            })}
-          </section>
-        ) : null}
 
         {page === "backup" ? <BackupPage /> : null}
 
@@ -492,13 +477,17 @@ export function SettingsPanel({
               <div className="setrow">
                 <div className="setrow__label">
                   <span className="setrow__name">已登录设备</span>
-                  {/* 里程碑与背景收进 InfoHint；**"还没有这个功能"这件事保持可见**（右侧「后续」） */}
+                  {/*
+                    **"还没有这个功能"保持可见**（右侧），背景收进 ⓘ。
+                    【v0.8.4】文案由"将在后续里程碑提供"改为"尚未提供"：它原先指向的 M6
+                    已于 v0.7.0 收口且没做这件事，继续写"后续里程碑"会让人以为已经排期、只是没到。
+                  */}
                   <InfoHint label="登录设备说明">
-                    设备列表与"踢出其他设备"将在后续里程碑提供。在那之前，改登录密码会让其他设备的
+                    设备列表与"踢出其他设备"目前尚未提供。在那之前，改登录密码会让其他设备的
                     会话立即失效——这是当前唯一能远程断开别的设备的办法。
                   </InfoHint>
                 </div>
-                <span className="setrow__desc">后续</span>
+                <span className="setrow__desc">尚未提供</span>
               </div>
             </section>
           </>
@@ -512,27 +501,6 @@ export function SettingsPanel({
             registrationCloseAt={registrationCloseAt}
             onChangeRegistration={onChangeRegistration}
           />
-        ) : null}
-
-        {page === "about" ? (
-          <section className="setcard" aria-label="关于">
-            <h3 className="setcard__title">关于 MeNote</h3>
-            <div className="setrow">
-              <div className="setrow__label">
-                <span className="setrow__name">版本</span>
-              </div>
-              <span className="setrow__desc">v{APP_VERSION}</span>
-            </div>
-            <div className="setrow">
-              <div className="setrow__label">
-                <span className="setrow__name">项目地址</span>
-                <span className="setrow__desc">源码仓库（GitHub）</span>
-              </div>
-              <a className="link" href={PROJECT_REPO_URL} target="_blank" rel="noreferrer noopener">
-                {PROJECT_REPO_URL}
-              </a>
-            </div>
-          </section>
         ) : null}
       </div>
     </div>

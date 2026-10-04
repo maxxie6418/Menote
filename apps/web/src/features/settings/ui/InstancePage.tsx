@@ -144,12 +144,14 @@ export function InstancePage({
         <div className="setrow__label">
           <span className="setrow__name">成员账户管理</span>
           <InfoHint label="成员账户管理说明">
-            成员列表、停用与删除、以及各成员的数据清理会在 M6 提供；在此之前新增成员只能靠
+            成员列表、停用与删除、以及各成员的数据清理目前尚未提供。在那之前，新增成员只能靠
             开放注册让对方自己注册。
           </InfoHint>
         </div>
-        {/* 未实现的原因保持可见（不能只靠悬停）：这里是里程碑标记 */}
-        <span className="setrow__desc">M6</span>
+        {/* 未实现的原因保持可见（不能只靠悬停）。
+            【v0.8.4】由「M6」改为「尚未提供」：M6 已于 v0.7.0 收口且没做这件事，
+            继续挂着那个里程碑编号等于宣称"已排期、只是没到"。 */}
+        <span className="setrow__desc">尚未提供</span>
       </div>
 
       <div className="setrow">

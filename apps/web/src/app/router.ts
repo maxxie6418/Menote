@@ -16,15 +16,19 @@ import { useEffect, useState } from "react";
  * 现在类型由清单推导（`as const` + `typeof [number]`），所以**新增分类只可能在一个地方发生**，
  * 漏改的另一半会直接编译不过（设置页的 `PAGE_META: Record<SettingsPageId, …>` 就是那另一半的守卫）。
  *
- * **顺序照功能拆解 M18-01 的 11 类定稿**（components.md §7.5 同一份）：
- * 通用 / 账户与安全 / 编辑器 / 隐私锁 / 版本与回收站 / 备份 / 分享 / MCP / 数据管理 / 实例管理 / 关于。
- * **【v0.6.26 补记】11 类已全部落地**：「MCP」M6 批 4 起有内容（地址、令牌、审计），无条件显示——
- * 分类是固定的一级入口，空态由内容页自己处理。「数据管理」M6 批 2c 起有内容（附件管理页）。
+ * **【v0.8.4 调整】11 类 → 9 类**（决定与影响面见 `docs/modules/Menote-M8-设置页信息架构-v1.md`）：
+ * 「编辑器」并入「通用」（那三个开关与「通用」同属"界面偏好"，且体量差 12 倍）、
+ * 「关于」并入「通用」底部（版本号 + 仓库地址，低频查阅）、原「数据管理」**改名「附件」**
+ * （它本来就只管附件占用与孤儿清理，原名承诺了比实际更多的东西；**id 仍是 `data`**，老书签与深链不失效）。
+ * 顺序：通用 / 账户与安全 / 隐私锁 / 版本与回收站 / 备份与导出 / 分享 / MCP / 附件 / 实例管理。
+ *
+ * **撤销的两类要显式重定向**（`LEGACY_SETTINGS_PAGES`）：从清单里拿掉而不补一条映射，
+ * `#/settings/editor` 会走进 `parseRoute` 那个"匹配不到就静默回落 `general`"的分支——
+ * 表现与 2026-09-27 修过的那个 bug **完全同形**（点进去不是白屏、是不报错地落到别处，最难查）。
  */
 export const SETTINGS_PAGES = [
   "general",
   "account",
-  "editor",
   // 「编辑试验」2026-10-01 暂时收起（用户 2026-10-01）：试验区按桌面稿排布，
   // 在窄面板里会挤成一条，且本轮改为直接在正式编辑器上迭代。**试验代码全部保留**，
   // 恢复只需把这一行放回来 + 恢复 `SettingsPanel` 里的两处（PAGE_META 与渲染分支）。
@@ -36,8 +40,18 @@ export const SETTINGS_PAGES = [
   "mcp",
   "data",
   "instance",
-  "about",
 ] as const;
+
+/**
+ * 已被撤销的分类 → 现在的落地页。
+ *
+ * 存在的理由：分类从清单里消失**不等于**它的老 URL 该变成死链。撤销的那两类的内容都没丢，
+ * 只是搬了家，所以老 hash 应当落到新家而不是默默消失。
+ */
+export const LEGACY_SETTINGS_PAGES: Readonly<Record<string, SettingsPageId>> = {
+  editor: "general",
+  about: "general",
+};
 
 /** 设置分类 id：**从清单推导**，不再手写第二份 */
 export type SettingsPageId = (typeof SETTINGS_PAGES)[number];
@@ -60,7 +74,9 @@ export function parseRoute(hash: string): Route {
   if (path.startsWith("settings")) {
     const page = path.split("/")[1] ?? "";
     const matched = SETTINGS_PAGES.find((candidate) => candidate === page);
-    return { name: "settings", page: matched ?? "general" };
+    if (matched) return { name: "settings", page: matched };
+    // 撤销的分类走重定向（见 `LEGACY_SETTINGS_PAGES`），不是静默落到 default
+    return { name: "settings", page: LEGACY_SETTINGS_PAGES[page] ?? "general" };
   }
 
   return { name: "notes" };

@@ -182,7 +182,8 @@ describe("设置页的可见出口", () => {
   });
 
   it("每个设置分类页头都能看到出口（不是只在某一页有）", () => {
-    for (const page of ["general", "editor", "privacy", "versions", "account", "about"] as const) {
+    // **【v0.8.4】11 类 → 9 类**：「编辑器」与「关于」不再是独立分类，内容并进「通用」
+    for (const page of ["general", "privacy", "versions", "account"] as const) {
       const { unmount } = render(
         <SettingsPanel {...baseProps} page={page} onBackToNotes={vi.fn()} />,
       );
