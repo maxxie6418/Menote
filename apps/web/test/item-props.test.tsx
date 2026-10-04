@@ -181,6 +181,35 @@ describe("卡片渲染", () => {
   });
 });
 
+describe("卡片在 DOM 里的位置", () => {
+  /**
+   * 2026-10-04 修的一个真布局缺陷。
+   *
+   * 卡片原先渲染在 `.docpane__body` **里面**，而那个容器是 `display: flex`（row）——
+   * 装着编辑器或预览、各占 `flex: 1`。卡片成了第三个 flex 项，于是**和正文并排成一条
+   * 窄列**，标签列被挤到截断，用户看到的是「属性区没在正文区顶部」。
+   *
+   * 这条断言直接查结构，不依赖像素。
+   */
+  it("是 .docpane__body 的兄弟节点，不在它里面", () => {
+    // 用 `import.meta.glob` 读源码而不是 `readFileSync(new URL(..., import.meta.url))`：
+    // 本文件跑在 jsdom 环境下，`import.meta.url` 不是 file URL（`style-coverage` 那条
+    // 走的是 node 环境，所以它能用）
+    const sources = import.meta.glob("../src/features/notes/ui/NoteWorkspace.tsx", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>;
+    const html = Object.values(sources)[0] ?? "";
+    const bodyStart = html.indexOf('<div className="docpane__body">');
+    const propsStart = html.indexOf("<ItemProps");
+    expect(bodyStart).toBeGreaterThan(-1);
+    expect(propsStart).toBeGreaterThan(-1);
+    // 卡片在滚动容器**之前**（它是不随正文滚动的一条带）
+    expect(propsStart).toBeLessThan(bodyStart);
+  });
+});
+
 /** 把 hook 装进一个小组件，好拿到它给的回调 */
 function Harness(props: {
   body: string;

@@ -439,20 +439,30 @@ export function NoteWorkspace({
         ) : null}
       </div>
 
+      {/*
+        属性卡片：**`.docpane` 的第三个带**——标题带 / 属性带 / 正文滚动区（2026-10-04）。
+
+        早先把它放在 `.docpane__body` **里面**，那是错的：那个容器是 `display: flex`（row），
+        装着编辑器或预览、各占 `flex: 1`。卡片成了第三个 flex 项，于是**和正文并排成一条窄列**，
+        标签列被挤到截断——正是「属性区没在正文区顶部」这个现象。
+        放它进 `.docpane__body` 外面，它才是正文**上方**的一条带，而且**不随正文滚动**
+        （与标题带同一待遇：刚改完的标签一直在眼前）。
+      */}
+      {showProps ? (
+        <ItemProps
+          body={previewSource}
+          editable={propsApi.editable}
+          readOnlyReason={propsApi.readOnlyReason}
+          onTagsChange={propsApi.onTagsChange}
+          onTaskChange={propsApi.onTaskChange}
+          onForeignChange={propsApi.onForeignChange}
+          onForeignRemove={propsApi.onForeignRemove}
+          onForeignAdd={propsApi.onForeignAdd}
+          onError={onPropsError}
+        />
+      ) : null}
+
       <div className="docpane__body">
-        {showProps ? (
-          <ItemProps
-            body={previewSource}
-            editable={propsApi.editable}
-            readOnlyReason={propsApi.readOnlyReason}
-            onTagsChange={propsApi.onTagsChange}
-            onTaskChange={propsApi.onTaskChange}
-            onForeignChange={propsApi.onForeignChange}
-            onForeignRemove={propsApi.onForeignRemove}
-            onForeignAdd={propsApi.onForeignAdd}
-            onError={onPropsError}
-          />
-        ) : null}
         {bodyLocked && encryption ? (
           <LockedDocPanel onUnlock={encryption.onUnlock} />
         ) : isTable && table.state.kind === "table" ? (

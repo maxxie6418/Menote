@@ -1089,13 +1089,17 @@ button {
 /*
   条目属性卡片（2026-10-04，`features/notes/ui/ItemProps.tsx`）。
 
-  形态是 DESIGN.md §5.3 已定的那一行「条目属性 → 胶囊 chip」，所以卡片自己**不带框**——
-  一张带框的卡套着一堆胶囊，是两个层级的东西摆在一起。分区靠**一条细分隔线**：
-  上半是 MeNote 自己的键（标签 / 状态 / 截止 / 优先级），下半是外部工具写进来的
-  「其他属性」，底色略深一点，一眼能看出那堆不是 MeNote 写的。
+  它是 `.docpane` 的**第三个带**：标题带 / 属性带 / 正文滚动区。**不能放进
+  `.docpane__body` 里面**——那个容器是 `display: flex`（row），装着编辑器或预览、各占
+  `flex: 1`，卡片进去就成了第三个 flex 项、与正文并排成一条窄列（标签列被挤到截断）。
+
+  `flex: none` + 与 `.docpane__head` 同样的横向内边距：横向和标题对齐，也不随正文滚动
+  （刚改完的标签一直在眼前）。
 */
 .itemprops {
-  margin: 0 0 var(--sp-4);
+  flex: none;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--line);
   font-size: var(--fs-small);
 }
 .itemprops__group--foreign {
@@ -1110,7 +1114,7 @@ button {
 }
 .itemprops__row {
   display: grid;
-  grid-template-columns: 64px 1fr;
+  grid-template-columns: 72px 1fr;
   gap: var(--sp-3);
   align-items: start;
   padding: 3px 0;
@@ -1220,7 +1224,7 @@ button {
   padding: 5px 0;
 }
 .itemprops__foot {
-  padding: var(--sp-1) 0 0 76px;
+  padding: var(--sp-1) 0 0 84px;
 }
 
 /* 代码块：编辑器侧只上底色，围栏与语言保持源码可见（首期不做语言高亮） */
