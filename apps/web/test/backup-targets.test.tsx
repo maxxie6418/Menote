@@ -25,14 +25,19 @@ import type {
 } from "@menote/shared";
 import { BackupTargetsCard } from "../src/features/backup/ui/BackupTargetsCard";
 import {
+  accumulateRun,
   buildTargetPayload,
   emptyTargetForm,
   formFromTarget,
+  initialRunState,
   lastRunText,
   policyRisk,
-  runResultText,
+  progressOf,
+  progressText,
+  pushRunText,
   targetWhere,
 } from "../src/features/backup/model";
+import { MAX_ROUNDS } from "../src/features/backup/ui/PushProgressDialog";
 
 const NOW = Date.now();
 
@@ -62,8 +67,9 @@ interface ServerState {
   targets: BackupTarget[];
   listError: string | null;
   testResult: BackupTestResult | null;
-  runResult: BackupRunResult | null;
-  runError: string | null;
+  /** 「推一次」的逐轮结果：每调一次 `/run` 取一个，取完就重复最后一个（模拟"一直推不完"） */
+  runQueue: BackupRunResult[];
+  runCalls: number;
   removed: string[];
   updates: Array<{ id: string; input: UpdateBackupTargetInput }>;
 }
@@ -72,8 +78,8 @@ let state: ServerState = {
   targets: [],
   listError: null,
   testResult: null,
-  runResult: null,
-  runError: null,
+  runQueue: [],
+  runCalls: 0,
   removed: [],
   updates: [],
 };
@@ -100,9 +106,14 @@ vi.mock("../src/data/api/backup-targets", () => ({
       return state.testResult;
     },
     run: async (): Promise<BackupRunResult> => {
-      if (state.runError !== null) throw new Error(state.runError);
-      if (state.runResult === null) throw new Error("没有配置推一次结果");
-      return state.runResult;
+      state.runCalls += 1;
+      const picked = state.runQueue[Math.min(state.runCalls - 1, state.runQueue.length - 1)];
+      if (picked === undefined) throw new Error("没有配置推一次结果");
+      // **刻意有一点延迟**：真发网络请求是要时间的，而同步返回的 mock 会让整个循环
+      // 在 React 重渲染之前就跑完——那样"中间那一档进度"根本观察不到，
+      // 而中间态恰恰是进度条唯一有存在理由的那部分。
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return picked;
     },
   },
 }));
@@ -112,8 +123,8 @@ beforeEach(() => {
     targets: [],
     listError: null,
     testResult: null,
-    runResult: null,
-    runError: null,
+    runQueue: [],
+    runCalls: 0,
     removed: [],
     updates: [],
   };
@@ -266,45 +277,180 @@ describe("外部备份目标 · 界面", () => {
   });
 });
 
-describe("外部备份目标 · 推一次", () => {
-  it("「推一次」的结果平铺在那一行上，且说清「还有 N 个没推完」不是出错", async () => {
+describe("外部备份目标 · 推一次（进度条）", () => {
+  it("自动循环多轮直到推完，进度条跟着涨", async () => {
     const user = userEvent.setup();
     state.targets = [makeTarget()];
-    state.runResult = { pushed: 40, deleted: 0, remaining: 12, quota_stopped: true, error: null };
+    // 三轮：40 → 40 → 20
+    state.runQueue = [
+      { pushed: 40, deleted: 0, total: 100, remaining: 60, quota_stopped: true, error: null },
+      { pushed: 40, deleted: 0, total: 60, remaining: 20, quota_stopped: true, error: null },
+      { pushed: 20, deleted: 0, total: 20, remaining: 0, quota_stopped: false, error: null },
+    ];
     render(<BackupTargetsCard />);
     await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
 
     await user.click(screen.getByRole("button", { name: "推一次" }));
-    await waitFor(() => expect(screen.getByText(/推了 40 个文件，还有 12 个没推完/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("已推 100 / 100")).toBeTruthy());
+    expect(state.runCalls).toBe(3);
+    // 结果**故意**出现两处：弹窗（当前这次）与目标行（关掉后还能看到）——所以用复数查询
+    const texts = screen.getAllByText("推完了，100 个文件都已推到远端。");
+    expect(texts.length).toBe(2);
   });
 
-  it("没东西可推时说的是「没有需要推送的内容」，不报成失败", async () => {
+  it("进度条的比例跟着走（不是一步跳到 100%）", async () => {
     const user = userEvent.setup();
     state.targets = [makeTarget()];
-    state.runResult = { pushed: 0, deleted: 0, remaining: 0, quota_stopped: false, error: null };
+    state.runQueue = [
+      { pushed: 25, deleted: 0, total: 100, remaining: 75, quota_stopped: true, error: null },
+      { pushed: 75, deleted: 0, total: 75, remaining: 0, quota_stopped: false, error: null },
+    ];
     render(<BackupTargetsCard />);
     await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
 
     await user.click(screen.getByRole("button", { name: "推一次" }));
-    await waitFor(() => expect(screen.getByText("这次没有需要推送的内容。")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("已推 25 / 100")).toBeTruthy());
+    // 中途那一档的宽度必须是 25%，**不是**一路飙到 100%
+    const bar = screen.getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("25");
   });
 
-  it("推失败时原因平铺、不藏进 ⓘ", async () => {
+  it("循环有上限：到顶就停并说清「还剩多少」，不空转", async () => {
     const user = userEvent.setup();
     state.targets = [makeTarget()];
-    state.runResult = { pushed: 0, deleted: 0, remaining: 0, quota_stopped: false, error: "远端返回 401" };
+    // 永远推不完（用户在一直打字）：每一轮都还是"还剩很多"
+    state.runQueue = Array.from({ length: MAX_ROUNDS + 10 }, () => ({
+      pushed: 40,
+      deleted: 0,
+      total: 1000,
+      remaining: 500,
+      quota_stopped: true,
+      error: null,
+    }));
     render(<BackupTargetsCard />);
     await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
 
     await user.click(screen.getByRole("button", { name: "推一次" }));
-    await waitFor(() => expect(screen.getByText("没推成：远端返回 401")).toBeTruthy());
+    await waitFor(() => expect(state.runCalls).toBe(MAX_ROUNDS));
+    expect(screen.getByText(/还剩 500 个没推完/)).toBeTruthy();
+    // 说了「关掉也没关系」——不说这句，用户会以为关掉就白推了
+    expect(screen.getByText(/关掉也没关系，下次接着推/)).toBeTruthy();
+  });
+  it("失败时原因平铺、不藏进 ⓘ", async () => {
+    const user = userEvent.setup();
+    state.targets = [makeTarget()];
+    state.runQueue = [
+      { pushed: 10, deleted: 0, total: 50, remaining: 40, quota_stopped: true, error: null },
+      { pushed: 0, deleted: 0, total: 40, remaining: 40, quota_stopped: false, error: "远端返回 401" },
+    ];
+    render(<BackupTargetsCard />);
+    await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: "推一次" }));
+    await waitFor(() => expect(screen.getAllByText("没推成：远端返回 401").length).toBe(2));
+    // **失败即停**：不该继续打服务端
+    expect(state.runCalls).toBe(2);
   });
 
-  it("runResultText 把三种含义分开说", () => {
-    expect(runResultText({ pushed: 0, deleted: 0, remaining: 0, quota_stopped: false, error: null })).toContain("没有需要推送");
-    expect(runResultText({ pushed: 3, deleted: 1, remaining: 0, quota_stopped: false, error: null })).toBe(
-      "推了 3 个文件，删了远端 1 个。",
+  it("本来就是最新的：说「已经是最新的了」而不是显示成失败或 0%", async () => {
+    const user = userEvent.setup();
+    state.targets = [makeTarget()];
+    state.runQueue = [{ pushed: 0, deleted: 0, total: 0, remaining: 0, quota_stopped: false, error: null }];
+    render(<BackupTargetsCard />);
+    await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: "推一次" }));
+    await waitFor(() => expect(screen.getAllByText("已经是最新的了，没有需要推送的内容。").length).toBe(2));
+    // 没东西可推 = 已完成，不是 0%
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
+  });
+
+  it("结果留在目标行上：关掉弹窗还看得到上次推了什么", async () => {
+    const user = userEvent.setup();
+    state.targets = [makeTarget()];
+    state.runQueue = [{ pushed: 7, deleted: 0, total: 7, remaining: 0, quota_stopped: false, error: null }];
+    render(<BackupTargetsCard />);
+    await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: "推一次" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "关掉" })).toBeTruthy());
+    await user.click(screen.getByRole("button", { name: "关掉" }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText("推完了，7 个文件都已推到远端。").length).toBeGreaterThan(0),
     );
-    expect(runResultText({ pushed: 0, deleted: 0, remaining: 0, quota_stopped: false, error: "连不上" })).toBe("没推成：连不上");
+  });
+
+  it("允许随手关掉（不设 dismissable=false）——游标在服务端，关掉不丢", async () => {
+    const user = userEvent.setup();
+    state.targets = [makeTarget()];
+    // 一直推不完
+    state.runQueue = Array.from({ length: MAX_ROUNDS + 10 }, () => ({
+      pushed: 40,
+      deleted: 0,
+      total: 1000,
+      remaining: 900,
+      quota_stopped: true,
+      error: null,
+    }));
+    render(<BackupTargetsCard />);
+    await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
+
+    await user.click(screen.getByRole("button", { name: "推一次" }));
+    // 非终态时按钮明说「先关掉（下次接着推）」，不是让人猜
+    const stop = screen.getByRole("button", { name: "先关掉（下次接着推）" });
+    await user.click(stop);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    // 关掉后循环必须**停下来**。允许最多多一次：点关掉那一刻可能已有一次请求在途
+    const after = state.runCalls;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(state.runCalls).toBeLessThanOrEqual(after + 1);
+  });
+});
+
+describe("外部备份目标 · 进度纯函数", () => {
+  const one = (over: Partial<BackupRunResult>): BackupRunResult => ({
+    pushed: 0,
+    deleted: 0,
+    total: 0,
+    remaining: 0,
+    quota_stopped: false,
+    error: null,
+    ...over,
+  });
+
+  it("total 只增不减：用户一边打字一边推时进度条不许往回跳", () => {
+    let state = initialRunState();
+    state = accumulateRun(state, one({ pushed: 40, total: 100, remaining: 60 }));
+    expect(progressOf(state)).toBeCloseTo(0.4);
+    // 新内容进来：这一次报的 total 比累计推过的还小
+    state = accumulateRun(state, one({ pushed: 10, total: 20, remaining: 10 }));
+    expect(progressOf(state)).toBeCloseTo(0.5);
+    expect(state.total).toBe(100);
+  });
+
+  it("比例夹在 0–1：total 为 0 时是「已完成」而不是 0%", () => {
+    expect(progressOf({ ...initialRunState(), total: 0 })).toBe(1);
+    const over = { ...initialRunState(), done: 10, total: 5, phase: "done" as const };
+    expect(progressOf(over)).toBe(1);
+    expect(progressOf({ ...initialRunState(), done: -3, total: 10 })).toBe(0);
+  });
+
+  it("四个终态分开说，「推了一部分」不算失败", () => {
+    const done = { phase: "done", done: 5, total: 5, remaining: 0, error: null } as const;
+    expect(pushRunText(done, false)).toBe("推完了，5 个文件都已推到远端。");
+    expect(pushRunText({ ...done, done: 0 }, false)).toContain("已经是最新的了");
+
+    const partial = { phase: "running", done: 40, total: 100, remaining: 60, error: null } as const;
+    expect(pushRunText(partial, true)).toContain("关掉也没关系");
+    expect(pushRunText(partial, true)).not.toContain("没推成");
+
+    const failed = { ...done, phase: "failed", error: "远端 401" } as const;
+    expect(pushRunText(failed, false)).toBe("没推成：远端 401");
+  });
+
+  it("数字行必须有数字（语义色不得单独表意）", () => {
+    expect(progressText(initialRunState())).toContain("正在读取");
+    expect(progressText({ ...initialRunState(), done: 12, total: 34 })).toBe("已推 12 / 34");
   });
 });

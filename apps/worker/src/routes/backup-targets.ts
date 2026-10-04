@@ -129,6 +129,7 @@ app.post("/backup/targets/:id/run", requireSession, async (c) => {
     return c.json({
       pushed: 0,
       deleted: 0,
+      total: 0,
       remaining: 0,
       quota_stopped: false,
       error: outcome.skipped,
@@ -137,6 +138,7 @@ app.post("/backup/targets/:id/run", requireSession, async (c) => {
   const result: BackupRunResult = {
     pushed: outcome.pushed,
     deleted: outcome.deleted,
+    total: outcome.total,
     remaining: outcome.remaining,
     quota_stopped: outcome.quotaStopped,
     error: outcome.error,

@@ -45,6 +45,8 @@ export interface PushOutcome {
   targetId: string;
   pushed: number;
   deleted: number;
+  /** 本次调用**开始时**还欠多少个（含本轮推掉的）——给客户端算进度比例用 */
+  total: number;
   /** 游标落后多少条（`0` = 已跟上） */
   remaining: number;
   /** 本轮因外部子请求预算用尽而停下（下一轮续推） */
@@ -84,6 +86,7 @@ export async function pushOneRound(
     targetId: target.id,
     pushed: 0,
     deleted: 0,
+    total: 0,
     remaining: 0,
     quotaStopped: false,
     error: null,
@@ -98,6 +101,13 @@ export async function pushOneRound(
     .first<{ cursor_seq: number }>();
   const snapCursor = snapRow?.cursor_seq ?? 0;
   if (snapCursor <= target.cursor_seq) return { ...base, skipped: "快照还没有新东西可推" };
+
+  /*
+    本次调用开始时还欠多少：**在动任何东西之前数一次**。
+    客户端要拿它算进度比例（`已推 / 总量`），而那个"总量"必须是服务端说的——
+    用户一边打字一边推的话，客户端自己累加出来的数会漂移。
+  */
+  const outstanding = await countRemaining(env, target, snapCursor, target.cursor_seq);
 
   // 凭据：解开用完即弃，**不进日志、不进错误消息**（设计 §二 第 5 步）
   let adapter;
@@ -192,7 +202,7 @@ export async function pushOneRound(
     error,
   );
 
-  return { targetId: target.id, pushed, deleted, remaining, quotaStopped, error };
+  return { targetId: target.id, pushed, deleted, total: outstanding, remaining, quotaStopped, error };
 }
 
 /** `daily` 每轮都算到期（游标让"没东西可推"的那轮是空转）；`weekly` 距上次满 7 天才算 */

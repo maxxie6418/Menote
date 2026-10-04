@@ -19,8 +19,9 @@ import { Button, EmptyState, Pill } from "../../../app/ui/Controls";
 import { InfoHint } from "../../../app/ui/InfoHint";
 import { useTicker } from "../../../app/ui/useTicker";
 import { backupTargetsApi } from "../../../data/api/backup-targets";
-import { KIND_LABEL, POLICY_LABEL, SCHEDULE_LABEL, lastRunText, quotaNotice, runResultText } from "../model";
+import { KIND_LABEL, POLICY_LABEL, SCHEDULE_LABEL, lastRunText, quotaNotice } from "../model";
 import { BackupTargetDialog } from "./BackupTargetDialog";
+import { PushProgressDialog } from "./PushProgressDialog";
 
 /** 一次测连接 / 推一次的结果，按目标 id 存：同一屏上多个目标各自报自己的，互不覆盖 */
 type TestResults = Readonly<Record<string, { ok: boolean; message: string }>>;
@@ -30,7 +31,8 @@ export function BackupTargetsCard() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
-  const [running, setRunning] = useState<string | null>(null);
+  /** 正在跑「推一次」的目标（进度弹窗据此挂载） */
+  const [pushing, setPushing] = useState<BackupTarget | null>(null);
   const [results, setResults] = useState<TestResults>({});
   const [runText, setRunText] = useState<Readonly<Record<string, string>>>({});
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -89,21 +91,9 @@ export function BackupTargetsCard() {
     }
   }
 
-  /** 「推一次」：复用服务端那套状态机（一轮一批）。结果**平铺**在目标行上，不靠 Toast */
-  async function runOnce(target: BackupTarget): Promise<void> {
-    setRunning(target.id);
-    try {
-      const result = await backupTargetsApi.run(target.id);
-      setRunText((current) => ({ ...current, [target.id]: runResultText(result) }));
-      await refresh();
-    } catch (cause) {
-      setRunText((current) => ({
-        ...current,
-        [target.id]: `没推成：${cause instanceof Error ? cause.message : "请稍后重试"}`,
-      }));
-    } finally {
-      setRunning(null);
-    }
+  /** 「推一次」：打开进度弹窗，由它循环调服务端那套状态机（一轮一批） */
+  function runOnce(target: BackupTarget): void {
+    setPushing(target);
   }
 
   async function remove(target: BackupTarget): Promise<void> {
@@ -227,13 +217,8 @@ export function BackupTargetsCard() {
                   <Button variant="secondary" size="sm" onClick={() => setEditing(target)}>
                     编辑
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={running === target.id}
-                    onClick={() => void runOnce(target)}
-                  >
-                    {running === target.id ? "推送中" : "推一次"}
+                  <Button variant="secondary" size="sm" onClick={() => runOnce(target)}>
+                    推一次
                   </Button>
                   {confirming ? (
                     <>
@@ -278,6 +263,19 @@ export function BackupTargetsCard() {
           onSaved={() => void refresh()}
           create={backupTargetsApi.create}
           update={backupTargetsApi.update}
+        />
+      ) : null}
+      {/* 进度弹窗自己循环调服务端（界面稿 v1 §三-1）。`key` 让每次开都是一次干净挂载 */}
+      {pushing !== null ? (
+        <PushProgressDialog
+          key={pushing.id}
+          target={pushing}
+          onClose={() => setPushing(null)}
+          onFinished={(text) => {
+            // 结果留在目标行上：关掉弹窗也还能看到上次推了什么
+            setRunText((current) => ({ ...current, [pushing.id]: text }));
+            void refresh();
+          }}
         />
       ) : null}
     </>

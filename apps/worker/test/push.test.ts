@@ -453,6 +453,38 @@ describe("推送状态机 · 调度档位", () => {
     expect(manual.skipped).toContain("快照还没有新东西");
     expect(remote.puts).toHaveLength(0);
   });
+
+  it("`total` 是**这次调用开始时**还欠的量（客户端靠它算进度比例）", async () => {
+    const { cookie, id } = await registerUser("owner");
+    for (let i = 0; i < 5; i += 1) await createItem(cookie, newUlid(), `第 ${i} 篇`);
+    await materializeSnapshot(env, id, NOW);
+    const target = await makeTarget(id);
+
+    // 第一轮：开始时欠 5 个，推掉 2 个
+    const first = await pushOneRound(env, target, NOW, 2);
+    expect(first.total).toBe(5);
+    expect(first.pushed).toBe(2);
+    expect(first.remaining).toBe(3);
+
+    // 第二轮：**重新数**（3 个），不是沿用上一轮那个 5
+    const second = await pushOneRound(env, await readTarget(target.id), NOW + 1000, 2);
+    expect(second.total).toBe(3);
+    expect(second.pushed).toBe(2);
+    expect(second.remaining).toBe(1);
+  });
+
+  it("`total` 只数**在上限之内**的那些（超出预算的下一轮再算）", async () => {
+    const { cookie, id } = await registerUser("owner");
+    for (let i = 0; i < 5; i += 1) await createItem(cookie, newUlid(), `第 ${i} 篇`);
+    await materializeSnapshot(env, id, NOW);
+    const target = await makeTarget(id);
+
+    // 限死成 1 个：还欠 5 个，但这一轮只推 1 个
+    const first = await pushOneRound(env, target, NOW, 1);
+    expect(first.total).toBe(5);
+    expect(first.pushed).toBe(1);
+    expect(first.remaining).toBe(4);
+  });
 });
 
 describe("推送状态机 · HTTP 接口", () => {
@@ -469,6 +501,7 @@ describe("推送状态机 · HTTP 接口", () => {
     expect(res.status).toBeLessThan(300);
     const body = (await res.json()) as BackupRunResult;
     expect(body.pushed).toBe(1);
+    expect(body.total).toBe(1);
     expect(body.remaining).toBe(0);
     expect(body.error).toBeNull();
   });

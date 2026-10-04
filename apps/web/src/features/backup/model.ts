@@ -211,4 +211,70 @@ export function runResultText(result: BackupRunResult): string {
   return `${parts.join("，")}。`;
 }
 
+/** 循环的终态：四个，不许混成一个「成功 / 失败」 */
+export type PushRunPhase = "running" | "done" | "partial" | "failed";
+
+export interface PushRunState {
+  phase: PushRunPhase;
+  /** 累计推了多少个（跨多轮累加） */
+  done: number;
+  /** 服务端第一次报的那个总量；后续只会被新内容顶大，不会变小 */
+  total: number;
+  remaining: number;
+  error: string | null;
+}
+
+export function initialRunState(): PushRunState {
+  return { phase: "running", done: 0, total: 0, remaining: 0, error: null };
+}
+
+/**
+ * 累加一轮的结果。
+ *
+ * **`total` 只增不减**：用户可能一边看进度一边继续写东西，欠的文件会变多。
+ * 那个总量一旦变小，进度条就会往回跳——**进度条往回跳比不准更让人困惑**。
+ */
+export function accumulateRun(state: PushRunState, result: BackupRunResult): PushRunState {
+  if (result.error !== null) {
+    return { ...state, phase: "failed", error: result.error };
+  }
+  const done = state.done + result.pushed;
+  const total = Math.max(state.total, done + result.remaining, result.total);
+  const remaining = result.remaining;
+  return {
+    phase: remaining === 0 ? "done" : "running",
+    done,
+    total,
+    remaining,
+    error: null,
+  };
+}
+
+/** 进度条的比例，**夹在 0–1**（`total` 为 0 时给 1：没东西可推就是"完成了"，不是 0%） */
+export function progressOf(state: PushRunState): number {
+  if (state.total <= 0) return 1;
+  return Math.min(1, Math.max(0, state.done / state.total));
+}
+
+/** 进度条下面的数字行。**必须有数字**——DESIGN.md §3.2：语义色不得单独表意 */
+export function progressText(state: PushRunState): string {
+  if (state.phase === "running" && state.total === 0) return "正在读取待推内容…";
+  return `已推 ${state.done} / ${state.total}`;
+}
+
+/**
+ * 终态文案。**"推了一部分"不是失败**——一轮一批的硬限额下它必然发生。
+ *
+ * 非终态且被中断的那句「关掉也没关系」是刻意说的：游标在服务端（D1），
+ * 关页面不丢进度；不说这句，用户会以为关掉就白推了。
+ */
+export function pushRunText(state: PushRunState, interrupted: boolean): string {
+  if (state.phase === "failed") return `没推成：${state.error ?? "请稍后重试"}`;
+  if (state.phase === "done") {
+    return state.done === 0 ? "已经是最新的了，没有需要推送的内容。" : `推完了，${state.done} 个文件都已推到远端。`;
+  }
+  const tail = interrupted ? "关掉也没关系，下次接着推。" : "正在继续推…";
+  return `推了 ${state.done} 个，还剩 ${state.remaining} 个没推完。${tail}`;
+}
+
 export { BackupTargetKinds, BackupSchedules };

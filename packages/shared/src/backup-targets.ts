@@ -139,7 +139,14 @@ export const BackupRunResultSchema = v.object({
   pushed: v.number(),
   /** 本轮删了多少个（仅 `delete_policy = 'sync'` 时可能非零） */
   deleted: v.number(),
-  /** 还有多少没推完（游标落后于最新 sync_seq） */
+  /**
+   * 这次调用**开始时**还欠多少个（含本轮推掉的那些）。
+   *
+   * 单独给这个是为了让客户端能直接算比例而不必自己累加——**它是服务端说的**，
+   * 客户端猜的"总量"会随用户一边打字一边推而漂移。
+   */
+  total: v.number(),
+  /** 现在还欠多少（游标落后于最新 sync_seq） */
   remaining: v.number(),
   /** 本轮因为外部子请求上限用尽而停下（下一轮续推） */
   quota_stopped: v.boolean(),

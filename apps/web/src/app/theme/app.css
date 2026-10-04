@@ -5185,6 +5185,35 @@ button.chip--tag:hover {
   font-size: var(--fs-small);
 }
 
+/*
+  推送进度条（备份 · 界面稿 `docs/modules/Menote-M7-备份推送进度条-界面稿-v1.md` v1）。
+
+  **只用现成令牌**，不引第二套视觉语言：轨道 `--panel-2`（令牌表里它的用途就是"次级面板"，
+  比 `--line` 更能看出这是一条槽）、填充用 **`--primary-grad` 这个现成渐变**而不是手拼
+  `linear-gradient`（DESIGN.md §3.2 第 2 条禁止硬编码渐变），圆角 `--radius-sm`。
+
+  **刻意不做 `transition`**：每轮循环只有几百毫秒到几秒，过渡既看不清、又会在每轮重置一次。
+  动效只在解释空间关系时用（DESIGN.md §6.3）。
+
+  宽高是"内容定尺寸"：填充块的宽度由行内 style 给，所以轨道必须 `display: block`
+  且高度固定，否则 `style-coverage` 之外还会出现"看不见"的坑。
+*/
+.pushbar {
+  display: block;
+  height: 6px;
+  margin: var(--sp-2) 0 0;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.pushbar__fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--primary-grad);
+}
+
 .hint-line {
   margin: var(--sp-2) 0 0;
   color: var(--muted);
