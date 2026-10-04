@@ -55,6 +55,37 @@ md.renderer.rules.image = (tokens, idx, options, env, self) => {
   return self.renderToken(tokens, idx, options);
 };
 
+/*
+ * 代码块的 `<pre>` 补 `class="hscroll"` 与 `tabindex="0"`（2026-10-04）。
+ *
+ * `hscroll` 的理由：正文代码块此前**唯独没挂**细滚动条类，于是同一屏里表格是细条、
+ * 代码块是系统默认那根 15–17px 粗条（`app.css` 里 `.markdown-body pre.hscroll` 那组规则）。
+ * ⚠️ **这行与 `app.css` 是一条契约**：类名由这里发出、样式在那里，两边必须一起改——
+ * 只改 CSS 会让选择器永远匹配不上（症状是「改了没反应」，不报错）。
+ *
+ * `tabindex` 的理由：横条从「常显」改成「悬停/聚焦才显形」（`app.css` 的 `.hscroll`），
+ * 而 `<pre>` 原本**不可聚焦**——键盘用户 Tab 进正文根本到不了代码块，`:focus-within`
+ * 永不触发，那条提示对键盘就等于不存在（`DESIGN.md` §6.1「不以悬停为唯一入口」）。
+ *
+ * **为什么是改字符串而不是 `token.attrSet`**（踩过的坑）：两条规则的落点不一样——
+ * `code_block` 把 token 属性写到 `<pre>` 上，而 `fence` 写到**内层 `<code>`** 上
+ * （带语言时它还会另建一个临时 token）。所以对 `fence` 用 `attrSet` 的话，
+ * 属性落在 `<code>`，真正能横向滚的 `<pre>` 拿不到。
+ * 内容里的字面 `<pre>` 早就被 `escapeHtml` 转义成 `&lt;pre&gt;`，不会误伤。
+ */
+const PRE_ATTRS = '<pre class="hscroll" tabindex="0"';
+
+for (const rule of ["fence", "code_block"] as const) {
+  const fallback = md.renderer.rules[rule];
+  md.renderer.rules[rule] = (tokens, idx, options, env, self) => {
+    const html = fallback
+      ? fallback(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+    /* 负向断言保证不重复注入；两条规则实际都不会给 `<pre>` 自带属性 */
+    return html.replace(/<pre(?![^>]*\btabindex=)/, PRE_ATTRS);
+  };
+}
+
 /** 附件地址里的 sha256（正文里就是 `/api/attachments/h/<sha>`） */
 export function attachmentShaFromHref(href: string): string | null {
   const matched = /\/api\/attachments\/h\/([0-9a-f]{64})/i.exec(href);

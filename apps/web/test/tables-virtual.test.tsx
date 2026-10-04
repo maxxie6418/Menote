@@ -113,4 +113,17 @@ describe("大表窗口化", () => {
     const pad = document.querySelector(".tablegrid__pad") as HTMLElement;
     expect(pad.getAttribute("aria-hidden")).toBe("true");
   });
+
+  it("网格容器挂了 `hscroll` 且可聚焦（横条改成悬停才显形，键盘必须进得来）", () => {
+    /*
+      2026-10-04：横条从「常显」改成「悬停/聚焦才显形」。这条是那条改动的**前提**——
+      容器不可聚焦，`:focus-within` 就不触发，横条对键盘用户等于彻底消失
+      （DESIGN.md §6.1 不以悬停为唯一入口）。两个都要钉：类名（决定样式）与
+      tabIndex（决定键盘能不能进来），少一半这条提示就只对鼠标用户存在。
+    */
+    renderEditor(bigDoc(10));
+    const container = document.querySelector(".tablegrid__scroll") as HTMLElement;
+    expect(container.classList.contains("hscroll"), "表格容器没挂 hscroll，横条会常显").toBe(true);
+    expect(container.getAttribute("tabindex"), "表格容器不可聚焦").toBe("0");
+  });
 });

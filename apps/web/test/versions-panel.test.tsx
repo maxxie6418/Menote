@@ -204,4 +204,17 @@ describe("对比视图", () => {
     expect(screen.getByText("当前稿")).toBeTruthy();
     expect(screen.getByText(/新增 1 行 · 删除 1 行/)).toBeTruthy();
   });
+
+  it("滚动容器挂了 `hscroll` 且可聚焦（理由同表格网格）", () => {
+    /*
+      2026-10-04：横条改成「悬停/聚焦才显形」后，不可聚焦的容器等于把这条提示
+      对键盘用户关在门外（DESIGN.md §6.1）。类名与 tabIndex 一起钉。
+    */
+    const { container } = render(
+      <VersionDiff leftTitle="此版本" rightTitle="当前稿" result={lineDiff("a", "b")} />,
+    );
+    const scroll = container.querySelector(".versiondiff__scroll") as HTMLElement;
+    expect(scroll.classList.contains("hscroll")).toBe(true);
+    expect(scroll.getAttribute("tabindex")).toBe("0");
+  });
 });

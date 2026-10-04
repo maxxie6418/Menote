@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { assertNoColourLiterals } from "./helpers/css-colors";
+import { parseRules, type CascadeRule } from "./helpers/css-cascade";
 
 const read = (relative: string): string =>
   readFileSync(new URL(relative, import.meta.url), "utf8");
@@ -300,5 +301,211 @@ describe("功能栏标签区：贴底固定 + 按钮铺开（2026-09-29）", () 
     expect(rule, "少了 flex-wrap:wrap 就会排成一列").toMatch(/flex-wrap:\s*wrap/);
     // 兜底：别处在 `.tags` 上写纵向排列也不行（同选择器 + 新属性，css-cascade 抓不到这种）
     expect(css, "`.tags` 被改成纵向排列了").not.toMatch(/\.tags\s*\{[^}]*flex-direction:\s*column/);
+  });
+});
+
+/**
+ * 浮层层级（2026-10-04 修「右上角账户菜单被页面元素盖住、点不到」）。
+ *
+ * 病根**不在菜单自己，在顶栏**：顶栏有 `backdrop-filter: blur(8px)`，而非 `none` 的
+ * `backdrop-filter` 会创建堆叠上下文——整条顶栏因此是根层级里的一个"原子岛"，不写 `z-index`
+ * 就停在 0 层。顶栏承载的 `.menu`（账户快捷菜单、隐私锁胶囊菜单）那个 `z-index: 40`
+ * **只在岛内有效**，抬不动岛外的任何东西；于是 `.shell__body` 里层级 ≥ 1 的元素整体盖住顶栏
+ * （最常撞上的是表格那条不透明 sticky 表头 `.tablegrid__th`，层级 1——编辑页才有表格，
+ * 所以症状表现为"尤其在编辑页面"、且只在那些盒子真与菜单重叠时出现）。
+ *
+ * 守**声明值**，与本文件其余各块同理：jsdom 没有排版引擎，"被压住"在渲染用例里量不出来。
+ * 层级刻度表写在 `app.css` 的 `.topbar` 上方，**两边要一起改**。
+ */
+describe("浮层层级（2026-10-04）", () => {
+  const rules = parseRules(app);
+
+  /** 某选择器某属性实际生效的取值（未声明时为 `NaN`） */
+  function zIndexOf(source: readonly CascadeRule[], selector: string): number {
+    let value = "";
+    for (const rule of source) {
+      if (rule.selector !== selector || rule.media !== null) continue;
+      for (const declaration of rule.declarations) {
+        if (declaration.property === "z-index") value = declaration.value;
+      }
+    }
+    return value === "" ? Number.NaN : Number(value);
+  }
+
+  /** 页面内容里的浮层：都在 `.shell__body` 内、**不在顶栏内**，必须低于顶栏 */
+  const CONTENT_LAYERS = [".tablegrid__th", ".tkhead__dock--float", ".tdetail", ".infohint__pop"];
+
+  /** 必须压住顶栏的两层：轻提示与模态遮罩（定场） */
+  const ABOVE_TOPBAR = [".toast-host", ".overlay"];
+
+  /** 返回所有层级冲突（空数组 = 没问题）；抽成函数是为了下面的"自证"能喂坏的进去 */
+  function layeringFaults(source: readonly CascadeRule[]): string[] {
+    const topbar = zIndexOf(source, ".topbar");
+    if (!Number.isFinite(topbar)) {
+      return [
+        "`.topbar` 没有声明 z-index —— 它有 backdrop-filter、已经是堆叠上下文，" +
+          "不给层级等于把整条顶栏（含账户菜单）锁在 0 层，页面内容一压就盖住",
+      ];
+    }
+
+    const faults: string[] = [];
+    for (const selector of CONTENT_LAYERS) {
+      const value = zIndexOf(source, selector);
+      if (Number.isFinite(value) && value >= topbar) {
+          faults.push(`\`${selector}\` 的 z-index ${value} 不低于顶栏 ${topbar}：页面内容会盖住顶栏承载的浮层`);
+      }
+    }
+    // `.cmd-menu` 同样要越过顶栏，但理由不同：它**不在顶栏内**，`.menu` 那 40 抬不动它
+    const cmd = zIndexOf(source, ".cmd-menu");
+    if (Number.isFinite(cmd) && cmd <= topbar) {
+      faults.push(`\`.cmd-menu\` 的 z-index ${cmd} 不高于顶栏 ${topbar}：它不在顶栏内，向上弹到顶栏那条带子时会被压掉`);
+    }
+    for (const selector of ABOVE_TOPBAR) {
+      const value = zIndexOf(source, selector);
+      if (Number.isFinite(value) && topbar >= value) {
+        faults.push(`顶栏 ${topbar} 不低于 \`${selector}\` ${value}：后者必须压住顶栏`);
+      }
+    }
+    return faults;
+  }
+
+  it("顶栏显式给出层级：压住全部页面内容，被轻提示与模态压住，`.cmd-menu` 自己越过顶栏", () => {
+    expect(layeringFaults(rules), "浮层层级被破坏（见 app.css `.topbar` 上方的刻度表）").toEqual([]);
+  });
+
+  it("自证：去掉顶栏的 z-index、或给低了，守卫必须变红（防「零故障也算通过」的假绿）", () => {
+    // ① 顶栏没给层级 —— 正是本次线上症状的成因
+    expect(
+      layeringFaults(
+        parseRules(`.topbar { backdrop-filter: blur(8px); } .tablegrid__th { position: sticky; z-index: 1; }`),
+      ),
+    ).toHaveLength(1);
+
+    // ② 顶栏给了但给低了（0）：页面内容压过它 → 一条。
+    //    注意此时 `.cmd-menu: 40` **不该**被算成故障——它确实高于 0，所以这里只有一条。
+    expect(
+      layeringFaults(
+        parseRules(
+          `.topbar { z-index: 0; }
+           .tablegrid__th { position: sticky; z-index: 1; }
+           .cmd-menu { z-index: 40; }
+           .toast-host { z-index: 60; }
+           .overlay { z-index: 200; }`,
+        ),
+      ),
+    ).toHaveLength(1);
+
+    // ③ 顶栏抬高了但 `.cmd-menu` 没跟着抬（留在 `.menu` 的 40）：它在顶栏内，向上弹会被压 → 一条
+    expect(
+      layeringFaults(
+        parseRules(`.topbar { z-index: 50; } .cmd-menu { z-index: 40; } .tablegrid__th { z-index: 1; }`),
+      ),
+    ).toHaveLength(1);
+
+    // ④ 顶栏压过了轻提示 → 一条
+    expect(
+      layeringFaults(parseRules(`.topbar { z-index: 999; } .toast-host { z-index: 60; }`)),
+    ).toHaveLength(1);
+
+    // ⑤ 好的那份不报
+    expect(
+      layeringFaults(
+        parseRules(
+          `.topbar { z-index: 50; }
+           .tablegrid__th { position: sticky; z-index: 1; }
+           .cmd-menu { z-index: 55; }
+           .toast-host { z-index: 60; }
+           .overlay { z-index: 200; }`,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("菜单被压到可用高度时自己滚，而不是被裁掉半截", () => {
+    /*
+      `.menu` 的 `max-height` 由 `ui/Menu.tsx` 按「最近的会裁剪的祖先」内联给出，
+      但**限高单独存在没有意义**——没有 `overflow` 的话超出的那截仍然会被裁掉、仍然点不到。
+      两半必须同时在，少一半就是"限了高但还是看不见"。
+    */
+    expect(app, "`.menu` 没有 overflow-y:auto，被压矮后超出部分会被裁掉").toMatch(
+      /\.menu\s*\{[^}]*overflow-y:\s*auto/,
+    );
+  });
+});
+
+/**
+ * 横向滚动条口径（2026-10-04，方案 B「细轴 + 悬停/聚焦显形」）
+ *
+ * 这个 describe 里的每条断言都来自**实测**，不是从规范推的：
+ * 2026-10-04 在 Chromium 上验过「声明 `scrollbar-color` 后 `::-webkit-scrollbar`
+ * 规则被整体忽略」与「`::-webkit-scrollbar:horizontal` 分轴写法无效（会整体回落
+ * 系统默认粗条）」。这两条一旦被下一个人凭记忆"优化"回去，表现是**静默的**——
+ * 页面照样渲染，只是横条又变粗、或又变成两轴一起显形，没有报错。
+ */
+describe("横向滚动条（`.hscroll`，2026-10-04）", () => {
+  it("静止时用 `scrollbar-color: transparent` 而不是伪元素隐藏", () => {
+    /*
+      为什么不能用 `::-webkit-scrollbar-thumb { background: transparent }`：
+      实测元素上一旦声明 `scrollbar-color`，浏览器就整体忽略该元素的伪元素规则。
+      也就是说改成伪元素后，这条规则在现代 Chrome / Edge 里**根本不生效**——
+      横条会重新常显，而 CI 与肉眼都不会报错。
+    */
+    expect(app, "`.hscroll` 必须用 scrollbar-color 做静止隐藏").toMatch(
+      /\.hscroll\s*\{[^}]*scrollbar-color:\s*transparent\s+transparent/,
+    );
+    expect(app, "`.hscroll` 保留 thin：轴的位置不变，横条出现/消失才不会让内容高度跳").toMatch(
+      /\.hscroll\s*\{[^}]*scrollbar-width:\s*thin/,
+    );
+  });
+
+  it("悬停与键盘聚焦都要能显形（不以悬停为唯一入口）", () => {
+    expect(app, "`.hscroll` 缺 :hover 显形").toMatch(/\.hscroll:hover[^{]*\{[^}]*scrollbar-color:/);
+    expect(
+      app,
+      "`.hscroll` 缺 :focus-within 显形 —— 横条改成悬停才出现后，键盘进不来就等于对键盘不存在",
+    ).toMatch(/\.hscroll:focus-within[^{]*\{[^}]*scrollbar-color:/);
+  });
+
+  it("`.hscroll` 块里不出现 `::-webkit-scrollbar`（会被 scrollbar-color 整体忽略）", () => {
+    /*
+      这条是**防回退**用的：`.scroll-thin` 里那几行伪元素是既有代码（Firefox 与旧浏览器靠它），
+      但它与 `.hscroll` 的机制相反。允许它留在 `.scroll-thin` 里，不允许被复制进 `.hscroll`。
+    */
+    const blocks = [...app.matchAll(/\.hscroll[^{]*\{[^}]*\}/g)].map((m) => m[0]);
+    expect(blocks.length, "找不到 `.hscroll` 规则块").toBeGreaterThan(0);
+    for (const block of blocks) {
+      expect(block, "`.hscroll` 里写了伪元素：会被 scrollbar-color 整体忽略，等于没写").not.toMatch(
+        /-webkit-scrollbar/,
+      );
+    }
+  });
+
+  it("正文代码块也挂上了：此前唯独它没挂，同屏出现两种粗细", () => {
+    /*
+      ⚠️ 这条**只能证明 CSS 里有这条规则**，证明不了它匹配得上。
+      类名 `hscroll` 是由 `app/editor/markdown.ts` 发到 `<pre>` 上的——
+      本轮真踩过一次：CSS 写好了、这条断言也绿了，但渲染出的 `<pre>` 根本没有那个类，
+      于是整组规则从未生效，而**没有任何报错**。
+      配对的那一半在 `markdown.test.ts`（断言渲染结果真的带 `class="hscroll"`），
+      两边必须一起看，只看这里会以为已经改好了。
+    */
+    expect(
+      app,
+      "`.markdown-body pre.hscroll` 缺失 —— 代码块会退回系统默认粗条（15–17px）",
+    ).toMatch(/\.markdown-body pre\.hscroll\s*\{/);
+  });
+
+  it("属性行保持 0 占位 + 边缘渐隐（DESIGN §2.2 固定 26px，不允许画条）", () => {
+    /*
+      这一行**不能**改成画滚动条：DESIGN.md §2.2 已定它固定 26px、不换行，
+      任何会撑高的条都违反该条。它此前的毛病是「条整个藏掉、截断无提示」，
+      改法是 sticky 伪元素做的边缘渐隐（不占高度、两端自动正确）。
+    */
+    expect(app, "属性行的滚动条必须继续隐藏").toMatch(
+      /\.addentry__extras\s*\{[^}]*scrollbar-width:\s*none/,
+    );
+    expect(app, "属性行缺边缘渐隐：内容被截断仍然毫无提示").toMatch(
+      /\.addentry__extras::after\s*\{[^}]*position:\s*sticky|position:\s*sticky[^}]*\.addentry__extras::after/,
+    );
   });
 });

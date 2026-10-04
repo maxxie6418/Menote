@@ -102,4 +102,29 @@ describe("附件引用（M4-10；界面稿 §7.3 / §7.4）", () => {
     expect(html).toContain("<a");
     expect(parse(html).querySelector(".size-tag")).toBeNull();
   });
+
+  it("代码块的 `<pre>` 带 `hscroll` 与可聚焦（横条改成悬停才显形）", () => {
+    /*
+      2026-10-04。两个属性缺一不可，且**都不能省**：
+      - `hscroll`：`app.css` 里代码块的横条规则写的是 `.markdown-body pre.hscroll`。
+        类名只由**这里**发出——只改 CSS 不改这里，选择器就永远匹配不上，
+        症状是「改了没反应」且**不报错**（这个坑本轮真踩过一次）。
+      - `tabindex`：横条改成悬停才显形后，`<pre>` 不可聚焦就成了真问题——
+        键盘用户 Tab 进正文根本到不了代码块，`:focus-within` 永不触发，
+        那条提示对键盘等于不存在（DESIGN.md §6.1 不以悬停为唯一入口）。
+
+      两种来源都要覆盖：``` 围栏（`fence`）与四空格缩进（`code_block`）。
+    */
+    for (const [label, html] of [
+      ["围栏", renderMarkdown("```js\nconst a = 1;\n```")],
+      ["缩进", renderMarkdown("行一\n\n    const a = 1;")],
+    ] as const) {
+      const pre = parse(html).querySelector("pre");
+      expect(pre?.getAttribute("class"), `${label}代码块缺 hscroll：横条规则匹配不上`).toBe("hscroll");
+      expect(pre?.getAttribute("tabindex"), `${label}代码块缺 tabindex`).toBe("0");
+    }
+
+    /* 行内代码不是块，不该被塞这些属性（塞了会凭空多出一个 tab 停靠点） */
+    expect(parse(renderMarkdown("`x`")).querySelector("pre")).toBeNull();
+  });
 });

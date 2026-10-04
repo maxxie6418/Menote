@@ -96,7 +96,35 @@ button {
   min-height: 0;
 }
 
-/* 顶栏：全宽、固定高、6 块（DESIGN.md §2.5-1 顺序不可变） */
+/*
+  顶栏：全宽、固定高、6 块（DESIGN.md §2.5-1 顺序不可变）
+
+  **`z-index: 50` 不是可选的**（2026-10-04 修「账户菜单被页面元素盖住点不到」）：
+  上面那条 `backdrop-filter: blur(8px)` 不是 `none`，**它会创建堆叠上下文**——整条顶栏因此
+  变成根层级里的一个"原子岛"，而顶栏自己不写 `z-index` 就等于把这个岛停在 **0** 层。
+  顶栏承载的浮层（`.menu`：账户快捷菜单、隐私锁胶囊菜单）写多少都没用，那个数字只在岛内有效，
+  抬不动岛外的任何东西；于是 `.shell__body` 里凡是层级 ≥ 1 的元素都**整体盖住**顶栏，
+  浮层被切成几段、点不到。编辑页最常撞上的是表格那条不透明的 sticky 表头
+  （`.tablegrid__th`，`z-index: 1`）。
+
+  **本文件的层级刻度**（新增浮层时按此选位，别随手写 999）：
+
+  | 层级 | 谁 | 说明 |
+  |---|---|---|
+  | 0 | 顶栏 | 常规流页面内容都靠 DOM 顺序，不写 `z-index` |
+  | 1 | `.tablegrid__th` | 表格固定表头（sticky，必须压住表体） |
+  | 10 | `.tkhead__dock--float` | 悬浮筛选卡（sticky） |
+  | 30 | `.infohint__pop` | 说明提示浮层 |
+  | 40 | `.tdetail` | 待办详情侧滑——**页面内容里最高的一层** |
+  | 40 | `.menu` | 锚定菜单本体；**在顶栏内**时由顶栏那一层抬着走 |
+  | **50** | **`.topbar`** | 顶栏（含它承载的一切浮层）。**必须高于全部页面内容** |
+  | 55 | `.cmd-menu` | 编辑器 `/`、`@` 菜单。**不在顶栏内**，要自己越过顶栏那一层 |
+  | 60 | `.toast-host` | 轻提示 |
+  | 200 | `.overlay` | 模态遮罩与解锁框（定场，必须压住一切） |
+
+  顶栏是 `.shell` 的 flex item，**flex item 即使 `position: static` 也吃 `z-index`**，
+  所以这里不必额外写 `position`。
+*/
 .topbar {
   flex: none;
   height: var(--topbar-h);
@@ -107,6 +135,7 @@ button {
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(8px);
+  z-index: 50;
 }
 
 .topbar__brand {
@@ -345,6 +374,10 @@ button {
   宿主量到下方放得下时加 `.cmd-menu--down`——功能栏录入框在功能栏顶部，一律向上弹会顶出视口
   （用户 2026-10-01 反馈的问题 3）。方向与限高由 `app/editor/menu-placement.ts` 算，
   `max-height` 由宿主按可用空间写成内联值（窗口里那个 `overflow: hidden` 的 `.modal` 才是边界）。
+
+  `z-index: 55`（2026-10-04）：本菜单**不在顶栏内**，它的层级不继承顶栏——`.menu` 那 40 只在
+  顶栏那个堆叠上下文内有效（见 `.topbar` 上方那张刻度表）。此前它靠 40 > 顶栏的 0 恰好压在顶栏
+  之上；顶栏显式抬到 50 之后必须自己越过这一层，否则向上弹到顶栏那条带子时会被压掉。
 */
 .cmd-menu {
   left: 0;
@@ -352,6 +385,7 @@ button {
   max-height: 232px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  z-index: 55;
 }
 
 /* 向下弹：清掉向上那条，改从锚点下方展开 */
@@ -1073,6 +1107,20 @@ button {
   padding: var(--sp-3);
   border-radius: var(--radius);
   overflow-x: auto;
+  /*
+    2026-10-04：此前**唯独这里没挂** `.scroll-thin` / `.hscroll`，于是同一屏里
+    表格是细条、代码块是 Windows 默认那根 15–17px 粗条——「违和」最刺眼的一处。
+    `tabindex` 由 markdown-it 的 fence / code_block 规则加到 `<pre>` 上（见 `app/editor/markdown.ts`），
+    没有它这块就不可聚焦，`:focus-within` 永不触发、横条对键盘用户等于不存在。
+  */
+}
+.markdown-body pre.hscroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.markdown-body pre.hscroll:hover,
+.markdown-body pre.hscroll:focus-within {
+  scrollbar-color: var(--line-2) transparent;
 }
 
 /* 正文底部状态栏（DESIGN.md §2.7：固定在正文区底部） */
@@ -1252,6 +1300,40 @@ button {
   background: var(--muted);
   background-clip: content-box;
 }
+
+/*
+  横向滚动统一口径（2026-10-04，四处：表格网格 / 正文代码块 / 版本对比）
+  ——————————————————————————————————————————————————————————————
+  方案 B「细轴 + 悬停/聚焦显形」。**下面两条约束是实测出来的，不要凭记忆改**：
+
+  ① **必须用 `scrollbar-color`，不能改回 `::-webkit-scrollbar` 伪元素。**
+     实测（Chromium，2026-10-04）：元素上一旦声明 `scrollbar-color`，浏览器就**整体忽略**
+     该元素的 `::-webkit-scrollbar` 系列规则。上面 `.scroll-thin` 的那几行伪元素
+     在现代 Chrome / Edge 里因此**从未生效**，真正起作用的是它的
+     `scrollbar-width` / `scrollbar-color` 两行——这是既有事实，不是笔误，
+     留着它只是让 Firefox 与旧浏览器仍能用同一套外观。
+
+  ② **不分轴。** `::-webkit-scrollbar:horizontal` 这种按轴写的伪元素无效（实测：不但没生效，
+     还会因为没有通用规则而让浏览器整个回落到系统默认粗条）。而 `scrollbar-color` 本身
+     也不分轴。所以**同一容器里纵条会跟着一起显隐**——表格是唯一两轴容器（`.tablegrid__scroll`），
+     它的纵条因此也是「悬停/聚焦才出现」。做不到只治横轴，这是 CSS 的硬限制，不是漏写。
+
+  另：**轴的位置仍然留着**（`scrollbar-width: thin` 不变），滑块只是不画——所以
+  横条出现/消失**不会**让内容高度跳一下。这是选 B 而不是 C 的主要理由。
+*/
+.hscroll {
+  scrollbar-width: thin;
+  /* 静止：不画滑块（轨道透明） */
+  scrollbar-color: transparent transparent;
+}
+
+/* 悬停 / 键盘聚焦时显形。`focus-within` 不可省：横条改成悬停显形后，
+   键盘用户若进不来，这条就等于对键盘彻底消失（DESIGN.md §6.1 不以悬停为唯一入口）。 */
+.hscroll:hover,
+.hscroll:focus-within {
+  scrollbar-color: var(--line-2) transparent;
+}
+
 
 .tablegrid table {
   border-collapse: separate;
@@ -3543,11 +3625,18 @@ button {
   text-transform: uppercase;
 }
 
+/*
+  锚定菜单（DESIGN.md §6.4）。层级刻度见文件前部 `.topbar` 上方那张表。
+  `z-index: 40` **只在顶栏那个堆叠上下文内有效**——顶栏自己那一层（50）才是它真正的高度。
+  `overflow-y: auto`：菜单打开时按"最近的会裁剪的祖先"压过 `max-height`（见 `ui/Menu.tsx`
+  复用 `editor/menu-placement.ts`），矮于内容时**自己滚**而不是被裁掉半截。
+*/
 .menu {
   position: absolute;
   z-index: 40;
   min-width: 190px;
   padding: 5px;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -4618,6 +4707,37 @@ button.chip--tag:hover {
 
 .addentry__extras::-webkit-scrollbar {
   height: 0;
+}
+
+/*
+  「那边还有字段」的提示（2026-10-04）。此前这一行把滚动条**整个藏掉**，
+  内容被截断却毫无提示——不是丑，是看不见。
+  **不能改成画条**：DESIGN.md §2.2 已定这行固定 26px、不换行、越界横向滚动，
+  任何会撑高的条都违反该条。所以用**边缘渐隐**，且不占任何高度：
+
+  手法是 `position: sticky` 的伪元素——它们是这一行的 flex 项，于是会被
+  「吸」在滚动视口的左右边缘；滚到头时自然位置与视口边缘重合、渐隐就滑到空白处，
+  **两端自动正确**，不需要 JS 判断 scrollLeft。
+  代价：行尾多出 18px 可滚空间（正是渐隐自己那段），换来「不会在终点盖住最后一个字段」。
+*/
+.addentry__extras::before,
+.addentry__extras::after {
+  content: "";
+  position: sticky;
+  flex: none;
+  width: 18px;
+  align-self: stretch;
+  pointer-events: none;
+}
+
+.addentry__extras::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--panel) 45%, transparent);
+}
+
+.addentry__extras::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--panel) 45%, transparent);
 }
 
 /* 移动目标的候选列表（禁用项必须带原因，见 DESIGN.md §6.1） */

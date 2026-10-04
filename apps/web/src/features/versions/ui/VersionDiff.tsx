@@ -28,7 +28,9 @@ export function VersionDiff({ leftTitle, rightTitle, result }: VersionDiffProps)
         </span>
       </div>
 
-      <div className="versiondiff__scroll">
+      {/* `hscroll` + `tabIndex` 的理由同表格网格：横条改成悬停/聚焦才显形，
+          键盘必须能进得来，否则这条提示对键盘用户等于不存在。 */}
+      <div className="versiondiff__scroll hscroll" tabIndex={0}>
         <ol className="versiondiff__lines">
           {result.lines.map((line, index) => (
             <li

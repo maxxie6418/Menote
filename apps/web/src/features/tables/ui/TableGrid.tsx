@@ -131,7 +131,16 @@ export function TableGrid({
   }
 
   return (
-    <div className="tablegrid__scroll scroll-thin" ref={containerRef} role="grid" aria-label="表格">
+    // `hscroll`：横向轴改成「悬停/聚焦才显形」（app.css 的统一口径）。
+    // `tabIndex` 不是可选项——横条不再常显，键盘若进不来这条就等于对键盘用户不存在
+    // （DESIGN.md §6.1 不以悬停为唯一入口）；进了之后 `:focus-within` 会把条显出来。
+    <div
+      className="tablegrid__scroll scroll-thin hscroll"
+      ref={containerRef}
+      role="grid"
+      aria-label="表格"
+      tabIndex={0}
+    >
       <table className="tablegrid">
         <thead>
           <tr>
