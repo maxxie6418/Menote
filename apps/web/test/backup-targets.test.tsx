@@ -69,6 +69,10 @@ interface ServerState {
   testResult: BackupTestResult | null;
   /** 「推一次」的逐轮结果：每调一次 `/run` 取一个，取完就重复最后一个（模拟"一直推不完"） */
   runQueue: BackupRunResult[];
+  /** 非 null 时，第 2 轮及以后的 `/run` 会**卡在这个 promise 上**，直到测试自己放行 */
+  runGate: Promise<void> | null;
+  /** 每轮的模拟网络延迟。只给需要观察**中间态**的用例留延迟，其余设 0 免得全量并行时超时 */
+  runDelayMs: number;
   runCalls: number;
   removed: string[];
   updates: Array<{ id: string; input: UpdateBackupTargetInput }>;
@@ -79,6 +83,8 @@ let state: ServerState = {
   listError: null,
   testResult: null,
   runQueue: [],
+  runGate: null,
+  runDelayMs: 2,
   runCalls: 0,
   removed: [],
   updates: [],
@@ -109,10 +115,14 @@ vi.mock("../src/data/api/backup-targets", () => ({
       state.runCalls += 1;
       const picked = state.runQueue[Math.min(state.runCalls - 1, state.runQueue.length - 1)];
       if (picked === undefined) throw new Error("没有配置推一次结果");
-      // **刻意有一点延迟**：真发网络请求是要时间的，而同步返回的 mock 会让整个循环
-      // 在 React 重渲染之前就跑完——那样"中间那一档进度"根本观察不到，
-      // 而中间态恰恰是进度条唯一有存在理由的那部分。
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      /*
+        **刻意有一点延迟**：真发网络请求是要时间的，而同步返回的 mock 会让整个循环
+        在 React 重渲染之前就跑完——那样"中间那一档进度"根本观察不到，
+        而中间态恰恰是进度条唯一有存在理由的那部分。
+        要断言某个**特定**中间态的用例用 `runGate` 卡住后续轮次，不靠等时间。
+      */
+      if (state.runDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.runDelayMs));
+      if (state.runCalls >= 2 && state.runGate !== null) await state.runGate;
       return picked;
     },
   },
@@ -124,6 +134,8 @@ beforeEach(() => {
     listError: null,
     testResult: null,
     runQueue: [],
+    runGate: null,
+    runDelayMs: 2,
     runCalls: 0,
     removed: [],
     updates: [],
@@ -300,6 +312,10 @@ describe("外部备份目标 · 推一次（进度条）", () => {
 
   it("进度条的比例跟着走（不是一步跳到 100%）", async () => {
     const user = userEvent.setup();
+    let openGate = (): void => {};
+    state.runGate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
     state.targets = [makeTarget()];
     state.runQueue = [
       { pushed: 25, deleted: 0, total: 100, remaining: 75, quota_stopped: true, error: null },
@@ -309,15 +325,22 @@ describe("外部备份目标 · 推一次（进度条）", () => {
     await waitFor(() => expect(screen.getByText("家里的 NAS")).toBeTruthy());
 
     await user.click(screen.getByRole("button", { name: "推一次" }));
+    // 第二轮被 `runGate` 卡住，所以这个中间态**是确定的**、不靠等时间
     await waitFor(() => expect(screen.getByText("已推 25 / 100")).toBeTruthy());
     // 中途那一档的宽度必须是 25%，**不是**一路飙到 100%
-    const bar = screen.getByRole("progressbar");
-    expect(bar.getAttribute("aria-valuenow")).toBe("25");
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");
+
+    openGate();
+    await waitFor(() => expect(screen.getByText("已推 100 / 100")).toBeTruthy());
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
   });
 
   it("循环有上限：到顶就停并说清「还剩多少」，不空转", async () => {
     const user = userEvent.setup();
     state.targets = [makeTarget()];
+    // 这条只验**终态与调用次数**，不需要观察中间态 → 每轮不留延迟，
+    // 否则 50 轮在全套件并行时会把 `waitFor` 拖过默认超时（它和"进度条那条"是两种诉求）
+    state.runDelayMs = 0;
     // 永远推不完（用户在一直打字）：每一轮都还是"还剩很多"
     state.runQueue = Array.from({ length: MAX_ROUNDS + 10 }, () => ({
       pushed: 40,
@@ -332,9 +355,10 @@ describe("外部备份目标 · 推一次（进度条）", () => {
 
     await user.click(screen.getByRole("button", { name: "推一次" }));
     await waitFor(() => expect(state.runCalls).toBe(MAX_ROUNDS));
-    expect(screen.getByText(/还剩 500 个没推完/)).toBeTruthy();
+    // 2000 = 50 轮 × 40 个：正好停在上限，一个都没多推
+    expect(screen.getAllByText(/还剩 500 个没推完/).length).toBe(2);
     // 说了「关掉也没关系」——不说这句，用户会以为关掉就白推了
-    expect(screen.getByText(/关掉也没关系，下次接着推/)).toBeTruthy();
+    expect(screen.getAllByText(/关掉也没关系，下次接着推/).length).toBe(2);
   });
   it("失败时原因平铺、不藏进 ⓘ", async () => {
     const user = userEvent.setup();

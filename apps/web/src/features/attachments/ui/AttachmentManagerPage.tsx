@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ATTACHMENT_LIST_MAX_LIMIT,
+  ATTACHMENT_ORPHAN_RETENTION_DAYS,
   type AttachmentListResponse,
   type AttachmentListRow,
 } from "@menote/shared";
@@ -28,7 +29,16 @@ import { Icon } from "../../../app/ui/Icon";
 import { InfoHint } from "../../../app/ui/InfoHint";
 import { Modal } from "../../../app/ui/Modal";
 import { attachmentsApi } from "../../../data/api/endpoints";
-import { UNNAMED_ATTACHMENT, attachmentUrl, formatBytes, isImageMime } from "../model";
+import {
+  UNNAMED_ATTACHMENT,
+  attachmentUrl,
+  formatBytes,
+  isImageMime,
+  orphanCountdownText,
+  orphanGcConfirmText,
+  orphanGcHint,
+  planOrphanGc,
+} from "../model";
 
 type StateFilter = "all" | "active" | "orphaned";
 
@@ -102,17 +112,39 @@ export function AttachmentManagerPage() {
   const totalBytes = all.reduce((sum, row) => sum + row.size_bytes, 0);
   const orphanCount = all.filter((row) => stateOf(row) === "orphaned").length;
   const visible = filter === "all" ? all : all.filter((row) => stateOf(row) === filter);
+  /*
+    「点这个按钮到底会发生什么」在**客户端算**（`planOrphanGc`）：判定要的数据本来就在
+    列表每一行的 `orphaned_at` 里，不必扩接口，也不必等服务端配合。
+
+    `now` **在挂载时取一次**（而不是 render 体里直接 `Date.now()`——那是 render 期副作用，
+    `react-hooks/purity` 会拦）。这一屏不是实时屏：倒计时本来就是"还有多少天"，
+    跨过午夜重开页面自然刷新，不需要为它加一个每秒重渲染的 ticker。
+  */
+  const [now] = useState(() => Date.now());
+  const gcPlan = planOrphanGc(all, now);
+  /** 真的有事可做才可点：还有没标记的，或者有过期的可删 */
+  const gcHasWork = gcPlan.unmarked > 0 || gcPlan.due > 0;
 
   async function runGc(): Promise<void> {
     if (busy) return;
     setBusy(true);
     try {
       const result = await attachmentsApi.gc();
-      setNotice(
-        result.removed > 0
-          ? `已清理 ${result.removed} 个到期孤儿附件`
-          : `已标记 ${result.marked} 个孤儿附件；它们要满 30 天才会真正删除`,
-      );
+      /*
+        **三态分开说**。旧写法只有两句，且 `removed === 0` 时会说成「已标记 0 个…」
+        ——一句自相矛盾的话，用户读到的就是"这按钮没用"。
+      */
+      if (result.removed > 0) {
+        setNotice(
+          result.marked > 0
+            ? `已删除 ${result.removed} 个到期孤儿附件；另有 ${result.marked} 个开始 30 天倒计时，这次没有被删`
+            : `已删除 ${result.removed} 个到期孤儿附件，空间已释放`,
+        );
+      } else if (result.marked > 0) {
+        setNotice(`已标记 ${result.marked} 个孤儿附件；它们要满 30 天才会真正删除，现在还没有删掉任何文件`);
+      } else {
+        setNotice("没有需要清理的：要么没有孤儿，要么都在 30 天保留期里还没到期");
+      }
       setConfirming(false);
       await refresh();
     } catch (cause) {
@@ -202,7 +234,7 @@ export function AttachmentManagerPage() {
         ) : null}
 
         {visible.map((row) => (
-          <AttachmentRow key={row.id} row={row} />
+          <AttachmentRow key={row.id} row={row} now={now} />
         ))}
       </section>
 
@@ -210,41 +242,47 @@ export function AttachmentManagerPage() {
         <h3 className="setcard__title">
           清理孤儿附件
           <InfoHint label="清理孤儿说明">
-            清理分两步：先把**没有任何条目引用**的附件标为孤儿，再删掉其中已标满 30 天的那些。
-            重新被引用的附件不会出现在这一步里；正文里已删掉引用但还没满 30 天的也不会被立刻删。
+            清理分两步：先把**没有任何条目引用**的附件标为孤儿，再删掉其中已标满 {ATTACHMENT_ORPHAN_RETENTION_DAYS} 天的那些。
+            保留期是给"删错了"留的补救窗口——期间重新被引用就不会被删。所以**第一次点只会开始倒计时，
+            一个文件都不会少**。
           </InfoHint>
         </h3>
 
         <div className="setrow">
           <div className="setrow__label">
             <span className="setrow__name">手动清理孤儿附件</span>
-            {/* 没有可清理对象时把原因**平铺**出来，不让禁用只靠悬停（DESIGN.md §6.1） */}
-            <span className="setrow__desc">
-              {orphanCount > 0 ? `当前有 ${orphanCount} 个孤儿附件可标记` : "当前没有可清理的孤儿附件"}
-            </span>
+            {/* 没有可做的事时把原因**平铺**出来，不让禁用只靠悬停（DESIGN.md §6.1） */}
+            <span className="setrow__desc">{orphanGcHint(gcPlan)}</span>
           </div>
           <span className="setrow__control">
             <Button
               variant="danger"
               size="sm"
-              disabled={busy || orphanCount === 0}
+              disabled={busy || !gcHasWork}
+              title={gcHasWork ? undefined : orphanGcHint(gcPlan)}
               onClick={() => setConfirming(true)}
             >
               {busy ? "清理中…" : "清理孤儿附件"}
             </Button>
           </span>
         </div>
+        {/* 破坏性后果平铺：置灰/可点时都要说清「这次到底会不会删文件」 */}
+        <p className="hint-line">
+          {gcPlan.due > 0
+            ? `本次会永久删除 ${gcPlan.due} 个附件，删除不可撤销。`
+            : `本次不会删除任何文件——保留期为 ${ATTACHMENT_ORPHAN_RETENTION_DAYS} 天，到期后由每日维护自动清理，也可以再点一次。`}
+        </p>
       </section>
 
       <Modal
         open={confirming}
         title="清理孤儿附件"
-        desc={`将标记 ${orphanCount} 个没有任何条目引用的附件，并永久删除其中已标满 30 天的那些。删除不可撤销，占用的空间会真正释放。`}
+        desc={orphanGcConfirmText(gcPlan)}
         onClose={() => setConfirming(false)}
         footer={
           <>
             <Button variant="danger" size="sm" disabled={busy} onClick={() => void runGc()}>
-              {busy ? "清理中…" : `确认清理 ${orphanCount} 个`}
+              {busy ? "清理中…" : gcPlan.due > 0 ? `确认删除 ${gcPlan.due} 个` : `确认标记 ${gcPlan.unmarked} 个`}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>
               取消
@@ -253,7 +291,8 @@ export function AttachmentManagerPage() {
         }
       >
         <p className="hint-line">
-          正在使用的附件不会被删：只有引用数为 0 的才会被标记，标满 30 天后才真正删除。
+          正在使用的附件不会被删：只有引用数为 0 的才会被标记。
+          已标记的到满 {ATTACHMENT_ORPHAN_RETENTION_DAYS} 天后会被自动清理，不必再手动点。
         </p>
       </Modal>
     </>
@@ -265,12 +304,17 @@ export function AttachmentManagerPage() {
  *
  * **没有缩略图就回退文件图标**（设计 §4.2）：非图片本来就没有缩略图，图片的缩略图也可能没生成成功，
  * 两种都走 `onError` 换图标，不留破图。
+ *
+ * **孤儿的保留期倒计时就写在这一行里**（v0.8.2）：`orphaned_at` 一直在响应里却从没被用过，
+ * 于是点完「清理」之后界面**一个像素都没变**——用户只能反复点，最后判定按钮坏了。
+ * 把"已标记 N 天 · M 天后清理"摆出来，"点了没反应"才变成"看到在倒计时"。
  */
-function AttachmentRow({ row }: { row: AttachmentListRow }) {
+function AttachmentRow({ row, now }: { row: AttachmentListRow; now: number }) {
   const [thumbFailed, setThumbFailed] = useState(false);
   const state = stateOf(row);
   const dimensions =
     row.width != null && row.height != null ? `${row.width}×${row.height}` : "尺寸未知";
+  const countdown = orphanCountdownText(row, now);
 
   return (
     <div className="setrow">
@@ -295,6 +339,7 @@ function AttachmentRow({ row }: { row: AttachmentListRow }) {
           {row.mime ?? "类型未知"} · {dimensions} · {formatBytes(row.size_bytes)} · 被 {row.ref_count} 条
           条目引用
         </span>
+        {countdown !== null ? <span className="setrow__desc">{countdown}</span> : null}
       </div>
       <div className="setrow__control">
         <Pill tone={state === "active" ? "ok" : "neutral"}>{state === "active" ? "在用" : "孤儿"}</Pill>

@@ -9,7 +9,7 @@
  * 理由：①Markdown 预览**不用任何自定义语法**就能显示；②服务端不解析正文，客户端靠同一条正则
  * 就能把它们全抓出来上报；③缩略图只是渲染时加 `?thumb=1`，正文本身保持稳定。
  */
-import { MAX_ATTACHMENT_BYTES } from "@menote/shared";
+import { ATTACHMENT_ORPHAN_RETENTION_DAYS, DAY_MS, MAX_ATTACHMENT_BYTES } from "@menote/shared";
 
 /** 附件下载地址（`thumb` 取缩略图对象） */
 export function attachmentUrl(sha256: string, options: { thumb?: boolean } = {}): string {
@@ -59,6 +59,117 @@ export function formatBytes(bytes: number): string {
 
 /** 超过 20MB：**就地可见提示、不进入上传**（界面稿 §7.1） */
 export const TOO_LARGE_NOTICE = `文件超过 ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB，请压缩或拆分后上传`;
+
+/**
+ * 孤儿附件的清理判定（v0.8.2；**全在客户端算，不动契约**）。
+ *
+ * ## 为什么要单独算一遍
+ *
+ * 服务端 `POST /api/attachments/gc` 实际只做两件事：**给没标记的孤儿盖 `orphaned_at`**，
+ * 以及**删掉其中已经盖满 30 天的**。所以第一次点它，**一个文件都不会被删**。
+ *
+ * 问题出在界面没把这件事说出来：确认框统一写着「删除不可撤销，占用的空间会真正释放」，
+ * 按钮点完屏幕上一个像素都没变（列表行只显示「在用 / 孤儿」，**`orphaned_at` 明明在
+ * 响应里却从没被用过**），于是用户只能反复点，最后判定"这按钮坏了"。
+ *
+ * 而**判定所需的数据本来就在手上**：列表每一行都带 `orphaned_at`，所以
+ * 「这次会真删几个 / 只是开始倒计时几个 / 现在还有没有事可做」都能自己算出来，
+ * **不必扩接口，也不必等服务端配合**。
+ */
+export interface OrphanGcPlan {
+  /** 还没盖过戳的孤儿：点一下会被标记，开始 30 天倒计时（**不会被删**） */
+  unmarked: number;
+  /** 已盖戳但还没到期的：点一下**什么也不会发生** */
+  waiting: number;
+  /** 已满保留期、点一下**真的会删**的 */
+  due: number;
+  /** 到期那批占多少字节（给"释放多少空间"用） */
+  dueBytes: number;
+}
+
+type OrphanRow = { ref_count: number; orphaned_at: number | null; size_bytes: number };
+
+/**
+ * 算一遍"点这个按钮到底会发生什么"。`now` 由调用方给，便于单测钉住。
+ *
+ * **没有 `earliestDueAt`**：本来想给「最早什么时候能清」，但已到期那批算出来是个过去
+ * 时刻、没到期那批又已经被每行的倒计时写清楚了 —— 一个没人消费又含混的字段，
+ * 留着只会让下一个人以为它有别的含义。
+ */
+export function planOrphanGc(rows: readonly OrphanRow[], now: number): OrphanGcPlan {
+  const retentionMs = ATTACHMENT_ORPHAN_RETENTION_DAYS * DAY_MS;
+  let unmarked = 0;
+  let waiting = 0;
+  let due = 0;
+  let dueBytes = 0;
+
+  for (const row of rows) {
+    // **状态按引用数判**（与服务端 `SQL_MARK_ORPHANS_OF_USER` 同一口径）：有引用就不是孤儿
+    if (row.ref_count > 0) continue;
+    if (row.orphaned_at === null) {
+      unmarked += 1;
+      continue;
+    }
+    if (row.orphaned_at + retentionMs > now) {
+      waiting += 1;
+      continue;
+    }
+    due += 1;
+    dueBytes += row.size_bytes;
+  }
+
+  return { unmarked, waiting, due, dueBytes };
+}
+
+/** 行内那句「已标记 N 天 · M 天后删除」；没被标记的返回 null（调用方不留空位） */
+export function orphanCountdownText(
+  row: { ref_count: number; orphaned_at: number | null },
+  now: number,
+): string | null {
+  if (row.ref_count > 0 || row.orphaned_at === null) return null;
+  const retentionMs = ATTACHMENT_ORPHAN_RETENTION_DAYS * DAY_MS;
+  const markedDays = Math.max(0, Math.floor((now - row.orphaned_at) / DAY_MS));
+  const leftDays = Math.ceil((row.orphaned_at + retentionMs - now) / DAY_MS);
+  return leftDays <= 0
+    ? `已标记 ${markedDays} 天 · 明天清理时会被删`
+    : `已标记 ${markedDays} 天 · ${leftDays} 天后清理`;
+}
+
+/**
+ * 按钮旁那句说明。**没有可做的事时要说清为什么**（DESIGN.md §6.1：禁用必须说明为何），
+ * 而且不能出现"已标记 0 个"这种自相矛盾的话。
+ */
+export function orphanGcHint(plan: OrphanGcPlan): string {
+  if (plan.due > 0 && plan.unmarked > 0) {
+    return `本次会真删 ${plan.due} 个、释放 ${formatBytes(plan.dueBytes)}；另有 ${plan.unmarked} 个开始 30 天倒计时`;
+  }
+  if (plan.due > 0) return `本次会真删 ${plan.due} 个、释放 ${formatBytes(plan.dueBytes)}`;
+  if (plan.unmarked > 0) {
+    return `${plan.unmarked} 个可以开始标记，但标完要满 ${ATTACHMENT_ORPHAN_RETENTION_DAYS} 天才会真正删除`;
+  }
+  if (plan.waiting > 0) {
+    return `${plan.waiting} 个都在 ${ATTACHMENT_ORPHAN_RETENTION_DAYS} 天保留期里，清理动作要等自动维护或到期后再点`;
+  }
+  return "当前没有可清理的孤儿附件";
+}
+
+/** 确认框的正文：按「这次到底会不会删东西」分两种说法，不统一承诺空间会释放 */
+export function orphanGcConfirmText(plan: OrphanGcPlan): string {
+  if (plan.due > 0) {
+    /*
+      「这次不会被删的」= **unmarked + waiting**，不能只算 unmarked：
+      已标记但还在保留期里的那些同样不会被删，只说前者就漏报了一部分。
+    */
+    const kept = plan.unmarked + plan.waiting;
+    const tail =
+      kept > 0
+        ? `，另有 ${kept} 个这次不会被删（其中 ${plan.unmarked} 个只是从今天开始 ${ATTACHMENT_ORPHAN_RETENTION_DAYS} 天倒计时）`
+        : "";
+    return `将永久删除 ${plan.due} 个已满保留期的孤儿附件，释放 ${formatBytes(plan.dueBytes)}。删除不可撤销${tail}。`;
+  }
+  return `这次**不会删除任何文件**：${plan.unmarked} 个孤儿会被标记，从今天起满 ${ATTACHMENT_ORPHAN_RETENTION_DAYS} 天后才会真正删除。保留期是给"删错了"留的补救窗口。`;
+}
+
 
 export function isTooLarge(bytes: number): boolean {
   return bytes > MAX_ATTACHMENT_BYTES;

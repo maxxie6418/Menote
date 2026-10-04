@@ -19,6 +19,10 @@ import {
   imageSnippet,
   isImageMime,
   isTooLarge,
+  orphanCountdownText,
+  orphanGcConfirmText,
+  orphanGcHint,
+  planOrphanGc,
   pendingSnippet,
   safeName,
   uploadPercentLabel,
@@ -174,5 +178,71 @@ describe("本地预览的生命周期", () => {
     expect(revoked).toEqual(["blob:fake-1", "blob:fake-2"]);
     expect(store.size()).toBe(0);
     expect(store.get("k1")).toBeUndefined();
+  });
+});
+
+describe("孤儿清理的判定与文案（v0.8.2）", () => {
+  const DAY = 24 * 60 * 60_000;
+  const NOW = Date.UTC(2026, 9, 4);
+  const at = (refCount: number, orphanedAt: number | null, sizeBytes = 1024) => ({
+    ref_count: refCount,
+    orphaned_at: orphanedAt,
+    size_bytes: sizeBytes,
+  });
+
+  it("三桶分得开：没标记的 / 标了没到期的 / 到期可删的", () => {
+    const plan = planOrphanGc(
+      [
+        at(2, null), // 在用
+        at(0, null), // 没标记
+        at(0, NOW - 5 * DAY), // 标了没到期
+        at(0, NOW - 30 * DAY), // 正好到点
+        at(0, NOW - 31 * DAY, 2 * 1024 * 1024), // 过期
+      ],
+      NOW,
+    );
+    expect(plan.unmarked).toBe(1);
+    expect(plan.waiting).toBe(1);
+    expect(plan.due).toBe(2);
+    expect(plan.dueBytes).toBe(2 * 1024 * 1024 + 1024);
+  });
+
+  it("有引用的一律不算孤儿（与服务端同一口径）", () => {
+    // 服务端 `SQL_MARK_ORPHANS_OF_USER` 的条件是 NOT EXISTS(attachment_refs)，
+    // 界面若改成按 `orphaned_at` 判，就会把「在用但曾被标记过」的算进去
+    expect(planOrphanGc([at(1, NOW - 90 * DAY), at(3, null)], NOW).due).toBe(0);
+  });
+
+  it("**状态按引用数判，不是按 orphaned_at 判**（标记不是事实）", () => {
+    const row = at(1, NOW - 60 * DAY);
+    expect(orphanCountdownText(row, NOW)).toBeNull();
+    expect(planOrphanGc([row], NOW).due).toBe(0);
+  });
+
+  it("倒计时文案：已标记天数 + 还剩天数；到点那天不写「0 天后」", () => {
+    expect(orphanCountdownText(at(0, NOW - 5 * DAY), NOW)).toBe("已标记 5 天 · 25 天后清理");
+    expect(orphanCountdownText(at(0, NOW - 30 * DAY), NOW)).toContain("明天清理时会被删");
+  });
+
+  it("按钮旁说明：没有可清理的东西时也要说清为什么（DESIGN.md §6.1）", () => {
+    expect(orphanGcHint(planOrphanGc([at(1, null)], NOW))).toContain("没有可清理的孤儿附件");
+    expect(orphanGcHint(planOrphanGc([at(0, NOW - 2 * DAY)], NOW))).toContain("保留期");
+  });
+
+  it("**确认框不统一承诺「空间会真正释放」**——只标记的那次一个文件都没删", () => {
+    const markOnly = orphanGcConfirmText(planOrphanGc([at(0, null)], NOW));
+    expect(markOnly).toContain("不会删除任何文件");
+    expect(markOnly).not.toContain("空间");
+
+    const withDue = orphanGcConfirmText(planOrphanGc([at(0, NOW - 40 * DAY, 3 * 1024 * 1024)], NOW));
+    expect(withDue).toContain("将永久删除 1 个");
+    expect(withDue).toContain("3.0 MB");
+  });
+
+  it("「这次不会被删的」= 未标记 **+** 未到期，漏算任一都会少报", () => {
+    const text = orphanGcConfirmText(
+      planOrphanGc([at(0, NOW - 40 * DAY), at(0, NOW - 3 * DAY), at(0, null)], NOW),
+    );
+    expect(text).toContain("另有 2 个这次不会被删");
   });
 });
