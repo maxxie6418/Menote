@@ -11,8 +11,7 @@ describe("Markdown 渲染", () => {
     const html = renderMarkdown("# 标题\n\n**粗体**\n\n- 一\n- 二\n\n`code`");
     const doc = parse(html);
     expect(doc.querySelector("h1")?.textContent).toBe("标题");
-    expect(doc.querySelector("strong")?.textContent).toBe("粗体");
-    expect(doc.querySelectorAll("li")).toHaveLength(2);
+    expect(doc.querySelector("strong")?.textContent).toBe("粗体");    expect(doc.querySelectorAll("li")).toHaveLength(2);
     expect(doc.querySelector("code")?.textContent).toBe("code");
   });
 
@@ -126,5 +125,31 @@ describe("附件引用（M4-10；界面稿 §7.3 / §7.4）", () => {
 
     /* 行内代码不是块，不该被塞这些属性（塞了会凭空多出一个 tab 停靠点） */
     expect(parse(renderMarkdown("`x`")).querySelector("pre")).toBeNull();
+  });
+
+  /**
+   * front matter 是**元数据不是正文**，预览里不该出现（2026-10-04）。
+   *
+   * markdown-it 没装 frontmatter 插件，于是开头的 `---` 渲染成分隔线 `<hr>`，而结尾的 `---`
+   * 是 setext 标题的下划线——把 YAML 连同前面几行一起吞成 `<h2>`。实测那份 Obsidian 文档
+   * 渲染出来是 `<hr>` + `<h2>title: "…"</h2>` + 正文，元数据被当成了标题。
+   */
+  it("有 front matter 时不渲染出分隔线，也不把 YAML 吞成标题", () => {
+    const doc = parse(
+      renderMarkdown(
+        '---\ntitle: "Anatomy of the .claude/ folder"\ntags: [claude]\nmenote:\n  type: note\n---\n\n正文第一段。',
+      ),
+    );
+
+    expect(doc.querySelector("hr")).toBeNull();
+    const heading = doc.querySelector("h1, h2, h3");
+    expect(heading, "front matter 的 YAML 不该变成标题").toBeNull();
+    expect(doc.body.textContent?.trim()).toBe("正文第一段。");
+  });
+
+  it("没闭合的 front matter 整篇当正文，不剥（用户还没写完）", () => {
+    const doc = parse(renderMarkdown("---\ntitle: 写了一半\n\n正文。"));
+    // 剥壳器对没闭合的围栏是降级而不是抛错；这里只钉住"不崩、文本还在"
+    expect(doc.body.textContent).toContain("正文。");
   });
 });

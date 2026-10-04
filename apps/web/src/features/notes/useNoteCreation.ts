@@ -20,7 +20,7 @@
  */
 import { useCallback, useMemo } from "react";
 import { newUlid } from "@menote/shared";
-import { renderTableDocument, type TableDoc } from "@menote/mdcore";
+import { renderTableDocument, updateMenoteKeys, type TableDoc } from "@menote/mdcore";
 import { createLocalFolder, createLocalItem } from "../../data/db";
 import type { LocalFolder } from "../../data/db";
 import { folderDepthFor, MAX_FOLDER_DEPTH } from "./folders";
@@ -79,14 +79,20 @@ export function useNoteCreation(input: UseNoteCreationInput) {
         用户反馈的"其他新建要附属于笔记本"就是这一条。
       */
       const target = resolveTarget(folders, view);
+      const title = options?.title ?? DEFAULT_NOTE_TITLE;
 
       await createLocalItem(
         {
           id,
           type: "note",
-          title: options?.title ?? DEFAULT_NOTE_TITLE,
+          title,
           folder_id: target.folderId,
-          body: options?.body ?? "",
+          /*
+            标题同时写进 md 的顶层 `title:`（2026-10-04，md 为准、列是派生列）。
+            用 `updateMenoteKeys` 而不是 `buildDocument`：`options.body` 可能已经是带
+            front matter 的完整文档（快速录入框带标签时会），`buildDocument` 会把它整块重建掉。
+          */
+          body: updateMenoteKeys(options?.body ?? "", { title }),
           inEncSpace: target.inVault,
         },
         Date.now(),
@@ -170,7 +176,8 @@ export function useNoteCreation(input: UseNoteCreationInput) {
           type: "table",
           title: DEFAULT_TABLE_TITLE,
           folder_id: target.folderId,
-          body: renderTableDocument(doc),
+          // 标题也进 md 顶层（与笔记同一条口径）：`TableDoc.title` 缺省即不写这一行
+          body: renderTableDocument({ ...doc, title: DEFAULT_TABLE_TITLE }),
           inEncSpace: target.inVault,
         },
         Date.now(),

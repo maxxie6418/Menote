@@ -49,6 +49,8 @@ export function emptyTableDoc(): TableDoc {
     attachments: [],
     notices: [],
     preservedLines: [],
+    tags: [],
+    foreignLines: [],
   };
 }
 

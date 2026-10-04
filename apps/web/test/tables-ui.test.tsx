@@ -31,6 +31,8 @@ function doc(overrides: Partial<TableDoc> = {}): TableDoc {
     attachments: [],
     notices: [],
     preservedLines: [],
+    tags: [],
+    foreignLines: [],
     ...overrides,
   };
 }

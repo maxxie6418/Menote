@@ -25,6 +25,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import { type FormatCommandId } from "./format-commands";
+import { frontmatterHide } from "./frontmatter-hide";
 import { livePreview } from "./live-preview";
 import { editorBaseTheme } from "./theme";
 import { applyFormatAt, triggerAt } from "./trigger";
@@ -258,6 +259,12 @@ export function Editor({
           */
           keymap.of([...defaultKeymap, ...foldKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
+          /*
+            把 front matter 藏成一个可点的小标签（2026-10-04）。
+            **纯视觉**：文档内容与保存链路一字未动——菜单改标签/清单/标题时直接改的是 md，
+            编辑器若自己存一份 front matter 副本再回贴，会把那些改动抹回去。
+          */
+          frontmatterHide(),
           // 即时渲染下不显示行号（渲染视图里行号只是噪声）；两档都由这一个 Compartment 管
           viewModeCompartment.of(viewModeExtensions(live)),
           readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),

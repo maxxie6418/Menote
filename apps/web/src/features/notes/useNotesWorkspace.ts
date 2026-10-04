@@ -10,7 +10,6 @@ import {
   countItemsByFolder,
   db,
   enqueueBodySave,
-  enqueueMetaPatch,
   findConflictForOriginal,
   getCachedBody,
   getDraft,
@@ -30,6 +29,7 @@ import {
 } from "../../data/db";
 import { useNoteEditingSession } from "../../app/shortcuts/useNoteEditingSession";
 import { createNoteEditor, type NoteEditorController, type NoteEditorSnapshot } from "./model";
+import { writeItemTitle } from "./actions";
 import { itemsApi } from "../../data/api/endpoints";
 import {
   collectTags,
@@ -510,31 +510,25 @@ export function useNotesWorkspace(
   );
 
   /**
-   * 改标题（元数据补丁，走 outbox）。
+   * 改标题（数据层动作见 `features/notes/actions.ts`：md 顶层 `title:` + 派生列一起写）。
    *
-   * **2026-09-28 性能修复**：此前这里每次都 `await refresh()`（6 张表 + 全量正文摘要 +
+   * 2026-09-28 性能修复：此前这里每次都 `await refresh()`（6 张表 + 全量正文摘要 +
    * 搜索索引重扫），而输入框受控在 `allItems` 里那份标题上 —— 一次按键 = 一次全库扫描 +
    * 一次异步回灌，晚到的按键被旧值按回去。实测（808 条、60ms/字）**10 个字只剩 1 个**，
    * 并伴随 294ms 主线程长任务。
    *
    * 现在改成**轻提交**：写库 + 入队 + **就地更新列表里那一行**（标题与 `pending`），
    * 不再跑全量 `refresh()`。提交节奏由 `TitleInput` 的防抖控制（空闲 400ms / 失焦 / 卸载）。
-   * 口径不变：仍是 `patch_meta`（离线优先、幂等），服务端推送时从本地行重建补丁。
    */
   const changeTitle = useCallback(
     async (title: string) => {
       const selectedId = selectedIdRef.current;
       if (!selectedId) return;
-      const item = await getLocalItem(selectedId);
-      if (!item) return;
-      // 防抖后可能重复提交同一个值：没有变化就不写库、不入队（省一次 outbox 往返）
-      if ((item.title ?? "") === title) return;
-
-      await db.items.update(selectedId, { title });
-      await enqueueMetaPatch(selectedId, item.meta_rev, Date.now());
+      // 写入本身在 actions 里（md + 派生列 + 两个 outbox），这里只管列表那一行
+      if (!(await writeItemTitle(selectedId, title))) return;
       /*
         就地更新那一行：字段与"下一次 refresh 会读到的"保持一致——
-        `enqueueMetaPatch` 会把条目标成 `pending: "patch_meta"`，列表行据此显示"待上传"，
+        写入会把条目标成 `pending: "patch_meta"`，列表行据此显示"待上传"，
         所以这里必须一起带上，否则状态会与库里的真实状态不一致。
       */
       setAllItems((previous) =>

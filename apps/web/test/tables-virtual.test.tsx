@@ -31,6 +31,8 @@ function bigDoc(rowCount: number): TableDoc {
     attachments: [],
     notices: [],
     preservedLines: [],
+    tags: [],
+    foreignLines: [],
   };
 }
 

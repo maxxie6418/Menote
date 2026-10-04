@@ -34,6 +34,7 @@ import { sealMcpVersionIfNeeded } from "./seal";
 import { assertWritableFolder } from "./scope";
 import {
   beginIdempotent,
+  buildItemBody,
   conflictMessage,
   isReplay,
   isRevConflict,
@@ -92,6 +93,16 @@ export async function runCreateItem(
   const id = newUlid();
   const response = { id, rev: 1, type, title };
 
+  /*
+    标题 / 标签 / 清单字段**一并写进 md 的 front matter**（2026-10-04，见 `buildItemBody`）。
+    否则它们只是服务端派生列，客户端按 md 派生时读不到，导出的 `.md` 也不带——
+    与外部 Markdown 工具的互通就断在这里。Memo 不写 `title:`。
+  */
+  const body = buildItemBody({ content, title, tags, task });
+  if (utf8ByteLength(body) > MCP_WRITE_MAX_BYTES) {
+    fail(`单次写入不超过 ${MCP_WRITE_MAX_BYTES / 1024} KB`);
+  }
+
   try {
     const written = await createItem(
       env.DB,
@@ -107,8 +118,8 @@ export async function runCreateItem(
         taskStatus: typeof task?.status === "string" ? task.status : null,
         taskDue: typeof task?.due === "string" ? task.due : null,
         taskPriority: typeof task?.priority === "string" ? task.priority : null,
-        contentHash: await sha256Hex(content),
-        body: content,
+        contentHash: await sha256Hex(body),
+        body,
         deviceLabel: deviceLabel(principal),
       },
       now,

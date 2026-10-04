@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { updateMenoteKeys } from "../src/frontmatter";
 import { deriveTags, extractInlineTags, mergeTags, normalizeTag } from "../src/tags";
 
 describe("行内标签提取", () => {
@@ -53,5 +54,64 @@ menote:
 
   it("没有标签时返回空数组", () => {
     expect(deriveTags("# 标题\n\n正文没有标签")).toEqual([]);
+  });
+});
+
+/**
+ * 顶层 `tags` 是规范位置（2026-10-04，对齐定稿：设计文档 §528 / 功能拆解 §333
+ * 都写的是「YAML `tags` 字段」，从未要求嵌套）。
+ *
+ * 顶层化是**这一整轮改造的对外承诺**：Obsidian 等外部工具的 `tags:` 键 MeNote 要认，
+ * MeNote 写出去的 `tags:` 那些工具也要认。
+ */
+describe("顶层 tags（跨工具互通）", () => {
+  it("读顶层 tags——外部工具写的标签直接生效", () => {
+    const doc = `---
+title: "Anatomy of the .claude/ folder"
+tags: [claude, tooling]
+url: "https://x.com/…"
+---
+
+正文。
+`;
+    expect(deriveTags(doc)).toEqual(["claude", "tooling"]);
+  });
+
+  it("旧的 menote.tags 仍然读（存量笔记不需要迁移）", () => {
+    const legacy = "---\nmenote:\n  tags: [工作]\n---\n\n正文";
+    expect(deriveTags(legacy)).toEqual(["工作"]);
+  });
+
+  it("顶层与旧位置并存时顶层胜出", () => {
+    const both = "---\ntags: [新]\nmenote:\n  tags: [旧]\n---\n\n正文";
+    expect(deriveTags(both)).toEqual(["新"]);
+  });
+
+  it("顶层 tags: [] 是显式空标签，压过旧位置的值", () => {
+    // 外部工具写 `tags: []` 表示"没有标签"，不该被旧位置的残留值顶回来
+    const doc = "---\ntags: []\nmenote:\n  tags: [旧]\n---\n\n正文";
+    expect(deriveTags(doc)).toEqual([]);
+  });
+
+  it("顶层 + 正文 #标签仍然合并", () => {
+    const doc = "---\ntags: [工作]\n---\n\n今天顺手 #dev";
+    expect(deriveTags(doc)).toEqual(["工作", "dev"]);
+  });
+
+  it("改写 tags 即完成懒迁移：旧的 menote.tags 消失、顶层出现", () => {
+    const legacy = "---\nmenote:\n  type: note\n  tags: [旧]\n---\n\n正文";
+    const updated = updateMenoteKeys(legacy, { tags: ["新值"] });
+
+    expect(updated).toContain("\ntags: [新值]\n");
+    expect(updated).not.toContain("  tags:"); // 旧位置的标签已经迁走
+    expect(updated).toContain("  type: note");
+    expect(deriveTags(updated)).toEqual(["新值"]);
+  });
+
+  it("没打 tags 的 patch 不动旧位置（只改命中的键）", () => {
+    const legacy = "---\nmenote:\n  type: note\n  tags: [旧]\n---\n\n正文";
+    const updated = updateMenoteKeys(legacy, { task: { status: "todo", due: null, priority: null } });
+    expect(updated).toContain("  tags: [旧]");
+    expect(deriveTags(updated)).toEqual(["旧"]);
   });
 });

@@ -15,6 +15,7 @@
  * 4. **可见 + 乐观锁基底只有一处**（`requireVisibleWrite`）：同时拿到 `rev` 与 `meta_rev`。
  */
 import { sha256Hex } from "@menote/shared";
+import { updateMenoteKeys, type TaskFields } from "@menote/mdcore";
 import { DomainError } from "../../errors";
 import type { StorageEnv } from "../../types";
 import { NOT_VISIBLE, fail } from "./parts";
@@ -277,4 +278,32 @@ export async function commitBody(
     extra,
   );
   return { rev: written.rev };
+}
+
+/**
+ * 把 `create_item` 的 `title` / `tags` / `task` 参数**写进 md 的 front matter**（2026-10-04）。
+ *
+ * 这三个在服务端是**派生列**，规范数据在 md。只写列的话，客户端下一次按 md 派生就会看成
+ * 「md 里没有」（`deriveTitle` 报 `present: false`、`deriveTags` 读不到），导出的 `.md`
+ * 也不带这些字段——与外部 Markdown 工具的互通就断在这里。写法与界面侧同一个
+ * `updateMenoteKeys`：agent 自己写的 front matter 原样保留，只改命中的键。
+ *
+ * **Memo 不写 `title:`**：`assertItemShape` 要求它的 `items.title` 为 null（没有独立标题），
+ * 所以传 `title: null` 让那个键被删掉。
+ */
+export function buildItemBody(input: {
+  content: string;
+  title: string | null;
+  tags: readonly string[];
+  task: Record<string, unknown> | undefined;
+}): string {
+  const { content, title, tags, task } = input;
+  const taskFields: TaskFields | null = task
+    ? {
+        status: typeof task.status === "string" ? task.status : null,
+        due: typeof task.due === "string" ? task.due : null,
+        priority: typeof task.priority === "string" ? task.priority : null,
+      }
+    : null;
+  return updateMenoteKeys(content, { title, tags: [...tags], task: taskFields });
 }

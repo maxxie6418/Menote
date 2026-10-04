@@ -1029,6 +1029,32 @@ button {
   padding-left: var(--sp-3);
 }
 
+/*
+  编辑器里被藏起来的 front matter（2026-10-04，`app/editor/frontmatter-hide.ts`）。
+
+  形状取「和正文同一行的弱化标签」而不是一块带框的卡片：它是**元数据的位置指示**，
+  不是内容——给它描边会让人以为里面藏着一段可编辑的东西（DESIGN.md 少块/少框那条口径）。
+  底色用 `--bg-soft`（与代码块同一档），文字用 `--text-2`，与正文形成层级但不同色系。
+*/
+.cm-fm-chip {
+  display: inline-block;
+  padding: 0 var(--sp-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-micro);
+  line-height: 1.7;
+  cursor: pointer;
+}
+
+/* 键盘聚焦必须看得见（DESIGN.md §6.2 焦点与键盘可达是底线，不以悬停为唯一入口） */
+.cm-fm-chip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
 /* 代码块：编辑器侧只上底色，围栏与语言保持源码可见（首期不做语言高亮） */
 .cm-live-codeblock {
   background: var(--bg-soft);

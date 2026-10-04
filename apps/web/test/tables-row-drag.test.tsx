@@ -35,6 +35,8 @@ function state(sort: TableViewState["sort"] = null): TableViewState {
       attachments: [],
       notices: [],
       preservedLines: [],
+      tags: [],
+      foreignLines: [],
     },
     view: "table",
     filters: [],

@@ -58,7 +58,7 @@ export function useMemoWrite(input: MemoWriteInput): MemoWrite {
         : null;
       const body =
         tags.length > 0 || asTask
-          ? buildDocument({ type: "memo", tags, task, preservedLines: [] }, text)
+          ? buildDocument({ type: "memo", tags, task, preservedLines: [], foreignLines: [] }, text)
           : text;
 
       const id = newUlid();
@@ -95,7 +95,10 @@ export function useMemoWrite(input: MemoWriteInput): MemoWrite {
           : null;
       const body =
         tags.length > 0 || taskFields !== null
-          ? buildDocument({ type: "memo", tags, task: taskFields, preservedLines: [] }, text)
+          ? buildDocument(
+              { type: "memo", tags, task: taskFields, preservedLines: [], foreignLines: [] },
+              text,
+            )
           : text;
 
       const now = Date.now();

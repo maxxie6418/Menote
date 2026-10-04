@@ -46,6 +46,8 @@ function doc(overrides: Partial<TableDoc> = {}): TableDoc {
     attachments: [],
     notices: [],
     preservedLines: [],
+    tags: [],
+    foreignLines: [],
     ...overrides,
   };
 }
@@ -135,6 +137,69 @@ describe("YAML 键名与 views.default/gallery 往返一致", () => {
 
     // 再渲染一次也不能把它吃掉
     expect(renderTableDocument(parsed.doc)).toContain("custom_key: 自定义值");
+  });
+
+  /**
+   * 外来 front matter 的顶层 `columns:` **不能**被当成 MeNote 的表格列定义（2026-10-04）。
+   *
+   * `readTableKeys` 按 `columns` / `views` / `row_id_column` 三个键名做二次解析，它的输入
+   * 曾经是 `preservedLines`——而那个字段当时还兼着"外来 front matter 整块"的职责。
+   * 两边一旦在同一个数组里碰面，外部文档的 `columns:` 就会被读成 MeNote 的列定义。
+   * 拆语义（外来键走 `foreignLines`）之后，这条从结构上不再可能。
+   */
+  it("外来 front matter 的 columns: 不被误读成表格列定义", () => {
+    const foreign = `---
+title: "外来标题"
+columns:
+  - "这是外部工具的列"
+---
+
+| _id | 名称 |
+|---|---|
+| a | 三体 |
+`;
+    const parsed = parseTableDocument(foreign);
+    // 没有 menote.type: table，本来就该降级——关键是**别** ok:true
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.reason).toContain("不是 table 类型");
+  });
+
+  it("外来顶层键在表格重渲染后一字不丢", () => {
+    // 表格的任何一次单元格编辑都会整篇重建（renderTableDocument → buildDocument），
+    // 外来属性必须跟着 TableDoc 一起流转，否则改一个单元格就丢一次外来键。
+    // 标题带半角冒号 + 空格（YAML 纯量里 `: ` 会截断，必须加引号）
+    const withForeign = renderTableDocument(doc()).replace(
+      "---\nmenote:",
+      '---\ntitle: "第 3 章: 笔记"\nurl: "https://example.com/a"\nmenote:',
+    );
+    const parsed = parseTableDocument(withForeign);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const rerendered = renderTableDocument(parsed.doc);
+    expect(rerendered).toContain("url: \"https://example.com/a\"");
+    expect(rerendered).toContain('title: "第 3 章: 笔记"');
+    // 外来键在 menote 块之前，缩进不被吃掉
+    expect(rerendered.indexOf("menote:")).toBeGreaterThan(rerendered.indexOf("url:"));
+
+    // 往返两次仍不丢
+    const second = parseTableDocument(rerendered);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(renderTableDocument(second.doc)).toContain("url: \"https://example.com/a\"");
+  });
+
+  it("顶层 tags 跟着表格重渲染流转，不被清空", () => {
+    // renderTableDocument 早先写死 tags: []，顶层化之后每次重渲染都会清空用户标签
+    const withTags = renderTableDocument(doc({ tags: ["科幻", "长篇"] }));
+    expect(withTags).toContain("\ntags: [科幻, 长篇]\n");
+
+    const parsed = parseTableDocument(withTags);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.doc.tags).toEqual(["科幻", "长篇"]);
+    expect(renderTableDocument(parsed.doc)).toContain("\ntags: [科幻, 长篇]\n");
   });
 });
 

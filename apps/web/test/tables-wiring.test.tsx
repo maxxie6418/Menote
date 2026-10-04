@@ -83,6 +83,8 @@ function tableBody(): string {
     attachments: [],
     notices: [],
     preservedLines: [],
+    tags: [],
+    foreignLines: [],
   } as never);
 }
 

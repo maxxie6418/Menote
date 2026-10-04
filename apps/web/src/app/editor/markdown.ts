@@ -14,6 +14,7 @@
  */
 import DOMPurify from "dompurify";
 import MarkdownIt from "markdown-it";
+import { stripFrontmatter } from "@menote/mdcore";
 
 const md = new MarkdownIt({
   html: false,
@@ -137,7 +138,23 @@ const BLOB_ALLOWED_URI_REGEXP =
 
 /** Markdown → 安全 HTML 字符串（仅供 `dangerouslySetInnerHTML` 使用） */
 export function renderMarkdown(source: string, options: RenderMarkdownOptions = {}): string {
-  const html = md.render(source, { attachments: options.attachments } satisfies MarkdownEnv);
+  /*
+    **先剥 front matter**（2026-10-04）。
+
+    markdown-it 没装 frontmatter 插件（`new MarkdownIt({...})` 见文件头），于是开头的
+    `---` 被当成**分隔线**渲染成 `<hr>`，而结尾的 `---` 是 setext 标题的下划线——把 YAML
+    连同前面几行一起吞成 `<h2>`。实测（用户那份 Obsidian 文档）：
+
+        <hr>
+        <h2>title: "Anatomy of the .claude/ folder"</h2>
+        <p>正文第一段。</p>
+
+    front matter 是**元数据不是正文**，正文区不该把它显示成一条线加一个标题。剥壳交给
+    mdcore 的 `stripFrontmatter`（没合法围栏 / 没闭合时它整篇当正文，不抛错）。
+  */
+  const html = md.render(stripFrontmatter(source), {
+    attachments: options.attachments,
+  } satisfies MarkdownEnv);
   return options.allowBlobUris
     ? DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: BLOB_ALLOWED_URI_REGEXP })
     : DOMPurify.sanitize(html);

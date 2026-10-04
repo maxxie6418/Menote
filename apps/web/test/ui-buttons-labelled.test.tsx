@@ -85,6 +85,8 @@ const TABLE_BODY = renderTableDocument({
   attachments: [],
   notices: [],
   preservedLines: [],
+  tags: [],
+  foreignLines: [],
 } as never);
 
 describe("按钮的可访问名字", () => {

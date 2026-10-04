@@ -54,7 +54,8 @@ describe("create_item（批 3）", () => {
     }>();
     expect(row?.content_hash).toHaveLength(64);
     expect(row?.rev).toBe(1);
-    expect(await bodyOf(id)).toBe("正文");
+    // 标题进了 md 的顶层 `title:`（规范数据在 md，列只是派生列——2026-10-04）
+    expect(await bodyOf(id)).toBe("---\ntitle: 新笔记\n---\n\n正文");
 
     const audit = await auditFor(id);
     expect(audit).toHaveLength(1);
@@ -69,8 +70,83 @@ describe("create_item（批 3）", () => {
     expect(op?.tool).toBe("create_item");
   });
 
-  it("幂等：同 ID + 同参数 → 同一结果且不新建第二条", async () => {
+  /**
+   * `title` / `tags` / `task` 必须**一并写进 md**（2026-10-04）。
+   *
+   * 这三个在服务端只是派生列，规范数据在 md。只写列的话，客户端按 md 派生时读不到
+   * （`deriveTitle` 报 `present: false`、`deriveTags` 空），导出的 `.md` 也不带——
+   * 与外部 Markdown 工具的互通就断在这里。
+   */
+  it("title / tags / task 一并进 md 的 front matter", async () => {
+    const { cookie, userId } = await registerUser("owner1", 1);
+    const { secret } = await makeToken(cookie);
+
+    const result = ok(
+      (
+        await call(secret, "create_item", {
+          type: "note",
+          title: "读书笔记",
+          content: "正文",
+          tags: ["科幻"],
+          task: { status: "todo" },
+          operation_id: "op-fm",
+        })
+      ).body,
+    );
+    const id = String(result.id);
+    const body = await bodyOf(id);
+
+    expect(body).toContain("title: 读书笔记");
+    expect(body).toContain("tags: [科幻]");
+    expect(body).toContain("  task:\n    status: todo");
+    // md 带得动，列也得对（两边不一致 = 下次同步把值弹回去）
+    const row = await env.DB.prepare("SELECT title, tags, is_task FROM items WHERE id = ? AND user_id = ?")
+      .bind(id, userId)
+      .first<{ title: string; tags: string; is_task: number }>();
+    expect(row?.title).toBe("读书笔记");
+    expect(JSON.parse(row?.tags ?? "[]")).toEqual(["科幻"]);
+    expect(row?.is_task).toBe(1);
+  });
+
+  it("Memo 不写 title: 键（items.title 必须为 null）", async () => {
     const { cookie } = await registerUser("owner1", 1);
+    const { secret } = await makeToken(cookie);
+
+    const result = ok(
+      (
+        await call(secret, "create_item", {
+          type: "memo",
+          content: "随手记",
+          operation_id: "op-memo",
+        })
+      ).body,
+    );
+
+    expect(await bodyOf(String(result.id))).not.toContain("title:");
+  });
+
+  it("agent 自己写的 front matter 原样保留，只改命中的键", async () => {
+    const { cookie } = await registerUser("owner1", 1);
+    const { secret } = await makeToken(cookie);
+
+    const result = ok(
+      (
+        await call(secret, "create_item", {
+          type: "note",
+          title: "新标题",
+          content: '---\nsource: "https://example.com/a"\n---\n\n正文',
+          operation_id: "op-keep",
+        })
+      ).body,
+    );
+    const body = await bodyOf(String(result.id));
+
+    expect(body).toContain('source: "https://example.com/a"');
+    expect(body).toContain("title: 新标题");
+    expect(body).toContain("正文");
+  });
+
+  it("幂等：同 ID + 同参数 → 同一结果且不新建第二条", async () => {    const { cookie } = await registerUser("owner1", 1);
     const { secret } = await makeToken(cookie);
     const args = { type: "note", title: "甲", content: "正文", operation_id: "same" };
 
@@ -301,6 +377,8 @@ describe("edit_table_rows（批 3）", () => {
       attachments: [],
       notices: [],
       preservedLines: [],
+      tags: [],
+      foreignLines: [],
     });
     const id = await seedItem(userId, newUlid(), markdown, { type: "table", title: "表" });
 

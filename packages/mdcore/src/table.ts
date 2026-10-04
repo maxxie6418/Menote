@@ -99,8 +99,27 @@ export interface TableDoc {
   rows: Array<Record<string, string>>;
   attachments: TableAttachmentLine[];
   notices: TableNotice[];
-  /** 不归表格管的 front matter 行（一字不改地写回） */
+  /** 不归表格管的 front matter 行（一字不改地写回）。**只含 `menote:` 块内的行** */
   preservedLines: string[];
+  /**
+   * 顶层 `tags`。**必须跟着 `TableDoc` 流转**（2026-10-04）：`tags` 平铺到顶层之后，
+   * `buildDocument` 会从 `meta.tags` 写顶层行，重渲染时若拿不到就会把用户的标签清空。
+   */
+  tags: string[];
+  /**
+   * 顶层 `title`；同 `tags`——`buildDocument` 从 `meta.title` 写顶层行，
+   * 重渲染时拿不到就会把外来标题抹掉。
+   *
+   * `undefined` = 原文没有 `title:` 键（存量表格条目都属这类），重建时不写这一行。
+   */
+  title?: string | null;
+  /**
+   * `menote:` 块之前的顶层行（外来 front matter，如 Obsidian 的 `title` / `url`）。
+   *
+   * 表格的**任何一次单元格编辑都会整篇重建**（`renderTableDocument` → `buildDocument`），
+   * 所以外来属性必须跟着 `TableDoc` 一起流转，否则改一个单元格就丢一次外来键。
+   */
+  foreignLines: string[];
 }
 
 export type ParseTableResult =
@@ -436,6 +455,9 @@ export function parseTableDocument(markdown: string): ParseTableResult {
       attachments: attachmentLines,
       notices: [...keys.notices, ...table.notices],
       preservedLines: keys.others,
+      tags: [...parsed.meta.tags],
+      title: parsed.meta.title,
+      foreignLines: [...parsed.meta.foreignLines],
     },
   };
 }
@@ -561,10 +583,12 @@ export function renderTableDocument(doc: TableDoc): string {
   // `columns` / `row_id_column` / `views` 走 preservedLines；`type` 由 buildDocument 统一写
   const meta: MenoteMeta = {
     type: "table",
-    tags: [],
+    tags: doc.tags,
     task: null,
     preservedLines: [...renderTableKeys(doc).slice(1), ...doc.preservedLines],
+    foreignLines: [...doc.foreignLines],
   };
+  if (doc.title !== undefined) meta.title = doc.title;
   return buildDocument(meta, body);
 }
 

@@ -221,6 +221,8 @@ function tableDoc(name: string): TableDoc {
     attachments: [],
     notices: [],
     preservedLines: [],
+    tags: [],
+    foreignLines: [],
   };
 }
 

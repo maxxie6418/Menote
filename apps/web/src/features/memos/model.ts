@@ -472,7 +472,14 @@ export function buildNoteFromMemo(
   const noteBody =
     tags.length > 0
       ? buildDocument(
-          { type: "note", tags: [...tags], task: null, convertedTo: null, preservedLines: [] },
+          {
+            type: "note",
+            tags: [...tags],
+            task: null,
+            convertedTo: null,
+            preservedLines: [],
+            foreignLines: [],
+          },
           body,
         )
       : body;

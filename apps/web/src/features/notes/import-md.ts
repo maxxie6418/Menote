@@ -20,7 +20,7 @@
  * 落点（哪个笔记本）不在这里定：由调用方把 `create` 注进来，本模块只管
  * 「文件 → 草稿 → 逐个交给上层建」。串行按选择顺序建，因为 outbox 是 FIFO。
  */
-import { deriveTags, deriveTaskFields, parseTableDocument } from "@menote/mdcore";
+import { deriveTags, deriveTaskFields, deriveTitle, parseTableDocument } from "@menote/mdcore";
 import type { ItemType } from "@menote/shared";
 
 /** 标题退化时的兜底文案（与新建笔记的默认标题同一个来源） */
@@ -35,6 +35,20 @@ export function isMarkdownFileName(fileName: string): boolean {
 export function noteTitleFromFileName(fileName: string): string {
   const base = fileName.replace(/\.md$/i, "").trim();
   return base === "" ? DEFAULT_NOTE_TITLE : base;
+}
+
+/**
+ * 标题：**front matter 的 `title:` 优先，文件名兜底**（2026-10-04）。
+ *
+ * 为什么改口径：此前一律取文件名，而外部工具（Obsidian 等）导出的 `.md` 把标题写在
+ * `title:` 里、文件名却是 slug 或一串 status id——照文件名取会得到
+ * `2035341800739877091` 这种没法读的标题。md 里有 `title:` 就用它，那才是作者写的那个。
+ *
+ * `title:` 空着（`present` 但取不到值）时**也**回落到文件名，不让一条笔记顶着空标题。
+ */
+export function titleForImport(fileName: string, body: string): string {
+  const derived = deriveTitle(body);
+  return derived.present && derived.value ? derived.value : noteTitleFromFileName(fileName);
 }
 
 /** 剥掉 UTF-8 BOM（`File.text()` 会把它留在字符串开头） */
@@ -91,7 +105,7 @@ export async function importMarkdownFiles(
     }
     try {
       const body = stripBom(await file.text());
-      await create(draftFrom(body, noteTitleFromFileName(file.name)));
+      await create(draftFrom(body, titleForImport(file.name, body)));
       summary.created += 1;
     } catch (error) {
       summary.skipped.push({
