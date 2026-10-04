@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>笔记属性怎么显示 — MeNote</title>
+<style>
+/* 全部取自 apps/web/src/app/theme/tokens.css 原值：这份稿子的意义是「所见即将所得」，
+   换一套字色画出来就失去意义了。 */
+:root {
+  --bg:#ffffff; --bg-soft:#f7f7f7; --panel:#ffffff; --panel-2:#f2f2f2; --line:#e0e0e0; --line-2:#c9c9c9;
+  --text:#1d1d1d; --text-2:#4a4a4a; --muted:#6b6b6b;
+  --primary:#f6821f; --primary-2:#e8720d; --primary-soft:rgba(246,130,31,.12); --primary-line:rgba(246,130,31,.35);
+  --primary-ink:#b45309; --on-primary:#1d1d1d;
+  --amber:#8a5a00; --amber-soft:rgba(138,90,0,.11); --amber-line:rgba(138,90,0,.26);
+  --green:#1f7a4d; --green-soft:rgba(31,122,77,.11); --green-line:rgba(31,122,77,.26);
+  --radius-sm:6px; --radius:10px; --radius-pill:99px;
+  --fs-title:17px; --fs-body-lg:14px; --fs-body:13px; --fs-small:12px; --fs-micro:11px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
+  --shadow-1:0 4px 14px rgba(29,29,29,.07);
+  --mono:"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg-soft); color:var(--text); font-family:var(--sans);
+       font-size:var(--fs-body-lg); line-height:1.6; }
+.wrap { max-width:1000px; margin:0 auto; padding:var(--sp-6) var(--sp-4) 80px; }
+h1 { font-size:30px; line-height:1.25; margin:0 0 var(--sp-2); letter-spacing:-.01em; font-weight:600; }
+h2 { font-size:20px; line-height:1.3; margin:0 0 var(--sp-2); font-weight:600; }
+.lead { color:var(--text-2); margin:0 0 var(--sp-6); max-width:64ch; }
+section { margin:0 0 var(--sp-6); }
+.sec-head { display:flex; align-items:baseline; gap:var(--sp-2); margin-bottom:var(--sp-3); flex-wrap:wrap; }
+.tag-ver { font-size:var(--fs-micro); color:var(--muted); border:1px solid var(--line);
+           border-radius:var(--radius-pill); padding:1px 8px; }
+.note { color:var(--muted); font-size:var(--fs-small); margin:0 0 var(--sp-3); max-width:70ch; }
+
+/* —— 应用内预览框：模拟正文区 —— */
+.app { background:var(--bg); border:1px solid var(--line); border-radius:var(--radius);
+       overflow:hidden; box-shadow:var(--shadow-1); }
+.app-bar { display:flex; align-items:center; gap:var(--sp-2); padding:10px var(--sp-4);
+           border-bottom:1px solid var(--line); background:var(--bg-soft); }
+.dot { width:9px; height:9px; border-radius:50%; background:var(--line-2); }
+.app-bar small { color:var(--muted); font-size:var(--fs-micro); }
+.app-body { padding:var(--sp-5) var(--sp-6) var(--sp-6); }
+.doc-title { font-size:var(--fs-display); font-weight:600; letter-spacing:-.005em;
+             padding:var(--sp-1) var(--sp-2); border:1px solid transparent; border-radius:var(--radius-sm);
+             color:var(--text); margin-bottom:var(--sp-2); }
+.doc-title:hover { border-color:var(--line-2); }
+.doc-prose { font-size:var(--fs-body-lg); line-height:1.75; color:var(--text-2); }
+.doc-prose p { margin:0 0 var(--sp-3); }
+
+/* —— 芯片（已上线的那个）—— */
+.cm-fm-chip { display:inline-block; padding:0 var(--sp-2); border:none; border-radius:var(--radius-sm);
+  background:var(--bg-soft); color:var(--text-2); font:inherit; font-size:var(--fs-micro);
+  line-height:1.7; cursor:pointer; margin-bottom:var(--sp-3); }
+.cm-fm-chip:hover { background:var(--panel-2); }
+.cm-fm-chip:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
+.fm-raw { font-family:var(--mono); font-size:var(--fs-small); line-height:1.65; color:var(--text-2);
+  background:var(--bg-soft); border:1px solid var(--line); border-radius:var(--radius-sm);
+  padding:var(--sp-3) var(--sp-4); margin:0 0 var(--sp-3); white-space:pre; overflow-x:auto; }
+
+/* —— 属性卡片（提案）—— */
+.props { border:1px solid var(--line); border-radius:var(--radius); background:var(--bg);
+         margin-bottom:var(--sp-5); overflow:hidden; }
+.props-head { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2);
+              padding:var(--sp-2) var(--sp-4); border-bottom:1px solid var(--line); background:var(--bg-soft); }
+.props-head span { font-size:var(--fs-small); color:var(--muted); }
+.props-row { display:grid; grid-template-columns:72px 1fr; gap:var(--sp-3); align-items:start;
+             padding:var(--sp-2) var(--sp-4); }
+.props-row + .props-row { border-top:1px solid var(--hairline,#f2f2f2); }
+.props-row > label { font-size:var(--fs-small); color:var(--muted); padding-top:5px; }
+.props-vals { display:flex; flex-wrap:wrap; gap:var(--sp-1); align-items:center; min-height:28px; }
+.chip { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:var(--radius-pill);
+        background:var(--primary-soft); color:var(--primary-ink); font-size:var(--fs-small); border:1px solid var(--primary-line); }
+.chip button { display:inline-flex; border:none; background:none; padding:0; cursor:pointer;
+               color:inherit; opacity:.65; line-height:1; }
+.chip button:hover { opacity:1; }
+.chip--static { background:var(--bg-soft); color:var(--text-2); border-color:var(--line); }
+.chip--add { background:none; color:var(--muted); border:1px dashed var(--line-2); cursor:pointer; }
+.chip--add:hover { color:var(--primary-ink); border-color:var(--primary-line); background:var(--primary-soft); }
+select, input.f { font:inherit; font-size:var(--fs-small); color:var(--text); background:var(--bg);
+  border:1px solid var(--line); border-radius:var(--radius-sm); padding:3px 8px; min-height:28px; }
+select:focus, input.f:focus { outline:2px solid var(--primary); outline-offset:-1px; border-color:var(--primary-line); }
+.foreign { border-top:1px solid var(--line); background:var(--bg-soft); }
+.props-fm { border-top:1px solid var(--line); background:var(--bg-soft); }
+.fm-row { display:grid; grid-template-columns:96px 1fr; gap:var(--sp-3); align-items:start;
+          padding:var(--sp-2) var(--sp-4); }
+.fm-key { font-family:var(--mono); font-size:var(--fs-micro); color:var(--text-2);
+          padding-top:6px; word-break:break-all; }
+.fm-key em { font-style:normal; color:var(--muted); font-family:var(--sans); font-size:var(--fs-micro); }
+.fm-row textarea, .fm-row input.val { width:100%; font-family:var(--mono); font-size:var(--fs-micro);
+          color:var(--text); background:var(--bg); border:1px solid var(--line);
+          border-radius:var(--radius-sm); padding:5px 8px; resize:vertical; line-height:1.6; }
+.fm-row textarea:focus, .fm-row input.val:focus { outline:2px solid var(--primary);
+          outline-offset:-1px; border-color:var(--primary-line); }
+.fm-row input.val { font-family:var(--sans); font-size:var(--fs-small); }
+.fm-foot { padding:0 var(--sp-4) var(--sp-3) 112px; }
+.fm-shape { font-size:9px; color:var(--muted); border:1px solid var(--line); border-radius:var(--radius-pill);
+            padding:0 5px; margin-left:4px; font-family:var(--sans); }
+.foreign summary { cursor:pointer; list-style:none; padding:var(--sp-2) var(--sp-4);
+  font-size:var(--fs-small); color:var(--muted); display:flex; align-items:center; gap:6px; }
+.foreign summary::-webkit-details-marker { display:none; }
+.foreign summary:hover { color:var(--text-2); }
+.foreign-body { padding:0 var(--sp-4) var(--sp-3) 84px; }
+.kv { display:grid; grid-template-columns:92px 1fr; row-gap:6px; column-gap:var(--sp-3);
+      font-size:var(--fs-small); margin:0; }
+.kv dt { color:var(--muted); }
+.kv dd { margin:0; color:var(--text-2); font-family:var(--mono); font-size:var(--fs-micro); word-break:break-all; }
+
+.hint { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px;
+  border-radius:50%; border:1px solid var(--line-2); color:var(--muted); font-size:9px;
+  font-style:normal; cursor:help; }
+.why { background:var(--bg); border:1px solid var(--line); border-radius:var(--radius); padding:var(--sp-4) var(--sp-5); }
+.why ul { margin:var(--sp-2) 0 0; padding-left:1.15em; color:var(--text-2); font-size:var(--fs-body); }
+.why li { margin-bottom:var(--sp-2); }
+.why code { font-family:var(--mono); font-size:var(--fs-small); background:var(--bg-soft);
+  padding:1px 5px; border-radius:4px; }
+.cmp { display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-4); }
+@media (max-width:720px){ .cmp{grid-template-columns:1fr;} .props-row{grid-template-columns:1fr;gap:var(--sp-1);} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>笔记属性怎么显示</h1>
+  <p class="lead">上一版把 YAML 藏成了一个灰色小药丸（就是你说的「不理解」的那个东西，它已经上线了）。下面是它的样子，以及按你「文章顶部以属性样式显示 + 一张卡片专门显示和修改」这个方向做出来的样子。</p>
+
+  <section>
+    <div class="sec-head"><h2>一、现在（已上线）</h2><span class="tag-ver">v0.8.10</span></div>
+    <p class="note">编辑器正文区顶部那个小灰块，上面写着藏起来的键名。点它会把原始 YAML 摊开在正文第一行，可以直接手改。</p>
+    <div class="app">
+      <div class="app-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><small>仅编辑 · 折叠状态</small></div>
+      <div class="app-body">
+        <div class="doc-title">Anatomy of the .claude/ folder</div>
+        <button class="cm-fm-chip" id="chip">title · tags · url · author · captured · like · comment · status</button>
+        <div class="doc-prose">
+          <p>正文第一段。这篇是从 Obsidian 导进来的，顶部那堆 YAML 以前就明晃晃地摊在这里。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="app" style="margin-top:var(--sp-3)">
+      <div class="app-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><small>点开之后</small></div>
+      <div class="app-body">
+        <div class="doc-title">Anatomy of the .claude/ folder</div>
+        <pre class="fm-raw">title: Anatomy of the .claude/ folder
+url: https://x.com/akshay_pachaar/status/2035341800739877091
+author:
+  - Unknown
+captured: 2026-03-25
+tags: []
+like: false
+comment:
+status: unread</pre>
+        <div class="doc-prose"><p>正文第一段。</p></div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:var(--sp-3)">问题很直白：<b>标签在这两种状态下都没有可点的地方</b>——它只是文本。改标签只能回正文里手打 <code style="font-family:var(--mono)">#标签</code>，或者在上面这段 YAML 里手改。</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>二、提案：文章顶部一张属性卡片</h2><span class="tag-ver">待你确认</span></div>
+    <p class="note">可以点着玩：加删标签、改清单字段、改「其他属性」的值、添加新键。<b>标签和清单字段会写回 md 的顶层键</b>；「其他属性」的值按你写的原文、原样写回同一位置。</p>
+    <div class="app">
+      <div class="app-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><small>仅编辑 · 属性卡片</small></div>
+      <div class="app-body">
+        <div class="doc-title">Anatomy of the .claude/ folder</div>
+
+        <div class="props">
+          <div class="props-head"><span>属性</span><span>写入 md 的顶层 <code style="font-family:var(--mono)">title</code> / <code style="font-family:var(--mono)">tags</code></span></div>
+
+          <div class="props-row">
+            <label for="tags">标签</label>
+            <div class="props-vals" id="tags"></div>
+          </div>
+
+          <div class="props-row">
+            <label for="st">状态</label>
+            <div class="props-vals">
+              <select id="st" class="f">
+                <option value="todo">待办</option>
+                <option value="doing">进行中</option>
+                <option value="done">已完成</option>
+                <option value="">未设为清单</option>
+              </select>
+              <span class="hint" title="状态、截止、优先级是 MeNote 的清单字段，存进 menote.task 块">?</span>
+            </div>
+          </div>
+
+          <div class="props-row">
+            <label for="due">截止</label>
+            <div class="props-vals"><input id="due" class="f" type="date" value="2026-10-08"></div>
+          </div>
+
+          <div class="props-row">
+            <label for="pri">优先级</label>
+            <div class="props-vals">
+              <select id="pri" class="f">
+                <option value="high">高</option>
+                <option value="medium" selected>中</option>
+                <option value="low">低</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="props-fm">
+            <div class="props-head"><span>其他属性</span><span>Obsidian 写进来的键 · 原样保留</span></div>
+            <div id="fmRows"></div>
+            <div class="fm-foot">
+              <button class="chip chip--add" id="fmAdd" type="button">+ 添加属性</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="doc-prose">
+          <p>正文第一段。</p>
+          <p>第二段。属性卡片在上面，正文从这里开始，两者不重叠、不互相挤压。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>三、这么定的原因</h2></div>
+    <div class="why">
+      <ul>
+        <li><b>形态不是我发明的。</b><code>DESIGN.md</code> §5.3 早就写了「条目属性（标签、截止、优先级、状态）→ 胶囊 <code>chip</code>」，这一版是把它落下来。</li>
+        <li><b>标题不进卡片。</b>它已经有独立输入框（正文区顶部那个大字），卡片里再放一份就是两处真相。</li>
+        <li><b>「其他属性」也改，但键名原样保留。</b>Obsidian 写进来的 <code>url</code> / <code>author</code> / <code>status</code> 这些，MeNote <b>不替用户解释它是什么意思</b>——<code>status: unread</code> 可能是阅读态、也可能是别的插件的流程状态，猜错比不猜更糟。所以键名就是键名，<b>值可以直接改</b>。</li>
+        <li><b>「按原格式」正好让我们不用写通用 YAML 解析器。</b>MeNote 不把值解析成结构再拼回去（那才是真要引 YAML 库），而是<b>只认出这个键占哪几行</b>，然后把你写的原文按原样写回同一位置。原来是块序列（<code>author:</code> 下面带 <code>- …</code>）就仍是块序列，原来是一行就仍是一行——<b>引号、空格、缩进都是你说了算</b>。</li>
+        <li><b>不做「未知键就丢掉」。</b>这是本项目一直的安全底线（<code>frontmatter.ts</code> 文件头写着「解析不丢未知内容」）。卡片只是<b>换了个入口</b>去看它们，底层那份「一个字节都不改」的保真没动。</li>
+        <li><b>不用侧滑详情。</b><code>DESIGN.md</code> §6.7 把侧滑详情定成「能力保留，但不由条目列表触发」。这里要的是<b>就地改</b>而不是临时查看，一行 chip 比开面板更直接。</li>
+        <li><b>要做就得新写一条标签写入路径。</b>mdcore 早就有 <code>updateMenoteKeys(body, {tags})</code>，但界面上至今没有任何地方调它——标签一直是「正文里打 <code>#标签</code>」或手改 YAML。</li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  var tags = ["claude", "tooling"];
+  var box = document.getElementById("tags");
+  function render() {
+    box.textContent = "";
+    tags.forEach(function (t) {
+      var chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = t;
+      var x = document.createElement("button");
+      x.type = "button";
+      x.setAttribute("aria-label", "移除标签 " + t);
+      x.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+      x.onclick = function () { tags = tags.filter(function (o) { return o !== t; }); render(); };
+      chip.appendChild(x);
+      box.appendChild(chip);
+    });
+    var add = document.createElement("button");
+    add.type = "button";
+    add.className = "chip chip--add";
+    add.textContent = "+ 添加";
+    add.onclick = function () {
+      var v = window.prompt("标签名");
+      if (v && v.trim() && tags.indexOf(v.trim()) === -1) { tags.push(v.trim()); render(); }
+    };
+    box.appendChild(add);
+  }
+  render();
+
+  /* —— 其他属性：键原样、值可改。block 形状用 textarea，单行用 input。 —— */
+  var KEY_RE = /^[A-Za-z0-9_-]+$/;
+  var fm = [
+    { key: "url",      shape: "line",  val: "https://x.com/akshay_pachaar/status/2035341800739877091" },
+    { key: "author",   shape: "block", val: '- "Unknown"' },
+    { key: "captured", shape: "line",  val: "2026-03-25" },
+    { key: "like",     shape: "line",  val: "false" },
+    { key: "comment",  shape: "line",  val: "" },
+    { key: "status",   shape: "line",  val: "unread" }
+  ];
+  var fmRows = document.getElementById("fmRows");
+
+  function renderFm() {
+    fmRows.textContent = "";
+    fm.forEach(function (p, i) {
+      var row = document.createElement("div");
+      row.className = "fm-row";
+
+      var key = document.createElement("div");
+      key.className = "fm-key";
+      key.textContent = p.key;
+      if (p.shape === "block") {
+        var s = document.createElement("span");
+        s.className = "fm-shape";
+        s.textContent = "块序列";
+        key.appendChild(s);
+      }
+      key.title = "键名原样保留，不翻译也不改写";
+      row.appendChild(key);
+
+      var field;
+      if (p.shape === "block") {
+        field = document.createElement("textarea");
+        field.rows = 2;
+        field.value = p.val;
+        field.placeholder = "每行一个，用 - 开头";
+      } else {
+        field = document.createElement("input");
+        field.className = "val";
+        field.value = p.val;
+        field.placeholder = "（空）";
+      }
+      field.setAttribute("aria-label", p.key + " 的值");
+      field.oninput = function () { p.val = field.value; };
+      row.appendChild(field);
+      fmRows.appendChild(row);
+    });
+  }
+  renderFm();
+
+  document.getElementById("fmAdd").onclick = function () {
+    var k = window.prompt("键名（只能用字母、数字、下划线、连字符）");
+    if (!k) return;
+    k = k.trim();
+    if (!KEY_RE.test(k)) { window.alert("键名只能用字母、数字、下划线、连字符——含冒号或空格的键写进去会让整块 YAML 坏掉。"); return; }
+    if (fm.some(function (p) { return p.key === k; })) { window.alert("这个键已经在了。"); return; }
+    if (k === "title" || k === "tags" || k === "menote") { window.alert("「" + k + "」是 MeNote 自己的键，上面已经有专门的行了。"); return; }
+    fm.push({ key: k, shape: "line", val: "" });
+    renderFm();
+  };
+
+  document.getElementById("chip").onclick = function () { this.textContent = this.dataset.full; };
+  document.getElementById("chip").dataset.full = document.getElementById("chip").textContent;
+</script>
+</body>
+</html>

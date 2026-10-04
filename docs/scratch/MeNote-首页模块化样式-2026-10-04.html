@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeNote 首页 · 模块化样式稿（2026-10-04）</title>
+
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   0. 令牌：与 apps/web/src/app/theme/tokens.css 逐值一致
+      （DESIGN.md §3.3 令牌表 + §3.4 深浅两套，不引 Web 字体）
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light;
+  --bg: #ffffff; --bg-soft: #f7f7f7;
+  --panel: #ffffff; --panel-2: #f2f2f2; --panel-3: #e8e8e8;
+  --line: #e0e0e0; --line-2: #c9c9c9;
+  --text: #1d1d1d; --text-2: #4a4a4a; --muted: #6b6b6b;
+  --primary: #f6821f; --primary-2: #e8720d;
+  --primary-soft: rgba(246,130,31,.12); --primary-line: rgba(246,130,31,.35);
+  --primary-ink: #b45309; --on-primary: #1d1d1d;
+  --green: #1f7a4d; --green-soft: rgba(31,122,77,.11);
+  --amber: #8a5a00; --amber-soft: rgba(138,90,0,.11);
+  --shadow-1: 0 4px 14px rgba(29,29,29,.07);
+  --fs-display: 20px; --fs-title: 17px; --fs-body-lg: 14px;
+  --fs-body: 13px; --fs-small: 12px; --fs-micro: 11px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+  --radius-sm: 6px; --radius: 10px; --radius-lg: 14px; --radius-pill: 99px;
+  --topbar-h: 54px; --fnbar-w: 294px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161616; --bg-soft: #1e1e1e;
+  --panel: #242424; --panel-2: #2d2d2d; --panel-3: #383838;
+  --line: #333333; --line-2: #4a4a4a;
+  --text: #f2f2f2; --text-2: #bdbdbd; --muted: #8f8f8f;
+  --primary: #f6821f; --primary-2: #fbad41;
+  --primary-soft: rgba(246,130,31,.16); --primary-line: rgba(246,130,31,.34);
+  --primary-ink: #f6821f; --on-primary: #161616;
+  --green: #5cbf8a; --green-soft: rgba(92,191,138,.14);
+  --amber: #e0a458; --amber-soft: rgba(224,164,88,.14);
+  --shadow-1: 0 4px 14px rgba(0,0,0,.35);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   1. L1 排版：按「角色」取样式，不按「大小」
+      关键一条：数据拿全系统最大的字号，标签拿最小的 —— 数字是内容，不是装饰
+   ═══════════════════════════════════════════════════════════════ */
+.t-page    { font-size: var(--fs-title);    font-weight: 600; color: var(--text); }
+.t-section { font-size: var(--fs-body-lg);  font-weight: 600; color: var(--text); }
+.t-body    { font-size: var(--fs-body);     color: var(--text); }
+.t-sub     { font-size: var(--fs-body);     color: var(--text-2); }
+.t-meta    { font-size: var(--fs-small);    color: var(--muted); }
+.t-label   { font-size: var(--fs-micro);    color: var(--muted); }
+.t-data    { font-size: var(--fs-display);  font-weight: 600; color: var(--text);
+             font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* ═══════════════════════════════════════════════════════════════
+   2. L2 容器：卡片只有一种长相，上框与否是开关，不是另一套样式
+   ═══════════════════════════════════════════════════════════════ */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+}
+/* 副内容：不上框。它靠位置与留白表示次要，不靠「另一种边框」 */
+.card--bare { background: none; border: 0; padding: 0; }
+
+/* 区块头：全站只有这一种写法（标题 + 右侧弱操作 + 可选来源） */
+.sec { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.sec__act { margin-left: auto; }
+
+/* ═══════════════════════════════════════════════════════════════
+   3. L3 控件：按钮就是按钮，三档由令牌换，不另写几何
+   ═══════════════════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  height: 31px; padding: 0 var(--sp-3);
+  border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  background: var(--panel); color: var(--text-2);
+  font: inherit; font-size: var(--fs-small);
+  cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not([aria-disabled="true"]) { border-color: var(--primary-line); color: var(--primary-ink); }
+.btn--primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+.btn--primary:hover { background: var(--primary-2); border-color: var(--primary-2); color: var(--on-primary); }
+.btn--ghost { border-color: transparent; background: none; color: var(--muted); }
+.btn--ghost:hover { color: var(--primary-ink); }
+.btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  height: 21px; padding: 0 var(--sp-2);
+  border: 0; border-radius: var(--radius-sm);
+  background: var(--panel-2); color: var(--text-2);
+  font: inherit; font-size: var(--fs-micro); cursor: pointer; white-space: nowrap;
+}
+.chip:hover { background: var(--panel-3); color: var(--text); }
+.chip[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0;
+  border: 0; border-radius: var(--radius-circle);
+  background: none; color: var(--muted);
+  font: inherit; font-size: var(--fs-small); cursor: pointer;
+}
+.icon-btn:hover { color: var(--primary-ink); background: var(--primary-soft); }
+
+/* ═══════════════════════════════════════════════════════════════
+   4. L4 重复单元：数据对 / 列表行。全站复用，改一处全局生效
+   ═══════════════════════════════════════════════════════════════ */
+.stat { display: flex; flex-direction: column; gap: var(--sp-1); }
+.stat__v { font-size: var(--fs-display); font-weight: 600; color: var(--text);
+           font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.stat__l { font-size: var(--fs-micro); color: var(--muted); }
+.stat-row { display: flex; gap: var(--sp-6); flex-wrap: wrap; }
+
+.row {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%; padding: var(--sp-2) 0;
+  border: 0; background: none; text-align: left;
+  font: inherit; cursor: pointer; color: var(--text);
+}
+.row:hover .row__main { color: var(--primary-ink); }
+.row__main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+             font-size: var(--fs-body); }
+.row__meta { flex: none; font-size: var(--fs-micro); color: var(--muted); }
+.row__dot { flex: none; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--primary); }
+.rows { display: flex; flex-direction: column; }
+.rows .row + .row { border-top: 1px solid var(--line); }
+
+.badge {
+  display: inline-flex; align-items: center; height: 17px; padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm); background: var(--panel-2);
+  font-size: var(--fs-micro); color: var(--text-2);
+}
+.badge--high { background: var(--primary-soft); color: var(--primary-ink); }
+
+.note { display: flex; align-items: flex-start; gap: var(--sp-1);
+        font-size: var(--fs-micro); color: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   5. 首页组装：只用上面四层，不出现任何 .home-xxx 专属外观
+   ═══════════════════════════════════════════════════════════════ */
+.home { display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--bg); }
+.home__head {
+  display: flex; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+}
+.home__scroll { flex: 1; overflow-y: auto; padding: var(--sp-5); }
+.home__body {
+  display: flex; flex-direction: column; gap: var(--sp-6);
+  width: 100%; max-width: 920px; margin: 0 auto;   /* DESIGN.md §2.3 */
+}
+.deck { display: flex; flex-wrap: wrap; gap: var(--sp-6); align-items: start; }
+.deck__main { flex: 1.15 1 320px; min-width: 0; }
+.deck__side { flex: 1 1 280px; min-width: 0; }
+
+.acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.navgrp + .navgrp { margin-top: var(--sp-3); }
+.navgrp__t { margin-bottom: var(--sp-1); }
+
+/* ═══════════════════════════════════════════════════════════════
+   6. 稿子外壳（不属于应用，只是这张纸）
+   ═══════════════════════════════════════════════════════════════ */
+body { margin: 0; background: var(--bg-soft); color: var(--text);
+       font: var(--fs-body)/1.5 var(--sans); }
+.hz { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--sp-3);
+      padding: var(--sp-3) var(--sp-5); background: var(--panel); border-bottom: 1px solid var(--line); }
+.hz__t { font-size: var(--fs-body-lg); font-weight: 600; }
+.hz__d { font-size: var(--fs-micro); color: var(--muted); }
+main { max-width: 1180px; margin: 0 auto; padding: var(--sp-6) var(--sp-5) 80px;
+       display: flex; flex-direction: column; gap: var(--sp-6); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+         padding: var(--sp-5); }
+.panel > h2 { margin: 0 0 var(--sp-1); font-size: var(--fs-title); font-weight: 600; }
+.panel > p.lede { margin: 0 0 var(--sp-4); font-size: var(--fs-small); color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-4); }
+.spec { border: 1px dashed var(--line-2); border-radius: var(--radius); padding: var(--sp-4);
+        background: var(--bg-soft); display: flex; flex-direction: column; gap: var(--sp-3); }
+.spec__h { display: flex; align-items: baseline; gap: var(--sp-2); }
+.spec__h b { font-size: var(--fs-body-lg); }
+.spec__h code { font: var(--fs-micro)/1.4 var(--mono); color: var(--muted); }
+.spec p { margin: 0; font-size: var(--fs-small); color: var(--text-2); }
+ul.why { margin: 0; padding-left: 18px; font-size: var(--fs-small); color: var(--text-2); }
+ul.why li { margin-bottom: var(--sp-1); }
+table.tk { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
+table.tk th, table.tk td { text-align: left; padding: var(--sp-2) var(--sp-3);
+                           border-bottom: 1px solid var(--line); vertical-align: top; }
+table.tk th { font-size: var(--fs-micro); color: var(--muted); font-weight: 600; }
+table.tk code { font: var(--fs-micro)/1.4 var(--mono); }
+.frame { border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--bg); overflow-x: auto; }
+.frame__bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+              background: var(--bg-soft); border-bottom: 1px solid var(--line); font-size: var(--fs-micro); color: var(--muted); }
+.frame__app { display: flex; }
+.fnbar { width: var(--fnbar-w); flex: none; background: var(--panel-2); border-right: 1px solid var(--line);
+         display: flex; flex-direction: column; }
+.fnbar__composer { height: 95px; margin: var(--sp-2); border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+                   background: var(--panel); display: flex; align-items: center; padding: var(--sp-2);
+                   font-size: var(--fs-micro); color: var(--muted); }
+.fnbar__nav { flex: 1; padding: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); }
+.fnbar__tab { height: 25px; border-radius: var(--radius-sm); background: var(--panel-3); opacity: .5; }
+.fnbar__tab.on { background: var(--primary-soft); border-bottom: 2px solid var(--primary); opacity: 1; }
+.work { flex: 1; min-width: 0; height: 660px; }
+.cap { display: flex; gap: var(--sp-2); align-items: baseline; margin-bottom: var(--sp-2); }
+.cap b { font-size: var(--fs-body); }
+.cap span { font-size: var(--fs-micro); color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="hz">
+  <div>
+    <div class="hz__t">MeNote 首页 · 模块化样式稿</div>
+    <div class="hz__d">2026-10-04 · 四层模块：数据 / 卡片 / 按钮 / 列表行 · 令牌与 tokens.css 一致</div>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px">
+    <button class="btn" id="theme">深色主题</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ═══════════ 1. 系统 ═══════════ -->
+<section class="panel">
+  <h2>一、这次改的是「分层」，不是某一块好不好看</h2>
+  <p class="lede">上一版的问题是每块自己长成自己的样子：统计一条带、动态一张卡、动作一块壳。
+  于是页面看起来像四件不同的东西拼的。这里先定四层基础件，每类只有<strong>一种长相</strong>，
+  首页只用它们拼 —— 换句话说，<code>.home-card</code> / <code>.home-band</code> / <code>.home-acts-bar</code>
+  这类「每块自己一套」的类名不再存在。</p>
+
+  <div class="grid2">
+    <div class="spec">
+      <div class="spec__h"><b>L1 排版</b><code>.t-data / .t-section / .t-body / .t-meta / .t-label</code></div>
+      <p>按<strong>角色</strong>取样式，不按字号取。数据拿全系统最大的字号，标签拿最小的 ——
+      数字是内容不是装饰，这是「数据要是数据的样式」的第一句。</p>
+    </div>
+    <div class="spec">
+      <div class="spec__h"><b>L2 容器</b><code>.card / .card--bare / .sec</code></div>
+      <p>卡片<strong>只有一种长相</strong>（面板底 + 1px 描边 + 10px 圆角 + 16px 内边距）。
+      副内容用 <code>--bare</code> 把框去掉，靠位置和留白表示次要 —— 不发明「另一种边框」。</p>
+    </div>
+    <div class="spec">
+      <div class="spec__h"><b>L3 控件</b><code>.btn / .btn--primary / .btn--ghost / .chip</code></div>
+      <p>按钮就是按钮：31px 高、8px 内边距、6px 圆角，三档只换令牌不换几何。
+      全屏最多一个 <code>--primary</code>（DESIGN.md §5.1）。</p>
+    </div>
+    <div class="spec">
+      <div class="spec__h"><b>L4 重复单元</b><code>.stat / .stat-row / .row / .rows</code></div>
+      <p>数据对与列表行各一份定义，首页、待办、搜索结果共用。行与行之间一条 1px 分隔线，
+      不再靠「卡片里的一堆裸文字」制造节奏。</p>
+    </div>
+  </div>
+
+  <div style="margin-top:var(--sp-5)">
+    <table class="tk">
+      <thead><tr><th style="width:150px">角色</th><th style="width:130px">类名</th><th>取值</th><th style="width:38%">用在哪</th></tr></thead>
+      <tbody>
+        <tr><td>数据值</td><td><code>.t-data</code></td><td>20px / 600 / tabular-nums</td><td>统计数字 —— 全系统最大字号</td></tr>
+        <tr><td>数据标签</td><td><code>.t-label</code></td><td>11px / muted</td><td>「笔记」「表格」紧贴自己那个数字</td></tr>
+        <tr><td>区块标题</td><td><code>.t-section</code></td><td>14px / 600</td><td>每块的标题，全站唯一写法</td></tr>
+        <tr><td>正文</td><td><code>.t-body</code></td><td>13px / text</td><td>列表行主文本</td></tr>
+        <tr><td>元信息</td><td><code>.t-meta</code></td><td>12px / muted</td><td>日期、计数、来源</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:var(--sp-5);display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-5)">
+    <div>
+      <h3 style="margin:0 0 var(--sp-2);font-size:var(--fs-body);font-weight:600">数据（无框 · 数字主导）</h3>
+      <div class="stat-row">
+        <div class="stat"><span class="stat__v">12</span><span class="stat__l">笔记</span></div>
+        <div class="stat"><span class="stat__v">3</span><span class="stat__l">表格</span></div>
+        <div class="stat"><span class="stat__v">48</span><span class="stat__l">Memo</span></div>
+      </div>
+      <p class="t-label" style="margin:var(--sp-2) 0 0">不再有边框、底色或标题文字；口径说明进 ⓘ。</p>
+    </div>
+    <div>
+      <h3 style="margin:0 0 var(--sp-2);font-size:var(--fs-body);font-weight:600">卡片（唯一上框的容器）</h3>
+      <div class="card" style="padding:var(--sp-3)">
+        <div class="sec"><span class="t-section">今日待办</span></div>
+        <div class="rows">
+          <button class="row"><span class="row__dot"></span><span class="row__main">交物业费</span><span class="row__meta">今天</span></button>
+          <button class="row"><span class="row__dot"></span><span class="row__main">回邮件给房东</span><span class="row__meta">明天</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:var(--sp-5)">
+    <h3 style="margin:0 0 var(--sp-2);font-size:var(--fs-body);font-weight:600">按钮三档（同几何，只换令牌）</h3>
+    <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center">
+      <button class="btn btn--primary">主操作（每屏最多一个）</button>
+      <button class="btn">次操作</button>
+      <button class="btn btn--ghost">弱操作</button>
+      <button class="btn" aria-disabled="true">置灰并说明原因</button>
+      <button class="chip">胶囊 · 位置入口</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 2. 实装 ═══════════ -->
+<section class="panel">
+  <h2>二、首页实装</h2>
+  <p class="lede">四种东西，各用各的样式：<strong>数据</strong>是数据带、<strong>卡片</strong>只有今日待办一张、
+  <strong>按钮</strong>就是一行按钮、<strong>位置</strong>是胶囊组。内容区 920px 居中（DESIGN.md §2.3）。</p>
+
+  <div class="frame">
+    <div class="frame__bar">主操作区 1180px（宽屏）· 内容停在 920px 居中，两侧各留白 130px</div>
+    <div class="frame__app" style="width:1180px">
+      <div class="fnbar">
+        <div class="fnbar__composer">快速录入框 95px（占位）</div>
+        <div class="fnbar__nav">
+          <div class="fnbar__tab on"></div><div class="fnbar__tab"></div><div class="fnbar__tab"></div>
+          <div class="fnbar__tab"></div><div class="fnbar__tab"></div><div class="fnbar__tab"></div>
+        </div>
+      </div>
+      <div class="work">
+        <div class="home">
+          <header class="home__head">
+            <span class="t-page">首页</span>
+            <button class="icon-btn" title="这一屏的数据从哪来">ⓘ</button>
+          </header>
+          <div class="home__scroll">
+            <div class="home__body">
+
+              <!-- 数据带 -->
+              <div class="stat-row">
+                <div class="stat"><span class="stat__v">12</span><span class="stat__l">笔记</span></div>
+                <div class="stat"><span class="stat__v">3</span><span class="stat__l">表格</span></div>
+                <div class="stat"><span class="stat__v">48</span><span class="stat__l">Memo</span></div>
+                <div class="note" style="margin-left:auto;align-self:center">概览由本地元数据计算，不发网络请求</div>
+              </div>
+
+              <!-- 一卡 + 一列表 -->
+              <div class="deck">
+                <div class="deck__main">
+                  <section class="card">
+                    <div class="sec">
+                      <span class="t-section">今日待办</span>
+                      <span class="t-label">来自清单 Memo</span>
+                      <span class="sec__act"><button class="btn btn--ghost">打开待办视图</button></span>
+                    </div>
+                    <div class="rows">
+                      <button class="row"><span class="row__dot"></span><span class="row__main">交物业费</span><span class="row__meta">今天</span></button>
+                      <button class="row"><span class="row__dot"></span><span class="row__main">回邮件给房东</span><span class="row__meta">明天</span></button>
+                      <button class="row"><span class="row__dot"></span><span class="row__main">买猫粮</span><span class="badge badge--high">高</span></button>
+                    </div>
+                  </section>
+                </div>
+                <div class="deck__side">
+                  <section class="card--bare">
+                    <div class="sec"><span class="t-section">最近动态</span></div>
+                    <div class="rows">
+                      <button class="row"><span class="row__main">会议记录</span><span class="row__meta">10月4日</span></button>
+                      <button class="row"><span class="row__main">家庭预算</span><span class="row__meta">10月3日</span></button>
+                      <button class="row"><span class="row__main">读书清单</span><span class="row__meta">10月2日</span></button>
+                    </div>
+                    <div class="note" style="margin-top:var(--sp-2)">另有 48 条 Memo，在 Memo 视图按时间轴查看</div>
+                  </section>
+                </div>
+              </div>
+
+              <!-- 按钮 -->
+              <div style="display:flex;flex-direction:column;gap:var(--sp-2)">
+                <div class="acts">
+                  <button class="btn btn--primary">＋ 新建笔记</button>
+                  <button class="btn">记录 Memo</button>
+                  <button class="btn">新建待办</button>
+                  <button class="btn" aria-disabled="true">打开加密空间</button>
+                  <button class="btn">搜索 <span class="t-label">Ctrl+K</span></button>
+                </div>
+                <div class="note">加密空间未启用时置灰并说明原因 —— 置灰必须解释，不能只置灰（DESIGN.md §6.1）</div>
+              </div>
+
+              <!-- 快捷收藏：文件夹 chip + 条目行，同属「我的收藏」同块呈现 -->
+              <section>
+                <div class="sec">
+                  <span class="t-section">快捷收藏</span>
+                  <span class="sec__act"><button class="btn btn--ghost">查看全部 9 条</button></span>
+                </div>
+                <div class="navgrp" style="margin-bottom:var(--sp-2)">
+                  <div class="t-label navgrp__t">文件夹</div>
+                  <div class="acts">
+                    <button class="chip">学习</button><button class="chip">生活</button><button class="chip">工作</button>
+                  </div>
+                </div>
+                <div class="rows">
+                  <button class="row"><span class="row__main">交物业费</span><span class="row__meta">10月4日</span></button>
+                  <button class="row"><span class="row__main">家庭预算</span><span class="row__meta">10月3日</span></button>
+                  <button class="row"><span class="row__main">读书清单</span><span class="row__meta">10月2日</span></button>
+                </div>
+                <div class="note" style="margin-top:var(--sp-2)">
+                  新增能力：文件夹也能收藏了（原先只有笔记/表格能收藏）。文件夹走 chip、条目走行 ——
+                  同一块里两种东西，各用各的样式，没有新造任何外观。
+                </div>
+              </section>
+
+              <!-- 位置 -->
+              <div>
+                <div class="navgrp">
+                  <div class="t-label navgrp__t">文件夹</div>
+                  <div class="acts"><button class="chip">学习</button><button class="chip">生活</button><button class="chip">工作</button></div>
+                </div>
+                <div class="navgrp">
+                  <div class="t-label navgrp__t">标签</div>
+                  <div class="acts"><button class="chip"># 读书</button><button class="chip"># 记账</button><button class="chip"># 生活</button></div>
+                </div>
+                <div class="navgrp">
+                  <div class="t-label navgrp__t">常用视图</div>
+                  <div class="acts"><button class="chip">最近编辑</button><button class="chip">收藏</button><button class="chip">Memo</button><button class="chip">待办</button><button class="chip">笔记本</button><button class="chip" aria-disabled="true">加密空间</button></div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 3. 宽度 ═══════════ -->
+<section class="panel">
+  <h2>三、窄窗不重叠（不为移动端定稿，只是不写死）</h2>
+  <p class="lede">两列靠弹性与换行，不靠固定宽 + 绝对定位；每层只有一个滚动容器。</p>
+  <div class="frame">
+    <div class="frame__bar">主操作区 560px（窄窗）· 两列自动堆叠，动作按钮允许换行</div>
+    <div class="frame__app" style="width:560px">
+      <div class="work" style="height:760px">
+        <div class="home">
+          <header class="home__head"><span class="t-page">首页</span><button class="icon-btn">ⓘ</button></header>
+          <div class="home__scroll">
+            <div class="home__body">
+              <div class="stat-row">
+                <div class="stat"><span class="stat__v">12</span><span class="stat__l">笔记</span></div>
+                <div class="stat"><span class="stat__v">3</span><span class="stat__l">表格</span></div>
+                <div class="stat"><span class="stat__v">48</span><span class="stat__l">Memo</span></div>
+              </div>
+              <div class="deck" style="gap:var(--sp-4)">
+                <div class="deck__main">
+                  <section class="card">
+                    <div class="sec"><span class="t-section">今日待办</span><span class="sec__act"><button class="btn btn--ghost">打开待办视图</button></span></div>
+                    <div class="rows">
+                      <button class="row"><span class="row__dot"></span><span class="row__main">交物业费</span><span class="row__meta">今天</span></button>
+                      <button class="row"><span class="row__dot"></span><span class="row__main">回邮件给房东</span><span class="row__meta">明天</span></button>
+                      <button class="row"><span class="row__dot"></span><span class="row__main">买猫粮</span><span class="badge badge--high">高</span></button>
+                    </div>
+                  </section>
+                </div>
+                <div class="deck__side">
+                  <section class="card--bare">
+                    <div class="sec"><span class="t-section">最近动态</span></div>
+                    <div class="rows">
+                      <button class="row"><span class="row__main">会议记录</span><span class="row__meta">10月4日</span></button>
+                      <button class="row"><span class="row__main">家庭预算</span><span class="row__meta">10月3日</span></button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+              <div class="acts">
+                <button class="btn btn--primary">＋ 新建笔记</button>
+                <button class="btn">记录 Memo</button>
+                <button class="btn">新建待办</button>
+                <button class="btn" aria-disabled="true">打开加密空间</button>
+                <button class="btn">搜索</button>
+              </div>
+              <div>
+                <div class="navgrp">
+                  <div class="t-label navgrp__t">文件夹</div>
+                  <div class="acts"><button class="chip">学习</button><button class="chip">生活</button><button class="chip">工作</button></div>
+                </div>
+                <div class="navgrp">
+                  <div class="t-label navgrp__t">常用视图</div>
+                  <div class="acts"><button class="chip">最近编辑</button><button class="chip">收藏</button><button class="chip">Memo</button><button class="chip">待办</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 4. 落地代价 ═══════════ -->
+<section class="panel">
+  <h2>四、这套分层的落地代价（先说清，别到时候 surprise）</h2>
+  <ul class="why">
+    <li><strong>要动的不止首页。</strong>`.card` / `.btn` / `.row` / `.stat` 一旦是全站基件，
+    别的屏（待办、Memo、设置、笔记列表）要逐个换成基件类，否则「基件」只是首页的基件。
+    建议<strong>分两批</strong>：先落基件 + 只改首页（本稿范围），下一批再迁移别的屏。</li>
+    <li><strong>类名从「按块」变成「按角色」。</strong><code>.home-card--lead</code>、<code>.home-band</code>、
+    <code>.home-acts-bar</code> 这类要删掉，改为 <code>.card</code> / <code>.card--bare</code> / <code>.acts</code>。
+    好消息是首页三个组件（今日待办 / 最近动态 / 快捷方式）反而变简单了 —— 壳不再各写各的。</li>
+    <li><strong>主次不再靠装饰</strong>：上一版给焦点卡加的橙色左边条在分层下没必要 ——
+    页面里只有一张卡片，主次已经由「有框 / 无框」说清。装饰越少越不容易看腻。</li>
+    <li><strong>这一稿的数据没变</strong>：还是笔记 / 表格 / Memo 三个数字、还是照全量口径、锁定三态照旧。
+    只改「怎么摆、怎么分层」。</li>
+  </ul>
+  <div class="note" style="margin-top:var(--sp-4)">
+    需要你拍板的两处：① 统计是留在内容顶部做数据带（本稿做法），还是回到页头右侧；
+    ② 焦点卡保留纯白卡片（本稿做法），还是加深一层底色做强调。
+  </div>
+</section>
+
+</main>
+
+<script>
+  const btn = document.getElementById('theme');
+  btn.addEventListener('click', () => {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    btn.textContent = dark ? '深色主题' : '浅色主题';
+  });
+</script>
+</body>
+</html>
