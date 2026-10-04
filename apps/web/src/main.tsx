@@ -16,6 +16,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { httpsUpgradeUrl } from "./app/ui/cryptoEnvironment";
+import { AppErrorBoundary } from "./app/ui/AppErrorBoundary";
 import "./app/theme/tokens.css";
 import "./app/theme/app.css";
 
@@ -33,20 +34,52 @@ if (!rootEl) {
 const isSharePath = /^\/s\/[A-Za-z0-9_-]{22}\/?$/.test(window.location.pathname);
 const root = createRoot(rootEl);
 
+/**
+ * 两条分支都**必须**有 `catch`，外面还套一层错误边界（2026-10-04）。
+ *
+ * 此前是 `void import(...).then((m) => root.render(...))`——导入一失败，`.then` 不执行、
+ * 也没有人接，页面就停在空的 `#root` 上：**纯白、无提示、只能手动刷新**。这会把一次部署
+ * 半程或 chunk 404 伪装成「代码坏了」，实测排查成本极高。
+ *
+ * 失败**不是** `componentDidCatch` 能接到的（树还没建起来），所以除了边界，
+ * 还得把错误交给它渲染。
+ */
 if (isSharePath) {
-  void import("./features/share-viewer/ui/ShareViewerApp").then((module) => {
-    root.render(
-      <StrictMode>
-        <module.ShareViewerApp />
-      </StrictMode>,
-    );
-  });
+  void import("./features/share-viewer/ui/ShareViewerApp").then(
+    (module) => {
+      root.render(
+        <StrictMode>
+          <AppErrorBoundary>
+            <module.ShareViewerApp />
+          </AppErrorBoundary>
+        </StrictMode>,
+      );
+    },
+    (error: unknown) => {
+      root.render(
+        <StrictMode>
+          <AppErrorBoundary loadError={error} />
+        </StrictMode>,
+      );
+    },
+  );
 } else {
-  void import("./app/App").then((module) => {
-    root.render(
-      <StrictMode>
-        <module.default />
-      </StrictMode>,
-    );
-  });
+  void import("./app/App").then(
+    (module) => {
+      root.render(
+        <StrictMode>
+          <AppErrorBoundary>
+            <module.default />
+          </AppErrorBoundary>
+        </StrictMode>,
+      );
+    },
+    (error: unknown) => {
+      root.render(
+        <StrictMode>
+          <AppErrorBoundary loadError={error} />
+        </StrictMode>,
+      );
+    },
+  );
 }

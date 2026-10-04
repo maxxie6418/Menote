@@ -1056,6 +1056,37 @@ button {
 }
 
 /*
+  应用级加载失败屏（2026-10-04，`app/ui/AppErrorBoundary.tsx`）。
+
+  此前入口动态导入失败没有任何兜底，用户看到的是**一片纯白**——不知道出了什么事、
+  也没有出路。DESIGN.md §6.1「禁止静默等待」在这里同样成立：失败必须有一句人话。
+  居中一列、不带框：它是「整个应用没起来」，不是页面里的一块内容。
+*/
+.bootfail {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  text-align: center;
+}
+.bootfail__title {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+.bootfail__body {
+  max-width: 42ch;
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+}
+
+/*
   条目属性卡片（2026-10-04，`features/notes/ui/ItemProps.tsx`）。
 
   形态是 DESIGN.md §5.3 已定的那一行「条目属性 → 胶囊 chip」，所以卡片自己**不带框**——
