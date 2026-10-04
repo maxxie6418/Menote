@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 /**
- * 首页面板（M2-8 验收点）：
- * - 三块：概括预览（统计 / 今日待办 / 最近动态）→ 快捷方式 → 快速导航；
+ * 首页面板（M2-8 验收点；布局重排 2026-10-04 更新结构断言）：
+ * - 四段节奏：页头一行（含统计读数）→ 中部两栏（今日待办主 / 最近动态副）→ 动作裸行 → 导航三组；
  * - 统计**始终计入加密条目**（不因锁定改变）；
  * - **来自 Memo 的部分在锁定时以"已锁定"占位**（Q7）——两条分支都有用例；
  * - 各卡片有空态；快捷方式与快速导航都走回调。
+ *
+ * 取数纯函数（`home-model.test.ts`）与这些断言是两回事：那边守**算什么**，这里守**怎么摆**。
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -105,27 +107,70 @@ function renderPanel(overrides: Partial<Parameters<typeof HomePanel>[0]> = {}) {
   };
 }
 
-describe("概括预览（甲板：一主两副 · M7）", () => {
+describe("页头读数（条目统计 · 布局重排）", () => {
   it("统计按类型计数，且**计入加密条目**（含单篇加密）", () => {
-    renderPanel();
-    const stats = screen.getByText("条目统计").closest(".home-band") as HTMLElement;
+    const { container } = renderPanel();
+    const ovw = container.querySelector(".home-ovw") as HTMLElement;
 
     // 笔记 2（其中 1 条 enc_self=1）+ 表格 1 + Memo 1
-    const numbers = [...stats.querySelectorAll(".home-stat__n")].map((el) => el.textContent);
+    const numbers = [...ovw.querySelectorAll(".home-stat__n")].map((el) => el.textContent);
     expect(numbers).toEqual(["2", "1", "1"]);
   });
 
-  it("结构是一主两副：今日待办在焦点卡（主），统计与动态在右栏（副）", () => {
+  it("统计在**页头里**做读数，不再是独立区块；口径收进 ⓘ（DESIGN.md §5.4）", () => {
+    const { container } = renderPanel();
+    const head = container.querySelector(".pane-head") as HTMLElement;
+
+    // 读数在页头内，且不再有自己的标题文字（无障碍名字由 aria-label 给）
+    expect(within(head).getByLabelText("条目统计")).toBeTruthy();
+    expect(screen.queryByText("条目统计")).toBeNull();
+    // 口径说明由 ⓘ 承载：按钮有可访问名字，说明文字在 role=tooltip 里
+    const hint = screen.getByRole("button", { name: "条目统计口径" });
+    expect(hint.getAttribute("aria-describedby")).toBeTruthy();
+  });
+
+  it("三个数字**保持可见**——实时计数不许收进 ⓘ（禁止项 #8）", () => {
+    const { container } = renderPanel();
+    const numbers = [...container.querySelectorAll(".home-ovw__row .home-stat__n")];
+    expect(numbers).toHaveLength(3);
+    expect(numbers.every((el) => el.textContent !== "")).toBe(true);
+  });
+});
+
+describe("中部两栏（一主一副 · 布局重排）", () => {
+  it("今日待办是唯一带框的主卡，最近动态是无框副块", () => {
     const { container } = renderPanel();
     const deck = container.querySelector(".home-deck") as HTMLElement;
     const main = deck.querySelector(".home-deck__main") as HTMLElement;
     const side = deck.querySelector(".home-deck__side") as HTMLElement;
-    // 焦点卡是主，右栏是副
+
     expect(within(main).getByText("今日待办")).toBeTruthy();
-    expect(within(side).getByText("条目统计")).toBeTruthy();
     expect(within(side).getByText("最近动态")).toBeTruthy();
-    // 三块不再等分
-    expect(deck.querySelectorAll(".home-card").length).toBe(2);
+
+    // 主次做在**外壳变体**上，不靠 flex 比例暗示
+    expect(main.querySelector(".home-card--lead")).toBeTruthy();
+    expect(side.querySelector(".home-card--flat")).toBeTruthy();
+    // 全屏只剩一个带边框的块
+    expect(container.querySelectorAll(".home-card:not(.home-card--flat)")).toHaveLength(1);
+  });
+
+  it("内容都在 920px 的内容容器里，滚动容器保持满宽（DESIGN.md §2.3）", () => {
+    const { container } = renderPanel();
+    const body = container.querySelector(".home__body") as HTMLElement;
+    const scroll = container.querySelector(".home__scroll") as HTMLElement;
+
+    // 限的是内容容器：两栏、动作带、导航三组都在它里面
+    expect(body.querySelector(".home-deck")).toBeTruthy();
+    expect(body.querySelector(".home-acts-bar")).toBeTruthy();
+    expect(body.querySelector(".home-nav")).toBeTruthy();
+    // 而滚动容器在它**外面**——滚动条因此仍在工作区右缘
+    expect(scroll.contains(body)).toBe(true);
+  });
+
+  it("页头不再有开发口吻副标题（DESIGN.md §5.4）", () => {
+    const { container } = renderPanel();
+    expect(container.querySelector(".pane-head .sub")).toBeNull();
+    expect(screen.queryByText(/全部由本地元数据计算/)).toBeNull();
   });
 
   it("今日待办列出未完成清单项，点击打开该条目；另有「打开待办视图」出口", async () => {
@@ -157,8 +202,12 @@ describe("概括预览（甲板：一主两副 · M7）", () => {
     });
 
     // 统计照旧（含 Memo 数字）
-    const numbers = [...container.querySelectorAll(".home-stat__n")].map((el) => el.textContent);
+    const numbers = [...container.querySelectorAll(".home-ovw__row .home-stat__n")].map(
+      (el) => el.textContent,
+    );
     expect(numbers).toEqual(["2", "1", "1"]);
+    // 锁定那句解释仍然**看得见**，不许藏进 ⓘ
+    expect(screen.getByText("数字不区分锁定状态")).toBeTruthy();
 
     // Memo 内容换成占位
     expect(screen.getAllByText(/已锁定/).length).toBeGreaterThanOrEqual(2);
@@ -166,18 +215,18 @@ describe("概括预览（甲板：一主两副 · M7）", () => {
   });
 
   it("空库时各块都有空态", () => {
-    renderPanel({ items: [], memos: [], folders: [], titles: {} });
+    const { container } = renderPanel({ items: [], memos: [], folders: [], titles: {} });
 
     expect(screen.getByText("没有未完成的待办。")).toBeTruthy();
     expect(screen.getByText(/还没有笔记/)).toBeTruthy();
-    const numbers = [...screen.getByText("条目统计").closest(".home-band")!.querySelectorAll(".home-stat__n")].map(
-      (el) => el.textContent,
-    );
+    const numbers = [
+      ...container.querySelectorAll(".home-ovw__row .home-stat__n"),
+    ].map((el) => el.textContent);
     expect(numbers).toEqual(["0", "0", "0"]);
   });
 });
 
-describe("快捷方式（动作带 · M7）", () => {
+describe("快捷方式（动作裸行 · 布局重排）", () => {
   it("新建笔记 / 记录 Memo / 新建待办 / 搜索都走回调", async () => {
     const user = userEvent.setup();
     const { onNewNote, onFocusComposer, onFocusSearch } = renderPanel();
@@ -195,12 +244,15 @@ describe("快捷方式（动作带 · M7）", () => {
     expect(onFocusSearch).toHaveBeenCalledTimes(1);
   });
 
-  it("不再占一整块独立卡片：动作在一行带里", () => {
+  it("是一行裸行：五个动作都在，但**不带边框外壳**（与快速导航分家）", () => {
     const { container } = renderPanel();
     const bar = container.querySelector(".home-acts-bar") as HTMLElement;
     expect(bar).toBeTruthy();
     // 五个动作都在这条带里
     expect(bar.querySelectorAll(".home-act")).toHaveLength(5);
+    // 动作是描边按钮、位置是 chip：全屏不再有第二个带边框的"卡片"块
+    expect(container.querySelectorAll(".home-card")).toHaveLength(2);
+    expect(container.querySelector(".home-nav")).toBeTruthy();
   });
 
   it("「打开加密空间」接上真动作了（M7；此前一直是 M2 留下的死按钮）", async () => {

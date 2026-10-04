@@ -179,6 +179,48 @@ describe("功能栏几何（DESIGN.md §2.5-2 不变量）", () => {
   });
 });
 
+/*
+首页布局（`docs/modules/Menote-首页布局重排-界面稿-v1.md`）。
+这一组全是**防回归**：四条结构规则每一条都曾经失效过一次或从未落地过，
+而"宽屏被拉满"这种问题**不会让任何现有断言变红**——样式表里少一条规则没人拦。
+*/
+describe("首页布局（布局重排 2026-10-04）", () => {
+  it("内容区有 920px 上限且居中（DESIGN.md §2.3「首页卡片组 920px」）", () => {
+    /*
+      **这一条守的是一个从未落地的要求**：`DESIGN.md` §2.3 早就写了首页 920px 上限，
+      而 `.home__scroll` 一直没限——Memo（740）、待办（920）、设置页（790）都限了。
+      宽屏下首页被拉到整个工作区，肉眼能看出，但没有任何断言会红。
+    */
+    expect(app).toMatch(/\.home__body\s*\{[^}]*max-width:\s*920px/);
+    expect(app).toMatch(/\.home__body\s*\{[^}]*margin:\s*0 auto/);
+    // 限的是内容容器，滚动容器保持满宽——滚动条因此仍在工作区右缘
+    expect(app).toMatch(/\.home__scroll\s*\{[^}]*overflow-y:\s*auto/);
+    expect(app).not.toMatch(/\.home__scroll\s*\{[^}]*max-width/);
+  });
+
+  it("主次做在外壳变体上：焦点卡带主色强调线，副块无边框", () => {
+    // 主卡：2px 主色左侧强调线（与 blockquote 引用线同一手法）+ 松一档留白
+    expect(app).toMatch(/\.home-card--lead\s*\{[^}]*border-left:\s*2px solid var\(--primary\)/);
+    expect(app).toMatch(/\.home-card--lead\s*\{[^}]*padding:\s*var\(--sp-4\)/);
+    // 副块：去掉描边与底色，只留一条顶部分隔线
+    expect(app).toMatch(/\.home-card--flat\s*\{[^}]*border:\s*0/);
+    expect(app).toMatch(/\.home-card--flat\s*\{[^}]*border-top:\s*1px solid var\(--line\)/);
+  });
+
+  it("动作带没有带边框的外壳（动作与位置分家）", () => {
+    expect(app).toMatch(/\.home-acts-bar\s*\{[^}]*border-top:\s*1px solid var\(--line\)/);
+    // 曾经它是 `border: 1px + radius + panel` 的独立卡片，于是与下面的 chip 导航同形
+    expect(app).not.toMatch(/\.home-acts-bar\s*\{[^}]*border-radius/);
+    expect(app).not.toMatch(/\.home-acts-bar\s*\{[^}]*background/);
+  });
+
+  it("统计读数在页头，且数字保持可见（禁止项 #8：实时计数不许收进 InfoHint）", () => {
+    expect(app).toMatch(/\.home-ovw\s*\{[^}]*margin-left:\s*auto/);
+    // 读数比标题低一档，避免在页头造出第二个平级标题
+    expect(app).toMatch(/\.home-ovw__row \.home-stat__n\s*\{[^}]*font-size:\s*var\(--fs-body\)/);
+  });
+});
+
 describe("组件硬性规范（DESIGN.md §3.2 / §5.5）", () => {
   it("组件里不出现硬编码颜色（必须走令牌，DESIGN.md §3.2-1「没有例外」）", () => {
     /*

@@ -268,22 +268,24 @@ step('待办页：页头一条 + 筛选条两形态 + 列表 / 看板互斥 + �
   });
 });
 
-step('首页页：概括预览改为甲板（一主两副）+ 单行快捷方式 + 分组快速导航（v2 M02-03 / 2026-09-27 调整）', () => {
+step('首页页：页头读数 + 中部两栏（一主一副）+ 裸行动作 + 分组快速导航（2026-10-04 布局重排）', () => {
   gotoPage('首页');
-  ['homeHead', 'homeStats', 'homeToday', 'homeRecent', 'homeActs', 'homeNav'].forEach(id => {
+  ['homeHead', 'homeToday', 'homeRecent', 'homeActs', 'homeNav'].forEach(id => {
     if (!$('#canvas [data-b="' + id + '"]')) throw new Error('首页缺区块 ' + id);
   });
-  if (!blockText('homeStats').includes('本地')) throw new Error('条目统计未说明本地计算');
-  // 甲板：今日待办与「统计 + 最近动态」在同一行，今日待办在前
+  // 条目统计已从独立区块改成**页头读数**，所以它不再是一个可点的块
+  if ($('#canvas [data-b="homeStats"]')) throw new Error('条目统计仍是独立区块（应并入页头读数）');
+  if (!blockText('homeHead').includes('读数')) throw new Error('首页头部未说明承载统计读数');
+  // 中部两栏：今日待办（主）在前、最近动态（副）在后，同一行
   const today = $('#canvas [data-b="homeToday"]');
-  const stats = $('#canvas [data-b="homeStats"]');
   const recent = $('#canvas [data-b="homeRecent"]');
-  if (today.parentElement !== stats.parentElement.parentElement)
-    throw new Error('今日待办与右栏不在同一行的甲板里');
-  if (stats.parentElement !== recent.parentElement) throw new Error('统计与最近动态不在同一栏');
-  if (!(today.compareDocumentPosition(stats) & 4)) throw new Error('今日待办应排在右栏之前');
-  // 快捷方式收成一条动作带、快速导航分三组
-  if (!noteOf('homeActs').includes('动作带')) throw new Error('快捷方式未说明收成动作带：' + noteOf('homeActs'));
+  if (today.parentElement !== recent.parentElement) throw new Error('今日待办与最近动态不在同一行');
+  if (!(today.compareDocumentPosition(recent) & 4)) throw new Error('今日待办应排在最近动态之前');
+  // 主次做在外壳上：主卡带框（solid），副块无框
+  if (!today.classList.contains('solid')) throw new Error('今日待办主卡未标注带框');
+  if (recent.classList.contains('solid')) throw new Error('最近动态副块不应带框');
+  // 快捷方式是裸行（无外壳）、快速导航分三组
+  if (!noteOf('homeActs').includes('裸行')) throw new Error('快捷方式未说明收成裸行：' + noteOf('homeActs'));
   ['文件夹', '标签', '常用视图'].forEach(x => {
     if (!noteOf('homeNav').includes(x)) throw new Error('快速导航缺「' + x + '」');
   });

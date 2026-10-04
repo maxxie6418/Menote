@@ -5115,7 +5115,7 @@ button.chip--tag:hover {
 }
 
 /* ============================================================
-   首页（M2-8；需求 §7.4）——横向成组，纵向两层
+   首页（布局重排 2026-10-04）——页头一行 / 中部两栏 / 动作裸行 / 导航三组
    ============================================================ */
 .home {
   flex: 1;
@@ -5124,10 +5124,16 @@ button.chip--tag:hover {
   flex-direction: column;
 }
 
+/*
+页头压成**一行**：左「标题 + ⓘ」，右「条目统计读数」（`.home-ovw`）。
+`flex-wrap` 是窄窗口的保险——读数放不下时换行，而不是把标题挤扁（DESIGN.md §2.4-1）。
+`.pane-head` 全仓只有首页在用，所以直接改这里，不另开一套页头。
+*/
 .pane-head {
   display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
   padding: var(--sp-4) var(--sp-5) var(--sp-3);
   border-bottom: 1px solid var(--line);
 }
@@ -5138,9 +5144,12 @@ button.chip--tag:hover {
   font-weight: 600;
 }
 
-.pane-head .sub {
-  color: var(--muted);
-  font-size: var(--fs-micro);
+/* 标题与它的 ⓘ 收成一组（`InfoHint` 是唯一的说明性文字出口，DESIGN.md §5.4-1） */
+.home-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
 }
 
 .home__scroll {
@@ -5149,16 +5158,33 @@ button.chip--tag:hover {
   padding: var(--sp-4) var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
 }
 
 /*
-  甲板：概括预览的「一主两副」（M7 首页重做；原型第 03 屏）
+**920px 上限**（DESIGN.md §2.3「首页卡片组 920px」）。
+此前**从未落地**：`.home__scroll` 满宽，首页在宽屏下被拉到整个工作区，而 Memo（740）、
+待办（920）、设置页（790）都限了——唯独首页漏了。
+
+限的是**内容容器**而不是滚动容器，与待办页 `--task-cap` 同一做法：滚动条因此仍在
+工作区右缘。三段（两栏 / 动作 / 导航）都在它里面，限一次就够。
+*/
+.home__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+/*
+  中部两栏：一主一副（布局重排 2026-10-04；取代 M7 的「甲板」三块）
   ────────────────────────────────────────────────────────────
-  原先是 `.home__grid` 三块等分；现在左侧今日待办占更大一块（`flex: 1.15`），
-  右栏放条目统计数字带 + 最近动态（`flex: 1`）。**全弹性、不写固定宽**——
-  窄窗口下两列自然收缩而不是重叠（移动端布局未定稿，但不留"仅桌面成立"的写法）。
-  两列之间与窄屏换行都靠 `flex-wrap`，不靠媒体查询硬切。
+  左：今日待办（主，`home-card--lead`）；右：最近动态（副，`home-card--flat`）。
+  **条目统计已提到页头做读数**（`.home-ovw`），所以右栏只剩一块。
+  比例 1.15 / 1 仍留着，但**主次不再靠它暗示**——那是外壳的事（强调线 + 留白）。
+  **全弹性、不写固定宽**：窄窗口下两列自然收缩而不是重叠，移动端布局未定稿，
+  但不留"仅桌面成立"的写法（DESIGN.md §2.4-1）。换行靠 `flex-wrap`，不靠媒体查询硬切。
 */
 .home-deck {
   display: flex;
@@ -5175,7 +5201,7 @@ button.chip--tag:hover {
 }
 
 .home-deck__side {
-  /* 右栏：数字带 + 最近动态 */
+  /* 右栏：最近动态（副）。条目统计已提到页头做读数，这里只剩一块 */
   flex: 1 1 280px;
   min-width: 0;
   display: flex;
@@ -5189,52 +5215,55 @@ button.chip--tag:hover {
 }
 
 /*
-  数字带：条目统计收成一条横排（原三块统计卡）。
-  `flex: none` + 最小高，让它不参与右栏的纵向伸展——弹性交给最近动态。
+条目统计**读数**（原先是右栏里一条带边框的数字带 `.home-band`）。
+无边框、无底色，贴页头右侧——它只是三个数字，不该独占一个区块高度。
+`margin-left: auto` 把它推到页头右端；`flex-wrap` 让窄窗口下换行而不是挤标题。
 */
-.home-band {
-  flex: none;
-  padding: var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-}
-
-.home-band__t {
+.home-ovw {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  margin: 0 0 var(--sp-2);
-  font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--text);
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
-.home-band__row {
+.home-ovw__row {
   display: flex;
   align-items: baseline;
-  gap: var(--sp-5);
+  gap: var(--sp-4);
   flex-wrap: wrap;
 }
 
-.home-band__note {
-  margin-left: auto;
+/*
+读数是行内一组，不是等分三块：数字紧跟自己的标签。
+字号降一档（`--fs-body`）——页头里 `h1` 已经是 `fs-body-lg` + 600，
+读数用同号会被误读成第二个标题（这一轮就是修主次，别在页头又造一次平级）。
+*/
+.home-ovw__row .home-stat {
+  flex: none;
+  text-align: left;
+}
+
+.home-ovw__row .home-stat__n {
+  font-size: var(--fs-body);
+}
+
+.home-ovw__note {
   font-size: var(--fs-micro);
   color: var(--muted);
 }
 
-/* 数字带在右栏里不参与纵向伸展——弹性留给下面的最近动态 */
-.home-band--stats {
-  flex: none;
-}
-
-/* 动作带：快捷方式由一张独立卡片收成页内一条横排（原型 height:54px） */
+/*
+动作带（快捷方式）：**裸行，无外壳**。
+原先它带边框 + 底色 + 内边距，于是与下面「快速导航」（本来就是裸的 chip 三组）同形——
+一个是「做什么」、一个是「去哪里」，界面上却分不清。去掉外壳 + 与上一段之间一条分隔线，
+两者靠「控件形态（描边按钮 / chip）+ 有无外壳」自然分开。
+段间距由父容器 `.home__body` 的 `gap` 给（DESIGN.md §4.1-4：间距优先用父级 gap）。
+*/
 .home-acts-bar {
   flex: none;
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line);
 }
 
 .home-acts-bar__t {
@@ -5294,6 +5323,31 @@ button.chip--tag:hover {
   margin-bottom: var(--sp-2);
 }
 
+/*
+`lead`：**焦点卡**（今日待办）——全屏唯一带边框的块。
+2px 主色左侧强调线不是新写法：`.markdown-body blockquote` 与 CodeMirror 光标都是同一手法，
+语义一致（画一条线标出主线）。它**不是**用颜色单独表达状态（禁止项 #4）——
+配套的还有更宽的内边距、更松的行，焦点由「留白 + 线条 + 位置」三者一起表达。
+内边距松一档（`--sp-4`）：`DESIGN.md` §4.1-3 要求**同层级**元素间距相同，
+主卡与副卡本就不同层级，所以这里的不一致是有意的。
+*/
+.home-card--lead {
+  padding: var(--sp-4);
+  border-left: 2px solid var(--primary);
+}
+
+/*
+`flat`：**副内容**（最近动态）——无边框无底色，只留一条顶部 `1px` 分隔线。
+与 `lead` 拉开一级主次，`.home-deck__side` 那栏因此不再是一个"卡"。
+*/
+.home-card--flat {
+  padding: 0 0 var(--sp-2);
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+
 .home-card__hd h3 {
   margin: 0;
   font-size: var(--fs-small);
@@ -5309,12 +5363,6 @@ button.chip--tag:hover {
 .home-card__bd {
   flex: 1;
   min-width: 0;
-}
-
-.home-stats {
-  display: flex;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
 }
 
 .home-stat {
