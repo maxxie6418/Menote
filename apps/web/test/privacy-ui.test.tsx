@@ -5,10 +5,16 @@
  * 这里只验"界面该做的事"：三态文案与颜色、菜单里的动作、输错后逐次加等待、单篇场景不显示档位、
  * 未启用时整个不渲染。判定与状态机本身在 `privacy-model` / `privacy-lock` 用例里覆盖。
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { UserSettings } from "@menote/shared";
 import { PrivacyCapsule } from "../src/features/privacy/ui/PrivacyCapsule";
 import { UnlockModal } from "../src/features/privacy/ui/UnlockModal";
+import {
+  AppUnlockModal,
+  type AppUnlockModalProps,
+} from "../src/app/PrivacySlot";
+import type { PrivacyLockState } from "../src/features/privacy/usePrivacyLock";
 
 afterEach(cleanup);
 
@@ -157,5 +163,68 @@ describe("解锁框", () => {
     const { onForgot } = renderModal();
     fireEvent.click(screen.getByRole("button", { name: "忘记隐私密码" }));
     expect(onForgot).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `AppUnlockModal` 的**装配契约**（2026-10-04 修的单篇死接线）。
+ *
+ * 上面那组用例直接给 `UnlockModal` 喂 `variant="item"`，所以一直是绿的——但它绕过了
+ * 真正出问题的那一层：**由谁决定走哪条密码校验路径**。
+ *
+ * 修复前 `App` 只有一个 `unlockOpen: boolean`，单篇与范围共用同一个出口、都落到
+ * `privacy.unlock`（只开范围门禁、不动单篇集合），于是输对密码后这一篇仍解不开。
+ * 组件的 `variant="item"` 分支写得很完整（标题对、不显示档位），却从没被传过值。
+ *
+ * 这组断言两条路径**互不串**：单篇必须调 `decryptItem(itemId, 密码)` 且**不碰** `unlock`；
+ * 范围必须调 `unlock` 且**不碰** `decryptItem`。任一侧被改回共用出口，这里就红。
+ */
+describe("解锁框的装配层：两种变体各走各的校验路径", () => {
+  function renderAppUnlockModal(overrides: Partial<AppUnlockModalProps> = {}) {
+    const privacy = {
+      enabled: true,
+      ready: true,
+      unlock: vi.fn(async () => true),
+      decryptItem: vi.fn(async () => true),
+    } as unknown as PrivacyLockState;
+    const props: AppUnlockModalProps = {
+      open: true,
+      privacy,
+      settings: { privacy: { tier: "minutes", minutes: 5 } } as UserSettings,
+      onClose: vi.fn(),
+      onForgot: vi.fn(),
+      ...overrides,
+    };
+    render(<AppUnlockModal {...props} />);
+    // 断言用局部 `privacy`（那对 vi.fn 替身所在的对象），不要用 `...props` 里的同名键覆盖它
+    return { privacy, props };
+  }
+
+  it("单篇变体：调 decryptItem 并带上条目 id，一次都不调 unlock", async () => {
+    const { privacy } = renderAppUnlockModal({ variant: "item", itemId: "n-42" });
+    typePassword("对的密码");
+
+    await waitFor(() =>
+      expect(privacy.decryptItem).toHaveBeenCalledWith("n-42", "对的密码"),
+    );
+    expect(privacy.unlock).not.toHaveBeenCalled();
+    // 界面形态也确实是单篇：标题对、不显示档位
+    expect(screen.getByText("解锁此篇")).toBeTruthy();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+  });
+
+  it("范围变体：调 unlock，一次都不调 decryptItem", async () => {
+    const { privacy } = renderAppUnlockModal();
+    typePassword("对的密码");
+
+    await waitFor(() => expect(privacy.unlock).toHaveBeenCalledWith("对的密码", "minutes"));
+    expect(privacy.decryptItem).not.toHaveBeenCalled();
+  });
+
+  it("传了 variant=item 却漏了 itemId：退回范围形态，不去解一个 undefined 条目", () => {
+    // 防御：接线漏传 id 时不能拿着 undefined 去解密（那会往已解密集合塞一个假条目）
+    const { privacy } = renderAppUnlockModal({ variant: "item" });
+    expect(screen.getByText("解锁隐私锁")).toBeTruthy();
+    expect(privacy.decryptItem).not.toHaveBeenCalled();
   });
 });

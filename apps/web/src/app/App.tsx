@@ -31,7 +31,7 @@ import { IconSprite } from "./ui/Icon";
 import { InsecureContextBanner } from "./ui/InsecureContextBanner";
 import { inspectCryptoEnvironment, type CryptoEnvironment } from "./ui/cryptoEnvironment";
 import { ToastHost, pushToast } from "./ui/Toast";
-import { LogoutConfirm, UnlockDialog } from "./SessionDialogs";
+import { LogoutConfirm } from "./SessionDialogs";
 import { topbarWiring } from "./topbar/wiring";
 import { toIndicator, type SyncEngineStatus } from "./useSyncStatus";
 import { HomeView } from "./workarea/HomeView";
@@ -50,6 +50,7 @@ import { isInVault } from "../features/privacy/vault";
 import { isScopeGateOpen } from "@menote/shared";
 import type { NotesView } from "../features/notes/views";
 import { useGlobalShortcuts } from "./shortcuts/useGlobalShortcuts";
+import { useUnlockTarget } from "./useUnlockTarget";
 
 export default function App() {
   const { route, navigate } = useRoute();
@@ -126,17 +127,15 @@ export default function App() {
   /**
    * 隐私锁（M3-4）：材料缓存、门禁状态、档位计时与跨标签一致都在这里；
    * `privacy.gate` 交给各视图（列表、搜索、首页、Memo、编辑器）——判定只此一处。
-   *
-   * 解锁框（M3-9）的开关也放在这一层：顶栏胶囊、Memo/待办占位、单篇加密都指向它。
+   * 解锁框（M3-9）的目标与自动弹窗在下面的 `useUnlockTarget`。
    */
   const privacy = usePrivacyLock({
     authenticated: auth.snapshot.user != null,
     config: userSettings.settings.privacy,
   });
-  const [unlockOpen, setUnlockOpen] = useState(false);
+
   /** 登出的二次确认（DESIGN.md §6.5）；菜单点了先弹确认，确认后才真退 */
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const requestUnlock = useCallback(() => setUnlockOpen(true), []);
 
   /** `onLoaded` 里要调 workspace 的方法，但 workspace 在下面才建：用 ref 顶一下 */
   const workspaceRef = useRef<NotesWorkspace | null>(null);
@@ -150,6 +149,11 @@ export default function App() {
       void refreshPending();
     },
   });
+
+  // 解锁框的目标、自动弹窗与弹窗装配都在这个 hook 里（范围解锁 vs 逐篇解密两条路，详见该文件）
+  const unlock = useUnlockTarget(privacy, userSettings.settings, workspace.selected, () =>
+    navigate({ name: "settings", page: "privacy" }),
+  );
 
   /**
    * `onLoaded`（设置读完的那一刻）要调 `workspace.setView`，但那个回调在 workspace 之前创建——
@@ -188,7 +192,7 @@ export default function App() {
     gate: privacy.gate,
     enabled: privacy.enabled,
     onSelectView: showNotesView,
-    onUnlock: requestUnlock,
+    onUnlock: unlock.requestUnlock,
     onEnableVault: () => navigate({ name: "settings", page: "privacy" }),
     onDeleteFolder: async (folder) => {
       // 删文件夹 = 连同内容一起进回收站；服务端返回连带计数，提示如实报出来
@@ -224,7 +228,7 @@ export default function App() {
     privacy: { enabled: privacy.enabled, lockState: privacy.runtime.lockState },
     workspace,
     leaveBrowse: () => setBrowse(null),
-    requestUnlock,
+    requestUnlock: unlock.requestUnlock,
   });
 
   /**
@@ -570,7 +574,7 @@ export default function App() {
             contents={workspace.memoContents}
             today={today}
             gate={privacy.gate}
-            onUnlock={requestUnlock}
+            onUnlock={unlock.requestUnlock}
             /* 页头「添加待办」= 打开添加内容窗口（用户 2026-09-29：不再跳左侧录入框） */
             onAdd={() => addEntry.open("task")}
             filterForm={userSettings.settings.task_view.filter_form}
@@ -589,7 +593,7 @@ export default function App() {
             timeZone={userSettings.settings.timezone}
             gate={privacy.gate}
             sidebar={userSettings.settings.memo_view.sidebar}
-            onUnlock={requestUnlock}
+            onUnlock={unlock.requestUnlock}
             onSave={(id, text) => void workspace.updateMemo(id, text)}
             onTogglePinned={(id) => void workspace.togglePinned(id)}
             onConvert={(id) => {
@@ -626,7 +630,8 @@ export default function App() {
             editorMode={userSettings.settings.editor_mode}
             editorModes={userSettings.settings.editor_modes}
             privacy={privacy}
-            onRequestUnlock={requestUnlock}
+            onRequestUnlock={unlock.requestUnlock}
+            onRequestItemUnlock={unlock.requestItemUnlock}
             /*
               直接传模块级的 `pushToast`，**不要写成内联箭头**：它经 `NotesSlot` 进
               `NoteRow` 的 `memo` 浅比较（列表行的重渲染守卫，2026-09-27 性能修复）。
@@ -636,13 +641,7 @@ export default function App() {
         )}
       </AppShell>
       {/* 解锁框与登出确认：装配都在 SessionDialogs.tsx（入口文件只给"跳到哪 / 退不退"） */}
-      <UnlockDialog
-        open={unlockOpen}
-        privacy={privacy}
-        settings={userSettings.settings}
-        onClose={() => setUnlockOpen(false)}
-        onForgot={() => navigate({ name: "settings", page: "privacy" })}
-      />
+      {unlock.dialog}
       <LogoutConfirm open={confirmLogout} onClose={() => setConfirmLogout(false)}
         onConfirm={() => { setConfirmLogout(false); void auth.logout().then(() => navigate({ name: "login" })); }}
       />

@@ -6,7 +6,7 @@ import "fake-indexeddb/auto";
  * 这里**不 mock 网络**：hook 拉服务端材料会失败（jsdom 里没有后端），于是正好验证
  * 最重要的那条路径——**有本地缓存时离线也能解锁**；服务端那一侧的行为在 worker 用例里测。
  */
-import { renderHook, waitFor, act, render, screen } from "@testing-library/react";
+import { renderHook, waitFor, act, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CRYPTO_KDF,
@@ -77,6 +77,14 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  /*
+    **必须 cleanup**（2026-10-04 补）：本文件的 hook 之间靠 `BroadcastChannel` 联动，而挂载时
+    每个 hook 都会发一次 `privacy-state-request`（`usePrivacyLock.ts:219`）——只要**还有**旧
+    hook 活着且处于已解锁态，它就会回应"已解锁"，把新挂载的用例直接变成 `unlocked`。
+    本项目的 vitest 没开 globals，RTL 的自动清理不生效，于是上一条用例解锁过就会污染下一条
+    （症状：单跑绿、连着跑红，且红的位置飘忽）。
+  */
+  cleanup();
   // 本文件只有"重新包裹"这一组顶替网络，别把替身留给别的用例（它们靠"连不上服务端"验离线路径）
   vi.unstubAllGlobals();
 });
@@ -232,6 +240,93 @@ describe("旧设置行的组合回归", () => {
     await waitFor(() =>
       expect(screen.getByTestId("tier").textContent).toBe(DEFAULT_PRIVACY_SETTINGS.tier),
     );
+  });
+});
+
+/**
+ * **逐篇解密 `decryptItem`**（2026-10-04 补的真 bug 修复出口）。
+ *
+ * 修复前：单篇占位上的「解锁此篇」走的是 `unlock`，只开**范围**门禁；
+ * 于是输对密码后 `unlockedItems` 仍是空集、`bodyLocked` 依旧为 true，
+ * 占位面板纹丝不动——按钮看着能点，实际什么也没解开。
+ *
+ * 这组用例刻意**不测组件、只测状态**：断言的是"密码对了这一篇真的进集合、
+ * 且范围门禁**没被顺带打开**"（两道门禁正交，`model.ts` 头注、设计 §2.2）。
+ */
+describe("逐篇解密（只解这一篇，不动范围门禁）", () => {
+  it("密码正确：这一篇进 unlockedItems，范围门禁保持原样（仍是 locked）", async () => {
+    await seedCache();
+    const { result } = mount();
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    // 先把前置状态钉死：下面断言"不动"才有意义（若这里不是 locked，测试应当显式失败）
+    expect(result.current.runtime.lockState).toBe("locked");
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.decryptItem("e1", PASSWORD);
+    });
+    expect(ok).toBe(true);
+    // 关键断言：这一篇真的被记住了（修复前这里是空集）
+    expect([...result.current.runtime.unlockedItems]).toEqual(["e1"]);
+    // 关键断言：**范围门禁没有被顺带打开**——只想看一篇不等于解锁整个加密空间
+    expect(result.current.runtime.lockState).toBe("locked");
+  });
+
+  it("范围已解锁时逐篇解密：两道门各行其是，互不干扰", async () => {
+    await seedCache();
+    const { result } = mount();
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    await act(async () => {
+      await result.current.unlock(PASSWORD, "session");
+    });
+    expect(result.current.runtime.lockState).toBe("unlocked");
+
+    await act(async () => {
+      await result.current.decryptItem("e1", PASSWORD);
+    });
+    expect([...result.current.runtime.unlockedItems]).toEqual(["e1"]);
+    expect(result.current.runtime.lockState).toBe("unlocked");
+  });
+
+  it("密码错误：不进集合，范围门禁也不动", async () => {
+    await seedCache();
+    const { result } = mount();
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.decryptItem("e1", "不是这个密码");
+    });
+    expect(ok).toBe(false);
+    expect(result.current.runtime.unlockedItems.size).toBe(0);
+    expect(result.current.runtime.lockState).toBe("locked");
+  });
+
+  it("没有本地材料时给出可操作的错误（提示联网），与 unlock 同一约定", async () => {
+    const { result } = mount();
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    await expect(
+      act(async () => {
+        await result.current.decryptItem("e1", PASSWORD);
+      }),
+    ).rejects.toThrow(/联网/);
+  });
+
+  it("逐篇解密后可单独锁上这一篇，范围门禁不受影响", async () => {
+    await seedCache();
+    const { result } = mount();
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+    await act(async () => {
+      await result.current.unlock(PASSWORD, "session");
+      await result.current.decryptItem("e1", PASSWORD);
+    });
+
+    act(() => {
+      result.current.lockItem("e1");
+    });
+    expect(result.current.runtime.unlockedItems.size).toBe(0);
+    expect(result.current.runtime.lockState).toBe("unlocked");
   });
 });
 

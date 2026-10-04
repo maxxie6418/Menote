@@ -63,6 +63,7 @@ function Harness() {
         gate: GATE,
         unlockedCount: 0,
         onRequestUnlock: NOOP,
+        onRequestItemUnlock: NOOP,
         onLockItem: NOOP,
         onLockAllItems: NOOP,
       }}

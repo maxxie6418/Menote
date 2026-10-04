@@ -78,6 +78,18 @@ export interface PrivacyLockState {
   disable: () => Promise<void>;
   lockAll: () => void;
   lockScope: () => void;
+  /**
+   * **逐篇解密**（2026-10-04 接线）：校验隐私密码，通过后把这一篇记进"本次会话已解密"。
+   *
+   * 与 `unlock` 的关键差别：**不动范围门禁**。两道门禁正交（`model.ts` 头注、设计 §2.2）——
+   * 解开一篇不等于解锁整个加密空间，范围门禁原本是什么状态就仍是什么状态。
+   * 密码错返回 `false`（与 `unlock` 同一约定），由解锁框就地显示错误并计次。
+   *
+   * 此前 `unlockItem` 只有广播事件处理器在用，界面侧从无调用方——于是「解锁此篇」按钮
+   * 走的是 `unlock`（只开范围门禁），**输对密码后这一篇依然进不了 `unlockedItems`**，
+   * 占位面板纹丝不动。这条是真 bug，本动作是它的修复出口。
+   */
+  decryptItem: (itemId: string, password: string) => Promise<boolean>;
   unlockItem: (itemId: string) => void;
   lockItem: (itemId: string) => void;
   lockAllItems: () => void;
@@ -504,6 +516,35 @@ export function usePrivacyLock(options: UsePrivacyLockOptions): PrivacyLockState
     channelRef.current?.post({ kind: "privacy-item-unlocked", itemId });
   }, []);
 
+  /**
+   * 逐篇解密：验密码 → 把这一篇记进 `unlockedItems`。
+   *
+   * **刻意不碰 `lockState`**：范围门禁与单篇门禁正交（`model.ts` 头注）。这里若顺手把
+   * 范围也开了，用户只想看一篇，加密空间与范围内的 Memo 却一并可见——那是另一件事，
+   * 该由顶栏胶囊 / 空间节点触发。
+   *
+   * 也**不写 `kekRef`**：那把 KEK 只在改密 / 重置 / 重包裹时用得到（`enable` 等已持有），
+   * 单篇解锁不产生新的密钥生命周期，凭空存一份只会让"锁定即清"的约定变得含糊。
+   */
+  const decryptItem = useCallback(
+    async (itemId: string, password: string): Promise<boolean> => {
+      const materials = await cachedMaterials();
+      if (!materials) {
+        throw new Error("本地没有校验材料，请联网后重试");
+      }
+      const kek = await deriveKek(
+        password,
+        cryptoBlobFromBase64Url(materials.kdf_salt),
+        materials.kdf_iterations,
+      );
+      if (!(await verifyPassword(kek, materials.verifier))) return false;
+
+      unlockItem(itemId);
+      return true;
+    },
+    [unlockItem],
+  );
+
   const lockItem = useCallback((itemId: string): void => {
     setRuntime((current) => lockItemIn(current, itemId));
     channelRef.current?.post({ kind: "privacy-item-locked", itemId });
@@ -546,6 +587,7 @@ export function usePrivacyLock(options: UsePrivacyLockOptions): PrivacyLockState
     disable,
     lockAll,
     lockScope,
+    decryptItem,
     unlockItem,
     lockItem,
     lockAllItems,

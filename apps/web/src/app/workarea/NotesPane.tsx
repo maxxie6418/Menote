@@ -41,7 +41,10 @@ export interface NotesPaneProps {
     enabled: boolean;
     gate: PrivacyGate;
     unlockedCount: number;
+    /** 范围解锁（顶栏胶囊 / 空间节点 / Memo 占位用）；单篇占位**不用**它 */
     onRequestUnlock: () => void;
+    /** 逐篇解密：带上条目 id 打开解密窗（单篇占位的出口） */
+    onRequestItemUnlock: (itemId: string) => void;
     onLockItem: (itemId: string) => void;
     onLockAllItems: () => void;
   };
@@ -343,7 +346,14 @@ export function NotesPane({
             encrypted: selected?.enc_self === 1,
             unlocked: selected != null && encryption.gate.unlockedItems.has(selected.id),
             unlockedCount: encryption.unlockedCount,
-            onUnlock: encryption.onRequestUnlock,
+            /*
+              单篇占位的出口走**逐篇解密**，不是范围解锁（2026-10-04 修）。
+              此前这里传的是 `onRequestUnlock`（范围）：输对密码只开了范围门禁，
+              这一篇仍进不了 `unlockedItems`，占位面板不会消失。
+            */
+            onUnlock: () => {
+              if (workspace.selectedId) encryption.onRequestItemUnlock(workspace.selectedId);
+            },
             onLock: () => {
               if (workspace.selectedId) encryption.onLockItem(workspace.selectedId);
             },

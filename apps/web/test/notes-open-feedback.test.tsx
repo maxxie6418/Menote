@@ -87,6 +87,7 @@ function Harness() {
         gate: GATE,
         unlockedCount: 0,
         onRequestUnlock: NOOP,
+        onRequestItemUnlock: NOOP,
         onLockItem: NOOP,
         onLockAllItems: NOOP,
       }}
@@ -293,3 +294,81 @@ describe("点笔记的即时反馈与正文后到", () => {
     expect((screen.getByLabelText("标题") as HTMLInputElement).value).toBe("第一篇");
   });
 });
+
+/**
+ * 单篇加密条目的**解锁出口接线**（2026-10-04 修的真 bug）。
+ *
+ * 症状：点开一篇已加密的笔记，正文区是「这一篇已加密」占位；点「解锁此篇」弹出的是
+ * **范围**解锁框，输对密码后占位面板纹丝不动——这一篇永远解不开。
+ *
+ * 根因在 `NotesPane` 那一行接线：占位按钮的 `onUnlock` 传的是 `onRequestUnlock`（范围），
+ * 而范围解锁按设计**不动单篇集合**（`model.ts` 头注："解锁范围门禁（不动单篇集合）"），
+ * 于是 `unlockedItems` 始终为空、`bodyLocked` 恒为 true。
+ *
+ * 这条用例在**整屏接线**上钉死契约：占位按钮必须带上**这一篇的 id** 去请求逐篇解密，
+ * 绝不能去开范围门禁。组件层与组装层的用例都盖不住这个接缝（前者直接喂 props、
+ * 后者直接调 `decryptItem`），所以必须有这一层。
+ */
+describe("单篇加密条目的解锁出口", () => {
+  it("占位上的「解锁此篇」请求的是**这一篇**的逐篇解密，不是范围解锁", async () => {
+    await createLocalNote(FIRST, "加密的笔记", "正文", NOW);
+    await db.drafts.delete(FIRST);
+    // 打上单篇加密标记
+    await db.items.update(FIRST, { enc_self: 1 });
+    stubBodyFetch(() => new Response(null, { status: 404 }));
+
+    const scopeUnlocks: number[] = [];
+    const itemUnlocks: string[] = [];
+    render(
+      <EncryptedHarness
+        onRequestUnlock={() => scopeUnlocks.push(1)}
+        onRequestItemUnlock={(id) => itemUnlocks.push(id)}
+      />,
+    );
+    await waitFor(() =>
+      expect(document.querySelectorAll("button.itemrow")).toHaveLength(1),
+    );
+
+    fireEvent.click(rowOf("加密的笔记"));
+    // 选中后正文区换锁定占位
+    expect(await screen.findByText("这一篇已加密")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "解锁此篇" }));
+
+    // 关键断言：走的是逐篇解密，且**带上正确的条目 id**
+    expect(itemUnlocks).toEqual([FIRST]);
+    // 关键断言：范围解锁一次都没被触发（修复前这里会是 1）
+    expect(scopeUnlocks).toEqual([]);
+  });
+});
+
+/** 上面那条用例专用的整屏接线：两个解锁出口各自可观测 */
+function EncryptedHarness(props: {
+  onRequestUnlock: () => void;
+  onRequestItemUnlock: (itemId: string) => void;
+}) {
+  const workspace = useNotesWorkspace({ gate: GATE });
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  return (
+    <NotesPane
+      workspace={workspace}
+      editorMode="edit"
+      editorModes={["split", "edit", "preview", "live"]}
+      encryption={{
+        enabled: true,
+        gate: GATE,
+        unlockedCount: 0,
+        onRequestUnlock: props.onRequestUnlock,
+        onRequestItemUnlock: props.onRequestItemUnlock,
+        onLockItem: NOOP,
+        onLockAllItems: NOOP,
+      }}
+      onToggleEncryption={NOOP}
+      onToast={NOOP}
+      vault={{ enabled: false, locked: true, id: null, folders: [], onMoveIn: NOOP, onMoveOut: NOOP }}
+    />
+  );
+}

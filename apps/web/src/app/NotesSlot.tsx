@@ -24,6 +24,13 @@ export interface NotesSlotProps {
   /** 隐私锁组装层的返回值（整份传进来，少一层手工转写） */
   privacy: PrivacyLockState;
   onRequestUnlock: () => void;
+  /**
+   * 逐篇解密（2026-10-04）：带上条目 id 打开解密窗。
+   *
+   * 与 `onRequestUnlock`（范围解锁）**分家**：后者开的是隐私锁范围门禁，
+   * 对单篇加密条目毫无作用——那正是「解锁此篇」按钮此前点了没反应的原因。
+   */
+  onRequestItemUnlock: (itemId: string) => void;
   onToast: (message: string, tone: "success" | "warn" | "error") => void;
 }
 
@@ -40,6 +47,7 @@ export function NotesSlot({
   editorModes,
   privacy,
   onRequestUnlock,
+  onRequestItemUnlock,
   onToast,
 }: NotesSlotProps) {
   const gate = privacy.gate;
@@ -149,6 +157,7 @@ export function NotesSlot({
         gate,
         unlockedCount: privacy.runtime.unlockedItems.size,
         onRequestUnlock,
+        onRequestItemUnlock,
         onLockItem: privacy.lockItem,
         onLockAllItems: privacy.lockAllItems,
       }}

@@ -37,27 +37,50 @@ export interface AppUnlockModalProps {
   open: boolean;
   privacy: PrivacyLockState;
   settings: UserSettings;
+  /** `scope` = 隐私锁（可临时选档位）；`item` = 单篇（逐篇解密，不显示档位） */
+  variant?: "scope" | "item";
+  /** `variant = "item"` 时必填：要解密的那一篇 */
+  itemId?: string;
   onClose: () => void;
   /** 「忘记隐私密码」：去设置 › 隐私锁 重置 */
   onForgot: () => void;
 }
 
-/** 全应用共用的解锁出口：胶囊、Memo/待办占位、单篇加密都指向它 */
+/**
+ * 全应用共用的解锁出口：胶囊、Memo/待办占位、单篇加密都指向它。
+ *
+ * **两种变体的校验路径不同**（2026-10-04 修的单篇死接线）：
+ * - `scope`：验密码 + 打开范围门禁（`privacy.unlock`）
+ * - `item`：验密码 + **只**把这一篇记进已解密集合（`privacy.decryptItem`）。
+ *   此前这一路走的是 `unlock`，只开范围门禁，于是输对密码后 `unlockedItems` 仍为空、
+ *   占位面板不消失——按钮看着能点，实际什么也没解开。
+ *
+ * `key` 里带上变体与条目 id：否则同一篇连续开关、或从一篇切到另一篇时，
+ * 组件不会重挂载，密码框里的旧输入会跨次残留（"关闭即弃"就失效了）。
+ */
 export function AppUnlockModal({
   open,
   privacy,
   settings,
+  variant = "scope",
+  itemId,
   onClose,
   onForgot,
 }: AppUnlockModalProps) {
+  const isItem = variant === "item" && typeof itemId === "string";
   return (
     <UnlockModal
-      key={open ? "unlock-open" : "unlock-closed"}
+      key={open ? `unlock-open-${variant}-${itemId ?? ""}` : "unlock-closed"}
       open={open}
+      variant={isItem ? "item" : "scope"}
       defaultTier={settings.privacy.tier}
       minutes={settings.privacy.minutes}
       onClose={onClose}
-      onSubmit={(password: string, tier: PrivacyTier) => privacy.unlock(password, tier)}
+      onSubmit={
+        isItem
+          ? (password: string) => privacy.decryptItem(itemId, password)
+          : (password: string, tier: PrivacyTier) => privacy.unlock(password, tier)
+      }
       onForgot={onForgot}
       unavailable={!privacy.enabled && !privacy.ready}
     />

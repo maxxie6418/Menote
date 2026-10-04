@@ -14,17 +14,24 @@ import type { PrivacyLockState } from "../features/privacy/usePrivacyLock";
 /**
  * 解锁框（全应用唯一出口：顶栏胶囊、Memo/待办占位、单篇加密都指过来）。
  * 「忘记隐私密码」先关框再跳设置页——这一步的接线放这里，`App` 只给"跳到哪"。
+ *
+ * `variant` / `itemId` 由 `App` 决定：范围解锁没有条目，单篇解锁必须带 id
+ * （`AppUnlockModal` 会据此走 `decryptItem` 而不是 `unlock`）。
  */
 export function UnlockDialog({
   open,
   privacy,
   settings,
+  variant = "scope",
+  itemId,
   onClose,
   onForgot,
 }: {
   open: boolean;
   privacy: PrivacyLockState;
   settings: UserSettings;
+  variant?: "scope" | "item";
+  itemId?: string;
   onClose: () => void;
   onForgot: () => void;
 }) {
@@ -33,6 +40,8 @@ export function UnlockDialog({
       open={open}
       privacy={privacy}
       settings={settings}
+      variant={variant}
+      itemId={itemId}
       onClose={onClose}
       onForgot={() => {
         onClose();
