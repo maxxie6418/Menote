@@ -5,8 +5,8 @@
 | 文档性质 | 前端组件规划：**组件名、所属 feature / 落点、职责、props 约定、复用关系**，以及与界面原型的对应。是架构文档 §2.3.2「功能 → 代码落点对照表」在**组件层**的展开 |
 | 基准 | 需求文档 `wiki/Menote-设计文档-v7.4.md`（下称“需求文档”）；功能点编号与验收看 `wiki/Menote-功能拆解-v2.md`（下称“功能拆解”）；落点、分层与依赖方向看 `wiki/Menote-项目架构-v1.md`（下称“架构”）§2.3、§3.1；视觉与令牌看根目录 `DESIGN.md`（下称“视觉源”） |
 | 主要来源 | 界面原型 `prototype/menote-prototype.html`（高保真）与 `prototype/menote-framework.html`（线框评审页）。引用原型**只写元素名或选择器**（如 `#topAccount`、`.composer`、`.nav-seg`），不写行号——行号随原型改动会失效 |
-| 版本 | v12（文件名 `components.md` 不变，版本在修订记录内演进） |
-| 日期 | 2026-09-29（v7）/ **2026-10-02（v8 笔记本添加菜单加导入笔记、新建表格接线）** / **2026-10-03（v9 M5 分享收口回写、v10 M6 第一批回写、v11 M6 MCP 回写、v12 M7 定时自动备份回写）** |
+| 版本 | v13（文件名 `components.md` 不变，版本在修订记录内演进） |
+| 日期 | 2026-09-29（v7）/ **2026-10-02（v8 笔记本添加菜单加导入笔记、新建表格接线）** / **2026-10-03（v9 M5 分享收口回写、v10 M6 第一批回写、v11 M6 MCP 回写、v12 M7 定时自动备份回写）** / **2026-10-04（v13 设置页信息架构 11 → 9 类）** |
 | 状态 | 首稿。**代码尚未初始化**：组件名与 props 均为**约定名**，实现时如无充分理由不要改名；若实现中发现更合适的拆法，先回报本文再改 |
 | 不包含 | 颜色 / 字号 / 间距 / 圆角 / 阴影的具体数值（归 `DESIGN.md`，本文只写“走令牌”，不复制令牌值）；接口、表结构、同步算法（归架构文档）；功能规则与验收口径（归需求文档与功能拆解） |
 
@@ -33,6 +33,7 @@
 | v7 | 2026-09-29 | 编辑拓展专项（阶段 A–C = v0.6.0 / v0.6.1 / v0.6.2）回写 **`Editor` 与 `DocModeSwitch` 的档位契约**【已定·用户确认 2026-09-29】：①7.2 的 `DocModeSwitch` 改为**只列设置里开着的档**、三档为 `仅编辑` / `仅预览` / `即时渲染`（顺序 `edit → preview → live`），**`分屏` 已从产品移除**（阶段 A / v0.6.0）；②`Editor` 行写明契约——档位不是 `Editor` 的 prop，`live?` 即"即时渲染"开关（与「仅编辑」共用同一个编辑器实例，走 `Compartment` 重配置、**不重建文档**），`readOnly?` 是**内部能力**（仅预览 / 锁定态复用）、**不是用户可见档位**，阅读态由「仅预览」承担；③7.2 不变量补「表格在即时渲染与编辑下都保持源码」。`DESIGN.md`（v1.11）、`wiki/Menote-设计文档-v7.4.md`（内部 v7.5.5）、`wiki/Menote-功能拆解-v2.md`（v2.11）同批回写。（应用版本 v0.6.2；修改模型ID：deepseek-v4.1-flash） |
 | v8 | 2026-10-02 | 笔记本「添加」菜单加「导入笔记」【已定·用户确认 2026-10-02】：①`NbAddButton` 菜单由两项增至三项（**新建文件夹 / 新建表格 / 导入笔记**），触发器无障碍名同步列出三项；②**新建表格自此可用**——M4 交付了表格编辑器与 `TableColumnManager` 的 `mode="create"`，但该模式**一直没有任何调用方**、菜单项还挂着"M5 提供"的过期理由，v0.6.16 接线（先定列结构再建条目）；③新增 **`ImportNotesFlow`**（落 `features/notes/ui/`）：隐藏的文件选择器（可多选 `.md`）+ **多选时的一次确认**（报"几个文件 → 哪个笔记本"）+ 失败清单弹窗（`DESIGN.md` §5.4-2：错误必须保持可见，不用会自动消失的 Toast 承载）；④新增 `import-md.ts`（纯逻辑：文件名→标题、剥 UTF-8 BOM、按正文派生 `type` / 标签 / 待办字段）与 `emptyTableDoc()`（`features/tables/model.ts`）。（应用版本 v0.6.16；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v12 | 2026-10-03 | **M7 定时自动备份回写**【已定·用户确认 2026-10-03 拍板 §六 五点】：新增 **7.9 定时自动备份** 一节，登记 `BackupTargetsCard`（设置 › 备份页**第一张卡**——这一屏叫「备份」而不叫「导出」；每行一个启用 `role="switch"` 与三个次操作**测连接 / 编辑 / 推一次**；删除走行内二次确认且**后果平铺那句"远端文件一个都不会动"**）、`BackupTargetDialog`（新建 / 编辑**两态合一**，`dismissable={false}`）、`features/backup/model.ts`（纯函数）、以及**单独一个 `data/api/backup-targets.ts`**（`endpoints.ts` 已 489 行、`max-lines` 的 500 硬上限就在眼前）。记下四条贯穿口径：**凭据 label 必须写清「留空 = 不改」**且编辑时**不送 `secret` 键**、删除走行内确认 + 后果平铺、读失败不写空态、**失败原因与推送结果都平铺**（三处都不进 `InfoHint`、不靠 Toast）。**零新增 CSS**。记明**未做**：浏览器循环 + 进度条 + 中断续传（见《功能拆解》M16-03）。（应用版本 v0.8.0；修改模型ID：MiniMax-M3.1-Flash-Preview） |
+| v13 | 2026-10-04 | **设置页信息架构 11 → 9 类**【已定·用户确认 2026-10-04】：改 §7.5 `SettingsPanel` 四行——**分类清单 11 → 9**（**「编辑器」「关于」不再是独立分类**、内容并进「通用」；原「数据管理」改名**「附件」**，**路由 id 仍是 `data`**）、**卡片装配**去掉 `cardEditor` / `cardAbout` 两个独立分类卡（改挂在「通用」页内）、**页头删掉「分类总数」**、**通用页由两张卡变四张卡**并新增**作用域标记 `.scope-tag`**。组件树里 `SettingsPanel` 那行同步改为「9 分类」。记下三条口径：①**撤销的分类要显式重定向**（`LEGACY_SETTINGS_PAGES`）——只从 `SETTINGS_PAGES` 拿掉会被 `parseRoute` 那句"匹配不到就回落 `general`"**自动**接住，表现与 2026-09-27 修过的 bug **完全同形**；②**作用域标记复用 `.badge` 的视觉但不复用它的 `margin-left: auto`**（那条是给行尾用的，与"紧跟设置项名称"的定位目的不同），且**不进 `InfoHint`**（作用域是标识、不是说明性文字），对读屏 `aria-hidden`；③**新组件 `GeneralCards.tsx`**（`features/settings/ui/`）——`EditorModesCard` + `AboutCard` + `ScopeTag`，因搬迁后 `SettingsPanel.tsx` 触发 `max-lines` 的 500 硬上限而抽出，它重新只管**分类与版式**。决定与影响面见 `docs/modules/Menote-M8-设置页信息架构-v1.md` v1；功能侧同步见《功能拆解》v2.16。（应用版本 v0.8.4；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v11 | 2026-10-03 | **M6 MCP 回写**【已定·用户确认 2026-10-03】：新增 **7.8 MCP** 一节，登记设置 › MCP 的三个组件与 `model.ts`——`McpSettingsPage`（地址 + 接入说明 + 令牌列表；**地址 = `origin + /mcp`，不新增接口**；接入说明做成**按需展开的弹窗**而不是平铺的一屏灰字）、`CreateTokenDialog`（填写 → 已创建**两态原地切换**；**完整令牌不落任何本地存储**，且已创建态**不允许点遮罩关闭**——它只在这一刻可见）、`TokenAuditDialog`（**不是行内展开**：90 天记录会让每个令牌行高度暴涨）。记下四条贯穿口径（实时计数可见 / 读失败不写空态 / 破坏性与一次性凭据的后果都平铺 / **状态随挂载初始化而非 effect 重置**）与四处界面期确认。**零新增 CSS**，全部用既有件；界面稿 `docs/modules/Menote-M6-MCP-设置页-设计-v1.md` v1.1 是本节权威。（应用版本 v0.7.0；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v10 | 2026-10-03 | **M6 第一批回写**【已定·用户确认 2026-10-03】：新增 **7.7 附件** 一节，登记 M6 补齐的两个组件——RemoveAttachmentRefDialog（移除附件引用弹窗，入口在笔记「更多」菜单；**「选中后常驻小工具条」那个辅助入口未做**，理由是要给 CodeMirror 加选区上报而 EditorHandle 没有该接口）与 AttachmentManagerPage（设置 › 数据管理 › 附件管理页，四块 + 三种空态）。同时记下两条贯穿口径：**移除引用 ≠ 删除文件**（界面必须说清，30 天口径收进 InfoHint）、**隐私条目的附件照常显示**（附件明文存储，门禁只在正文层）。另记 M4 留下的接口缺口：「列出所有附件」的接口此前不存在，2c 新增 GET /api/attachments。（应用版本 v0.6.22；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v9 | 2026-10-03 | **M5 分享收口回写**【已定·用户确认 2026-10-03】：新增**第十六章「M5 落地后的组件与收敛记录」**——①M5 实际新增三个组件（`ShareDialog` / `MySharesPage` / `ShareViewerApp`）的落点与关键约定，含**查看器由 `main.tsx` 按 `/s/<sid>` 动态 import、不是独立 html 入口**（原定 `share.html` 因 `@cloudflare/vite-plugin` v1.60 报 `UNRESOLVED_ENTRY` 未采用）；②查看器与既有组件的**渲染契约**（复用 `MarkdownPreview`、DOMPurify 的 `allowBlobUris` 只放行本会话取回的 object URL、只读表格直接复用 `TableGrid` / `GalleryView` 不另写一套）；③**订正 §十五.3 第 6 条**——`InfoHint` 已实做于 `app/ui/InfoHint.tsx`（原记「未做、说明文字用可见 `hint-line`」是过期事实）；④**修两处断链**：6.8 `AddEntryDialog` 的「原型 / 需求」两行原指向已归档的 `…-设计-v1.md`，改指 `…-v2.md`；⑤登记 M5 三项已知未实现（Memo 合集 UI、访客侧筛选排序、移动端观感）。（应用版本 v0.6.17；修改模型ID：MiniMax-M3.1-Flash-Preview） |
@@ -131,7 +132,7 @@ AppShell                                    app/
 ├─ SearchPanel        features/search/
 ├─ VaultPanel         features/privacy/     —— 锁定 / 解锁两态
 ├─ TrashPanel         features/settings/    —— 设置子页面
-└─ SettingsPanel      features/settings/    —— 两栏分页，11 分类
+└─ SettingsPanel      features/settings/    —— 两栏分页，9 分类（v0.8.4 起）
 ```
 
 ---
@@ -405,10 +406,10 @@ AppShell                                    app/
 | 原型 | `.set-wrap` > `.set-nav`（`#setNav`）+ `.set-pages`（`.set-page` / `.set-grid`） |
 | 结构 | **左列分类导航 + 右侧当前分类内容**；**一次只渲染一个分类**（§7.5，功能拆解 M18-01） |
 | 子组件 | `SetNav`（`.set-nav-item[data-set]`，含 `owner` 徽标）、`SetCard`（`.set-card` / `.set-head` / `.set-body`）、`SetRow`（`.set-row`）、`Toggle`、`RadioSet`（`.radio-opt` / `.radio-dot`）、`Field`、`KeyCap`、`WarnBox`、`BackupTargetCard`（`.bk-card`） |
-| 分类（11 个） | 通用（**默认落地页**）/ 账户与安全 / 编辑器 / 隐私锁 / 版本与回收站 / 备份 / 分享 / MCP / 数据管理 / 实例管理（带 `owner` 徽标）/ **关于**（**第 11 个分类，排最后**；内容＝**版本号** + **项目 GitHub 地址**链接，纯信息页、无主操作）。除「通用」提到首位外，顺序同 §7.5 表 |
-| 卡片装配 | 按分类拆成 `cardGeneral` / `cardAccount` / `cardQuickMenu` / `cardEditor` / `cardPrivacy` / `cardMemoPrivacy` / `cardMcp` / `cardBackup` / `cardShare` / `cardVersion` / `cardData` / `cardInstance` / `cardAbout`，由 `setPageBody(id)` 装配 |
-| 页头 | 显示「分类名 · 简述 · 分类总数」 |
-| 通用页 | **两张卡**：启动视图 / 时区 / 主题 ＋ 快捷菜单配置 |
+| 分类（**9 个**） | 通用（**默认落地页**）/ 账户与安全 / 隐私锁 / 版本与回收站 / 备份 / 分享 / MCP / **附件** / 实例管理（带 `owner` 徽标）。**【v0.8.4，11 → 9】**「编辑器」与「关于」不再是独立分类、内容并进「通用」（分别是「编辑体验」卡与页面最底部的「关于 MeNote」卡）；原「数据管理」改名**「附件」**（它本来就只管附件占用与孤儿清理；**路由 id 仍是 `data`**，老书签与深链不失效）。除「通用」提到首位外，顺序同 §7.5 表。**撤销的两类由 `LEGACY_SETTINGS_PAGES` 显式重定向到「通用」**——不补映射的话 `#/settings/editor` 会走进"匹配不到就静默回落"，表现与 2026-09-27 修过的 bug 同形 |
+| 卡片装配 | 按分类拆成 `cardGeneral` / `cardAccount` / `cardQuickMenu` / `cardPrivacy` / `cardMemoPrivacy` / `cardMcp` / `cardBackup` / `cardShare` / `cardVersion` / `cardData` / `cardInstance`，由 `setPageBody(id)` 装配。**【v0.8.4】**原 `cardEditor` 与 `cardAbout` 不再是独立分类的卡片，改挂在「通用」页内（前者作为「编辑体验」块、后者作为底部「关于 MeNote」块） |
+| 页头 | 显示「分类名 · 简述」（简述收进 `ⓘ`）。**【v0.8.4】删掉「分类总数」**——那个数字对用户零信息量，且**随角色变化**（owner 10 / member 9）容易被误读成"漏了分类" |
+| 通用页 | **四张卡**：`界面偏好`（启动视图 / 时区 / 主题 / 待办筛选条 / 笔记本树结构）＋ `编辑体验`（v0.8.4 由原「编辑器」分类搬来）＋ 快捷菜单配置 ＋ 最底部的 `关于 MeNote`。**【v0.8.4】每个设置项名称后带一个作用域标记**（`本机` / `跟随账号`，`.scope-tag`，对读屏 `aria-hidden`）——主题是设备级、其余是账号级，过去这个区别**只写在 ⓘ 悬停里**，用户对"我改完为什么另一台没变"毫无预期；作用域属**标识**不是说明性文字，所以**不进 `InfoHint`** |
 | 状态 | 当前分类记在 `state.setPage`（界面状态，Zustand） |
 | 验证提示 | 设置相关断言一律**先切分类再断言**（原型脚本用 `openSetPage(id)`）；不先切分类会拿上一分类的残留 DOM 蒙混过关 |
 
