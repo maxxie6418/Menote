@@ -141,6 +141,36 @@ export type AttachmentListResponse = v.InferOutput<typeof AttachmentListResponse
 export const ATTACHMENT_LIST_DEFAULT_LIMIT = 50;
 export const ATTACHMENT_LIST_MAX_LIMIT = 200;
 
+/**
+ * 孤儿附件「立即删除」的**预告**（v0.8.3）：`GET /api/attachments/purge-plan`。
+ *
+ * ## 为什么删除前必须先问服务端要数
+ *
+ * 列表是**截断的**（`has_more` / 上限 200 行）。所以界面自己数出来的孤儿数**可能少报**，
+ * 而这是一个**不可撤销**的删除——让用户确认一个偏小的数、服务端删掉比那更多的，
+ * 比不做这个功能糟得多。**预告的数由服务端给，且不受列表截断影响。**
+ *
+ * 只数**真正的孤儿**（`ref_count = 0`），不看 `orphaned_at`：
+ * 允许跳过保留期，但**不跳过"在用"这个判定**。
+ */
+export const AttachmentPurgePlanSchema = v.object({
+  /** 会被删掉的附件数（原件 + 缩略图都算） */
+  count: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  /** 会被释放的字节数 */
+  bytes: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  /** 其中还有 `ATTACHMENT_ORPHAN_RETENTION_DAYS` 天保留期的那部分（"你现在就要放弃这层保护"的数量） */
+  withinRetention: v.pipe(v.number(), v.integer(), v.minValue(0)),
+});
+export type AttachmentPurgePlan = v.InferOutput<typeof AttachmentPurgePlanSchema>;
+
+/** `POST /api/attachments/purge` 的结果：真的删了多少、释放多少 */
+export const AttachmentPurgeResultSchema = v.object({
+  removed: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  bytes: v.pipe(v.number(), v.integer(), v.minValue(0)),
+});
+export type AttachmentPurgeResult = v.InferOutput<typeof AttachmentPurgeResultSchema>;
+
+
 /** 版本封存原因（设计 §4.1）；界面显示的中文映射见 `VERSION_REASON_LABELS` */
 export const VersionReasonSchema = v.picklist([
   "autosave_idle",

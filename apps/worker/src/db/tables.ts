@@ -299,6 +299,51 @@ export const SQL_SELECT_ORPHANED_DUE = `SELECT id, r2_key, user_id FROM attachme
 export const SQL_SELECT_ORPHANED_DUE_ALL = `SELECT id, r2_key, user_id FROM attachments
   WHERE orphaned_at IS NOT NULL AND orphaned_at + (? * ?) <= ?`;
 
+/*
+  —— 孤儿附件「立即删除」（v0.8.3）——
+  两条**只看"在用"这个判定、不过问保留期**。注意它们**没有** `orphaned_at IS NOT NULL`：
+  立即删除的语义是"不等了"，所以连"标没标过"都不要求——直接删掉没被任何条目引用的那些。
+  （而 `SQL_MARK_ORPHANS_OF_USER` 那条仍然要 `orphaned_at IS NULL`，那是"盖戳"的前提。）
+*/
+
+/**
+ * 预告：能被立即删掉多少个 / 多少字节。
+ *
+ * **`within_retention` 单独数"其中还在保留期里"的那部分**——界面要拿它告诉用户
+ * "其中 N 个你本来还有 30 天补救窗口，这次一并放弃"。
+ *
+ * 口径与服务端标记孤儿**完全一致**（同一个 `NOT EXISTS(attachment_refs)`），
+ * 不复用列表：列表是截断的（上限 200 行），拿它算"不可撤销的删除影响多少"会少报。
+ */
+export const SQL_PURGE_PLAN_OF_USER = `SELECT
+    COUNT(*) AS count,
+    COALESCE(SUM(size_bytes), 0) AS bytes,
+    COALESCE(SUM(CASE WHEN orphaned_at IS NOT NULL AND orphaned_at + (? * ?) > ? THEN 1 ELSE 0 END), 0)
+      AS within_retention
+  FROM attachments
+  WHERE user_id = ?
+    AND NOT EXISTS (SELECT 1 FROM attachment_refs r WHERE r.attachment_id = attachments.id)`;
+
+/**
+ * 真删要取的行。
+ *
+ * **`NOT EXISTS` 在这里再判一次**是刻意的：预告与删除之间可能隔着几秒，用户可能刚好
+ * 把附件重新插进某篇笔记。**删除时重新判定，才不会出现"刚插回去就被删了"。**
+ */
+export const SQL_SELECT_PURGEABLE_OF_USER = `SELECT id, r2_key, size_bytes FROM attachments
+  WHERE user_id = ?
+    AND NOT EXISTS (SELECT 1 FROM attachment_refs r WHERE r.attachment_id = attachments.id)`;
+
+/**
+ * 按 id 删单行**并要求它此刻仍是无引用**。
+ *
+ * `changes === 0` 表示"它在我们取出来到删它之间被重新引用了" —— 那一行**必须留着**。
+ */
+export const SQL_DELETE_UNREFERENCED_ATTACHMENT = `DELETE FROM attachments
+  WHERE id = ? AND user_id = ?
+    AND NOT EXISTS (SELECT 1 FROM attachment_refs r WHERE r.attachment_id = attachments.id)`;
+
+
 /** R2 待删队列：同一把键可能被"删除"与"孤儿"两条路径登记，用 `INSERT OR IGNORE` 保早的那次 */
 export const SQL_INSERT_R2_GC = `INSERT OR IGNORE INTO r2_gc_queue
   (r2_key, user_id, reason, due_at, created_at) VALUES (?, ?, ?, ?, ?)`;

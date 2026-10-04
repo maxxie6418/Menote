@@ -5,6 +5,8 @@
  */
 import {
   AttachmentListResponseSchema,
+  AttachmentPurgePlanSchema,
+  AttachmentPurgeResultSchema,
   BatchResponseSchema,
   CryptoResetResponseSchema,
   CryptoStateSchema,
@@ -28,6 +30,8 @@ import {
   encodeItemWriteMeta,
   type AuthKdfParams,
   type AuthSessionResponse,
+  type AttachmentPurgePlan,
+  type AttachmentPurgeResult,
   type BatchOp,
   type BatchResponse,
   type ChangePasswordResponse,
@@ -291,6 +295,23 @@ export const attachmentsApi = {
       method: "POST",
       body: {},
     }),
+
+  /**
+   * 预告「跳过保留期立即删除」会删多少（v0.8.3）。
+   *
+   * **删除前必须先问服务端**：列表是截断的（上限 200 行），界面自己数的孤儿数可能少报，
+   * 而这是不可撤销的删除。**数由服务端给，不受列表截断影响。**
+   */
+  purgePlan: async (): Promise<AttachmentPurgePlan> => {
+    const raw = await apiRequest<unknown>("/api/attachments/purge-plan");
+    return v.parse(AttachmentPurgePlanSchema, raw);
+  },
+
+  /** 跳过保留期立刻删掉所有孤儿附件（不可撤销） */
+  purge: async (): Promise<AttachmentPurgeResult> => {
+    const raw = await apiRequest<unknown>("/api/attachments/purge", { method: "POST", body: {} });
+    return v.parse(AttachmentPurgeResultSchema, raw);
+  },
 };
 
 /**

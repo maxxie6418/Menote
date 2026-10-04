@@ -14,18 +14,27 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AttachmentListResponse, AttachmentListRow } from "@menote/shared";
+import type {
+  AttachmentListResponse,
+  AttachmentListRow,
+  AttachmentPurgePlan,
+  AttachmentPurgeResult,
+} from "@menote/shared";
 import { assertLabelledControls } from "./helpers/a11y";
 
 type ListOptions = { kind?: "original" | "thumb"; state?: "active" | "orphaned"; limit?: number };
 
 const listMock = vi.fn<(options?: ListOptions) => Promise<AttachmentListResponse>>();
 const gcMock = vi.fn<() => Promise<{ marked: number; removed: number }>>();
+const purgePlanMock = vi.fn<() => Promise<AttachmentPurgePlan>>();
+const purgeMock = vi.fn<() => Promise<AttachmentPurgeResult>>();
 
 vi.mock("../src/data/api/endpoints", () => ({
   attachmentsApi: {
     list: (options?: ListOptions) => listMock(options),
     gc: () => gcMock(),
+    purgePlan: () => purgePlanMock(),
+    purge: () => purgeMock(),
   },
 }));
 
@@ -36,6 +45,10 @@ afterEach(cleanup);
 beforeEach(() => {
   listMock.mockReset();
   gcMock.mockReset();
+  purgePlanMock.mockReset();
+  purgeMock.mockReset();
+  // 默认：没有可立即删除的孤儿。**具体用例自己覆盖它**
+  purgePlanMock.mockResolvedValue({ count: 0, bytes: 0, withinRetention: 0 });
 });
 
 function row(overrides: Partial<AttachmentListRow> = {}): AttachmentListRow {
@@ -313,6 +326,97 @@ describe("孤儿的保留期倒计时（v0.8.2 修）", () => {
 
     const rowEl = screen.getByText("照片.png").closest(".setrow");
     expect(rowEl?.textContent).not.toContain("后清理");
+  });
+});
+
+describe("立即删除孤儿附件（v0.8.3 · 跳过保留期）", () => {
+  it("**确认框里的数量取自服务端预告**，不取自截断的列表", async () => {
+    const user = userEvent.setup();
+    respond([row({ ref_count: 0 })]);
+    // 列表只有 1 行（甚至可能被截断），但服务端说真值是 7 个
+    purgePlanMock.mockResolvedValue({ count: 7, bytes: 3 * 1024 * 1024, withinRetention: 5 });
+    await renderPage();
+
+    await user.click(screen.getByRole("button", { name: "立即删除" }));
+    const dialog = screen.getByRole("dialog", { name: "立即删除全部孤儿附件" });
+    expect(dialog.textContent).toContain("将永久删除 7 个");
+    expect(dialog.textContent).toContain("3.0 MB");
+    expect(dialog.textContent).toContain("5 个还在 30 天保留期里");
+    // 不可撤销必须说，且按钮上带真数量
+    expect(dialog.textContent).toContain("不可撤销");
+    expect(purgeMock).not.toHaveBeenCalled();
+    expect(within(dialog).getByRole("button", { name: "确认删除 7 个" })).toBeTruthy();
+
+    await user.click(within(dialog).getByRole("button", { name: "确认删除 7 个" }));
+    await waitFor(() => expect(purgeMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("**它有自己的弹窗，不复用「清理孤儿附件」那个**（两条路后果不同）", async () => {
+    const user = userEvent.setup();
+    respond([row({ ref_count: 0 })]);
+    purgePlanMock.mockResolvedValue({ count: 2, bytes: 1024, withinRetention: 0 });
+    await renderPage();
+
+    await user.click(screen.getByRole("button", { name: "立即删除" }));
+    expect(screen.getByRole("dialog", { name: "立即删除全部孤儿附件" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "清理孤儿附件" })).toBeNull();
+    // 确认之前不许发请求
+    expect(purgeMock).not.toHaveBeenCalled();
+  });
+
+  it("没有可删的：按钮置灰**并平铺原因**（DESIGN.md §6.1）", async () => {
+    respond([row({ ref_count: 3 })]);
+    purgePlanMock.mockResolvedValue({ count: 0, bytes: 0, withinRetention: 0 });
+    await renderPage();
+
+    const button = screen.getByRole("button", { name: "立即删除" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText("当前没有可删除的孤儿附件")).toBeTruthy();
+  });
+
+  it("删完如实回报数量与释放的字节，并重读列表", async () => {
+    const user = userEvent.setup();
+    respond([row({ ref_count: 0 })]);
+    purgePlanMock.mockResolvedValue({ count: 2, bytes: 2 * 1024 * 1024, withinRetention: 1 });
+    purgeMock.mockResolvedValue({ removed: 2, bytes: 2 * 1024 * 1024 });
+    await renderPage();
+
+    await user.click(screen.getByRole("button", { name: "立即删除" }));
+    const dialog = screen.getByRole("dialog", { name: "立即删除全部孤儿附件" });
+    await user.click(within(dialog).getByRole("button", { name: "确认删除 2 个" }));
+
+    expect(await screen.findByText("已立即删除 2 个孤儿附件，释放 2.0 MB")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "立即删除全部孤儿附件" })).toBeNull();
+    await waitFor(() => expect(purgePlanMock.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("一个都没删掉（如实说，不用「成功」盖过去）", async () => {
+    const user = userEvent.setup();
+    respond([row({ ref_count: 0 })]);
+    purgePlanMock.mockResolvedValue({ count: 3, bytes: 1024, withinRetention: 0 });
+    purgeMock.mockResolvedValue({ removed: 0, bytes: 0 });
+    await renderPage();
+
+    await user.click(screen.getByRole("button", { name: "立即删除" }));
+    const dialog = screen.getByRole("dialog", { name: "立即删除全部孤儿附件" });
+    await user.click(within(dialog).getByRole("button", { name: "确认删除 3 个" }));
+
+    expect(await screen.findByText("没有删掉任何附件：它们都已被条目重新引用")).toBeTruthy();
+  });
+
+  it("删除失败：错误可见、弹窗不消失（可以再试）", async () => {
+    const user = userEvent.setup();
+    respond([row({ ref_count: 0 })]);
+    purgePlanMock.mockResolvedValue({ count: 2, bytes: 1024, withinRetention: 0 });
+    purgeMock.mockRejectedValue(new Error("删除失败，请稍后重试"));
+    await renderPage();
+
+    await user.click(screen.getByRole("button", { name: "立即删除" }));
+    const dialog = screen.getByRole("dialog", { name: "立即删除全部孤儿附件" });
+    await user.click(within(dialog).getByRole("button", { name: "确认删除 2 个" }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("删除失败"));
+    expect(screen.getByRole("dialog", { name: "立即删除全部孤儿附件" })).toBeTruthy();
   });
 });
 

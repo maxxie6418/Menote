@@ -23,6 +23,7 @@ import {
   ATTACHMENT_ORPHAN_RETENTION_DAYS,
   type AttachmentListResponse,
   type AttachmentListRow,
+  type AttachmentPurgePlan,
 } from "@menote/shared";
 import { Button, EmptyState, Pill } from "../../../app/ui/Controls";
 import { Icon } from "../../../app/ui/Icon";
@@ -65,16 +66,21 @@ export function AttachmentManagerPage() {
   const [filter, setFilter] = useState<StateFilter>("all");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 立即删除（v0.8.3）：预告与执行各一个状态，**各有各的弹窗** */
+  const [purgePlan, setPurgePlan] = useState<AttachmentPurgePlan | null>(null);
+  const [purging, setPurging] = useState(false);
+  const [purgeBusy, setPurgeBusy] = useState(false);
 
   const load = useCallback(async (): Promise<AttachmentListResponse> => {
     return attachmentsApi.list({ kind: "original", limit: ATTACHMENT_LIST_MAX_LIMIT });
   }, []);
 
   const refresh = useCallback((): Promise<void> => {
-    return load()
-      .then((result) => {
+    return Promise.all([load(), attachmentsApi.purgePlan()])
+      .then(([result, plan]) => {
         setRows(result.attachments);
         setHasMore(result.has_more);
+        setPurgePlan(plan);
         setError(null);
       })
       .catch((cause: unknown) => {
@@ -86,18 +92,17 @@ export function AttachmentManagerPage() {
 
   useEffect(() => {
     let alive = true;
-    void load()
-      .then((result) => {
-        if (alive) {
-          setRows(result.attachments);
-          setHasMore(result.has_more);
-        }
+    void Promise.all([load(), attachmentsApi.purgePlan()])
+      .then(([result, plan]) => {
+        if (!alive) return;
+        setRows(result.attachments);
+        setHasMore(result.has_more);
+        setPurgePlan(plan);
       })
       .catch((cause: unknown) => {
-        if (alive) {
-          setError(cause instanceof Error ? cause.message : "附件列表加载失败");
-          setRows([]);
-        }
+        if (!alive) return;
+        setError(cause instanceof Error ? cause.message : "附件列表加载失败");
+        setRows([]);
       });
     return () => {
       alive = false;
@@ -151,6 +156,26 @@ export function AttachmentManagerPage() {
       setError(cause instanceof Error ? cause.message : "清理失败，请稍后重试");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** 立即删除：确认框里的数量**来自服务端预告**，不是界面自己数的（列表是截断的） */
+  async function runPurge(): Promise<void> {
+    if (purgeBusy) return;
+    setPurgeBusy(true);
+    try {
+      const result = await attachmentsApi.purge();
+      setNotice(
+        result.removed > 0
+          ? `已立即删除 ${result.removed} 个孤儿附件，释放 ${formatBytes(result.bytes)}`
+          : "没有删掉任何附件：它们都已被条目重新引用",
+      );
+      setPurging(false);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "删除失败，请稍后重试");
+    } finally {
+      setPurgeBusy(false);
     }
   }
 
@@ -274,6 +299,47 @@ export function AttachmentManagerPage() {
         </p>
       </section>
 
+      <section className="setcard" aria-label="立即删除孤儿附件">
+        <h3 className="setcard__title">
+          不等了，现在就删
+          <InfoHint label="立即删除说明">
+            走的是另一条路：跳过那 {ATTACHMENT_ORPHAN_RETENTION_DAYS} 天保留期，
+            把**没有任何条目引用**的附件立刻删掉。保留期是给「删错了」留的补救窗口——
+            用这条路就等于主动放弃它，**删掉的东西找不回来**。
+            正在被引用的附件仍然一个都不会动。
+          </InfoHint>
+        </h3>
+
+        <div className="setrow">
+          <div className="setrow__label">
+            <span className="setrow__name">立即删除全部孤儿附件</span>
+            {/* 禁用与否都说清数量与后果，不让禁用只靠悬停（DESIGN.md §6.1） */}
+            <span className="setrow__desc">
+              {purgePlan === null
+                ? "正在数…"
+                : purgePlan.count === 0
+                  ? "当前没有可删除的孤儿附件"
+                  : `将立即删除 ${purgePlan.count} 个（${formatBytes(purgePlan.bytes)}）${
+                      purgePlan.withinRetention > 0
+                        ? `，其中 ${purgePlan.withinRetention} 个还在保留期里`
+                        : ""
+                    }`}
+            </span>
+          </div>
+          <span className="setrow__control">
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={purgeBusy || purgePlan === null || purgePlan.count === 0}
+              title={purgePlan === null || purgePlan.count === 0 ? "当前没有可删除的孤儿附件" : undefined}
+              onClick={() => setPurging(true)}
+            >
+              {purgeBusy ? "删除中…" : "立即删除"}
+            </Button>
+          </span>
+        </div>
+      </section>
+
       <Modal
         open={confirming}
         title="清理孤儿附件"
@@ -293,6 +359,42 @@ export function AttachmentManagerPage() {
         <p className="hint-line">
           正在使用的附件不会被删：只有引用数为 0 的才会被标记。
           已标记的到满 {ATTACHMENT_ORPHAN_RETENTION_DAYS} 天后会被自动清理，不必再手动点。
+        </p>
+      </Modal>
+      {/* 立即删除：**独立**的确认弹窗，不复用上面那个 */}
+      <Modal
+        open={purging}
+        title="立即删除全部孤儿附件"
+        desc={
+          purgePlan === null
+            ? "正在数…"
+            : purgePlan.count === 0
+              ? "当前没有可删除的孤儿附件。"
+              : `将永久删除 ${purgePlan.count} 个附件，释放 ${formatBytes(purgePlan.bytes)}。${
+                  purgePlan.withinRetention > 0
+                    ? `其中 ${purgePlan.withinRetention} 个还在 ${ATTACHMENT_ORPHAN_RETENTION_DAYS} 天保留期里${
+                        purgePlan.count - purgePlan.withinRetention === 0 ? "，也就是说" : "，另有 "
+                      }${purgePlan.count - purgePlan.withinRetention} 个已经过期但同样要一起删。`
+                    : "它们都已经过了保留期。"
+                  }**删除不可撤销，找不回来。`
+        }
+        onClose={() => setPurging(false)}
+        footer={
+          <>
+            <Button variant="danger" size="sm" disabled={purgeBusy} onClick={() => void runPurge()}>
+              {purgeBusy ? "删除中…" : `确认删除 ${purgePlan?.count ?? 0} 个`}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setPurging(false)}>
+              取消
+            </Button>
+          </>
+        }
+      >
+        <p className="hint-line">
+          正在使用的附件不会被删：只有引用数为 0 的才会被删掉。R2 上的文件由后台清理队列稍后删除。
+        </p>
+        <p className="hint-line">
+          如果你只是想腾点空间，30 天保留期那条路就够了——它给「删错了」留了补救窗口。
         </p>
       </Modal>
     </>

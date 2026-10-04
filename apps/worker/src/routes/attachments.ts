@@ -18,7 +18,9 @@ import {
   putAttachmentBlob,
   serveAttachment,
   type AttachmentKind,
-} from "../services/attachments";import type { AppEnv } from "../types";
+} from "../services/attachments";
+import { planAttachmentPurge, purgeOrphanedAttachments } from "../services/attachment-purge";
+import type { AppEnv } from "../types";
 import { readJsonBody } from "../validation";
 
 const app = new Hono<AppEnv>();
@@ -147,6 +149,29 @@ app.get("/attachments/refs/:itemId", requireSession, async (c) => {
 /** `POST /api/attachments/gc`：手动清理**本用户**的孤儿附件（管理页入口在 M6，接口先就绪） */
 app.post("/attachments/gc", requireSession, async (c) => {
   const result = await gcAttachments(c.env.DB, c.get("user").id, Date.now());
+  return c.json(result);
+});
+
+/**
+ * `GET /api/attachments/purge-plan`：预告「立即删除」会删多少（v0.8.3）。
+ *
+ * **删除前必须先问一次服务端**：列表是截断的，界面自己数的孤儿数可能少报，
+ * 而这是不可撤销的删除。**与 `purge` 分成两个端点**而不是一个带 `force` 标志的端点，
+ * 就是为了让"预告"与"真删"在日志与代码里是两件看得见分开的事。
+ */
+app.get("/attachments/purge-plan", requireSession, async (c) => {
+  const plan = await planAttachmentPurge(c.env.DB, c.get("user").id, Date.now());
+  return c.json(plan);
+});
+
+/**
+ * `POST /api/attachments/purge`：**跳过 30 天保留期，立刻删掉本用户的孤儿附件**（v0.8.3）。
+ *
+ * 不可撤销，所以前端必须先拿 `purge-plan` 展示真实数量、再让用户确认。
+ * 服务端这一侧的三道闸写在 `purgeOrphanedAttachments` 的文件头（只删无引用 / 删时再判一次 / 只清本用户）。
+ */
+app.post("/attachments/purge", requireSession, async (c) => {
+  const result = await purgeOrphanedAttachments(c.env.DB, c.get("user").id, Date.now());
   return c.json(result);
 });
 
