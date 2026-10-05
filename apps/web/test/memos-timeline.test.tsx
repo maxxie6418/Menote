@@ -8,17 +8,61 @@
  */
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dayPartsInZone } from "../src/features/memos/model";
+import { DEFAULT_TIME_ZONE, dayPartsInZone } from "../src/features/memos/model";
 import { MemoTimeline } from "../src/features/memos/ui/MemoTimeline";
 import type { LocalItem, MemoContent } from "../src/data/db";
 
 afterEach(cleanup);
 
-/** 同一天的 13:05 与 21:40（本地时区构造，避免时区相关的期望值漂移） */
-const DAY = new Date(2026, 8, 27, 13, 5).getTime();
-const LATER = new Date(2026, 8, 27, 21, 40).getTime();
+/**
+ * 「时区 X 的墙上时间」→ epoch：**与运行机时区无关**。
+ *
+ * 为什么不能写 `new Date(2026, 8, 27, 13, 5)`：那是**本机**时区的 13:05，而组件按
+ * `DEFAULT_TIME_ZONE`（固定 `Asia/Shanghai`）格式化。本机是 UTC+8 时两者恰好重合，用例一直是绿的；
+ * CI 的 runner 是 UTC，同一份数据整体挪 8 小时——21:40 那条落到**次日**，
+ * 两条 Memo 分进不同日历日，`.timeline__node` 从 1 变 2，于是**每次推送都红**。
+ *
+ * 算法：先按 UTC 猜一个瞬间，再用目标时区把这个瞬间显示出的墙上时间读回来求偏移，一次即收敛
+ * （`Asia/Shanghai` 固定 UTC+8、无夏令时）。走 `Intl` 而不是写死 `-8h`，是为了将来改默认时区时它自己跟上。
+ */
+function atInZone(
+  zone: string,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+): number {
+  const guess = Date.UTC(year, month, day, hour, minute);
+  const shown = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .formatToParts(new Date(guess))
+      .map((part) => [part.type, part.value]),
+  );
+  // `asUtc - guess` 就是这一瞬间的时区偏移（把墙上时间当成 UTC 读回来减掉猜的量）
+  const asUtc = Date.UTC(
+    Number(shown.year),
+    Number(shown.month) - 1,
+    Number(shown.day),
+    Number(shown.hour) % 24,
+    Number(shown.minute),
+  );
+  return guess - (asUtc - guess);
+}
+
+/** 同一天的 13:05 与 21:40（**设置时区**的墙上时间，与运行机时区无关） */
+const DAY = atInZone(DEFAULT_TIME_ZONE, 2026, 8, 27, 13, 5);
+const LATER = atInZone(DEFAULT_TIME_ZONE, 2026, 8, 27, 21, 40);
 /** 8 月 3 日 09:00：用来验证「置顶的老 Memo 不会把整天顶到最前」 */
-const OLD = new Date(2026, 7, 3, 9, 0).getTime();
+const OLD = atInZone(DEFAULT_TIME_ZONE, 2026, 7, 3, 9, 0);
 
 function memo(id: string, at: number, pinned: 0 | 1 = 0): LocalItem {
   return {
@@ -56,6 +100,7 @@ function renderTimeline(): HTMLElement {
   const { container } = render(
     <MemoTimeline
       memos={[memo("m1", DAY), memo("m2", LATER)]}
+      timeZone={DEFAULT_TIME_ZONE}
       contents={{
         m1: { content: "第一条", convertedTo: null },
         m2: { content: "第二条", convertedTo: null },
@@ -73,7 +118,7 @@ function renderTimeline(): HTMLElement {
 
 describe("日期与星期分开取", () => {
   it("`dayPartsInZone` 把「日期」与「星期」分成两个字段（原型是两行）", () => {
-    const parts = dayPartsInZone(DAY, "Asia/Shanghai");
+    const parts = dayPartsInZone(DAY, DEFAULT_TIME_ZONE);
     expect(parts.date).toContain("9月27日");
     // 星期是独立字段：日期里**不含**它（拼接就会退化成改前那样）
     expect(parts.date).not.toContain("周");
@@ -115,6 +160,7 @@ function renderWith(items: LocalItem[]): HTMLElement {
   const { container } = render(
     <MemoTimeline
       memos={items}
+      timeZone={DEFAULT_TIME_ZONE}
       contents={contents}
       onSave={vi.fn()}
       onTogglePinned={vi.fn()}
