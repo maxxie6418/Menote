@@ -16,7 +16,7 @@ import { InfoHint } from "../../../app/ui/InfoHint";
 import type { ThemeMode } from "../../../app/theme/useTheme";
 import { SETTINGS_PAGES, type SettingsPageId } from "../../../app/router";
 import { CardQuickMenu } from "./CardQuickMenu";
-import { AboutCard, EditorModesCard, ScopeTag } from "./GeneralCards";
+import { AboutCard, EditorModesCard, LocalOnlyTag } from "./GeneralCards";
 // 「编辑试验」暂时收起（2026-10-01，与 `router.ts` / `PAGE_META` 同步注释）：
 // import { EditorLabPage } from "../../editor-lab/ui/EditorLabPage";
 import { BackupPage } from "../../backup/ui/BackupPage";
@@ -260,19 +260,21 @@ export function SettingsPanel({
               <h3 className="setcard__title">
                 界面偏好
                 {/*
-                  作用域标记（v0.8.4）：这一卡里两类作用域混着，标记让"改完为什么另一台没变"
-                  不用去猜 ⓘ。`本机` = 只这台设备，`跟随账号` = 换设备登录也带过去。
+                  作用域标记（v0.8.4 引入，v0.8.16 收窄）：**只标例外**。这一卡里绝大多数项
+                  跟账号同步（这是默认，不必每行重复），唯独「主题」是设备级偏好——改完在
+                  另一台没变时，名称旁的 `本机` 标记就是唯一能立刻解释的标识。
+                  `本机` = 只影响这台设备；**没标的就是跟随账号**。
                 */}
                 <InfoHint label="作用域说明">
-                  每项后面的标记说明它跟谁走：「本机」只影响这台设备；「跟随账号」会跟着账号同步到其它设备。
-                  主题是设备级偏好，其余都是账号级。
+                  标着「本机」的几项只影响这台设备，换台设备登录不会跟着变；没标的都跟着账号同步。
+                  这一类里只有「主题」是设备级偏好，其余都是账号级。
                 </InfoHint>
               </h3>
               <div className="setrow">
                 <div className="setrow__label">
                   <span className="setrow__name">
                     主题
-                    <ScopeTag scope="device" />
+                    <LocalOnlyTag />
                   </span>
                   {/* 实现口径（不改 DOM、不整页重渲染）收进 InfoHint（DESIGN.md §5.4-1） */}
                   <InfoHint label="主题说明">
@@ -297,10 +299,7 @@ export function SettingsPanel({
 
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">
-                    启动视图
-                    <ScopeTag scope="account" />
-                  </span>
+                  <span className="setrow__name">启动视图</span>
                   <span className="setrow__desc">打开应用时先进哪个视图</span>
                 </div>
                 <div className="radioset" role="group" aria-label="启动视图">
@@ -320,10 +319,7 @@ export function SettingsPanel({
 
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">
-                    时区
-                    <ScopeTag scope="account" />
-                  </span>
+                  <span className="setrow__name">时区</span>
                   <span className="setrow__desc">Memo 时间轴与待办日期按它分天</span>
                 </div>
                 {/*
@@ -351,10 +347,7 @@ export function SettingsPanel({
               {/* 待办筛选条的形态（v0.5.2；定稿：两种都留，让用户自选） */}
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">
-                    待办筛选条
-                    <ScopeTag scope="account" />
-                  </span>
+                  <span className="setrow__name">待办筛选条</span>
                   <span className="setrow__desc">待办页顶部那排筛选怎么摆</span>
                 </div>
                 <div className="radioset" role="group" aria-label="待办筛选条形态">
@@ -379,10 +372,7 @@ export function SettingsPanel({
               */}
               <div className="setrow">
                 <div className="setrow__label">
-                  <span className="setrow__name">
-                    笔记本树结构
-                    <ScopeTag scope="account" />
-                  </span>
+                  <span className="setrow__name">笔记本树结构</span>
                   <span className="setrow__desc">选择左侧树是否把文档列在文件夹下</span>
                 </div>
                 <span className="setrow__control">

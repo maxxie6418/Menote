@@ -11,7 +11,6 @@
  */
 import { QUICK_MENU_FEATURES, type QuickMenuFeature } from "@menote/shared";
 import { InfoHint } from "../../../app/ui/InfoHint";
-import { ScopeTag } from "./GeneralCards";
 
 export interface CardQuickMenuProps {
   selected: readonly QuickMenuFeature[];
@@ -40,11 +39,7 @@ export function CardQuickMenu({ selected, onChange }: CardQuickMenuProps) {
       {QUICK_MENU_FEATURES.map((feature) => (
         <div className="setrow" key={feature.id}>
           <div className="setrow__label">
-            <span className="setrow__name">
-              {feature.label}
-              {/* 与「通用」其余几项同口径：快捷菜单配置存 user_settings，跟账号同步 */}
-              <ScopeTag scope="account" />
-            </span>
+            <span className="setrow__name">{feature.label}</span>
             {feature.pendingStep ? (
               /* 未实现的原因**保持可见**（DESIGN.md §6.1：禁用要说明原因，且不能只靠悬停） */
               <span className="setrow__desc">将在 {feature.pendingStep} 生效</span>

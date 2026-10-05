@@ -15,20 +15,24 @@ import { InfoHint } from "../../../app/ui/InfoHint";
 import { APP_VERSION, PROJECT_REPO_URL } from "../../../app/about";
 
 /**
- * 设置项的**作用域标记**（v0.8.4）：`本机` = 只这台设备，`跟随账号` = 换设备登录也带过去。
+ * 设置项的**作用域例外标记**（v0.8.4 引入，v0.8.16 收窄）：标出**只在这台设备生效**的项。
  *
- * 为什么必须**平铺可见**而不进 ⓘ：它回答的是"我改完为什么另一台没变"，而那正是
- * 「通用」这一类过去最缺的一句预期——同类设置里主题（设备级）与时区（账号级）混排，
- * 区别只写在悬停里，界面上完全看不出来。作用域属于**标识**而非**说明性文字**，
- * 所以不进 `InfoHint`（DESIGN.md §5.4-1 管的是后者）。
+ * **【v0.8.16 用户决定】只标例外，不标默认**：此前每项都带作用域（`本机` / `跟随账号`），
+ * 但 8 项里 7 项是账号级——把默认逐行标出来，等于把唯一的例外（主题、"上次用的那一档"）
+ * 淹在一片同款徽标里，用户想找"哪几项不跟账号走"反而看不见了。**没标 = 跟随账号**，
+ * 这是绝大多数项的事实，不需要每行重复一遍。
  *
- * 对读屏 `aria-hidden`：这行文字与名称读在一起会被重复播报（"时区 跟随账号"），
+ * 为什么例外必须**平铺可见**而不进 ⓘ：它回答的是"我改完为什么另一台没变"——用户改完主题
+ * 发现另一台没跟着变时，唯一能立刻消除疑问的就是名称旁边这个标记。作用域属**标识**而非
+ * **说明性文字**，所以不进 `InfoHint`（DESIGN.md §5.4-1 管的是后者）。
+ *
+ * 对读屏 `aria-hidden`：这行文字与名称读在一起会被重复播报（"主题 本机"），
  * 真正需要被读屏知道的是名称本身；作用域是视觉辅助。
  */
-export function ScopeTag({ scope }: { scope: "device" | "account" }) {
+export function LocalOnlyTag() {
   return (
     <span className="scope-tag" aria-hidden="true">
-      {scope === "device" ? "本机" : "跟随账号"}
+      本机
     </span>
   );
 }
@@ -82,11 +86,7 @@ export function EditorModesCard({ userSettings, onPatchSettings }: EditorModesCa
         return (
           <div className="setrow" key={id}>
             <div className="setrow__label">
-              <span className="setrow__name">
-                {option.label}
-                {/* 两档作用域并存：清单本身跟账号，「上次用的那一档」记本机 */}
-                <ScopeTag scope="account" />
-              </span>
+              <span className="setrow__name">{option.label}</span>
               <span className="setrow__desc">{option.desc}</span>
               {/* 禁用不能只靠悬停（DESIGN.md §6.1）：最后开着的那一档把原因平铺出来 */}
               {lastOne ? (
@@ -109,13 +109,13 @@ export function EditorModesCard({ userSettings, onPatchSettings }: EditorModesCa
       })}
       {/*
         「上次用的那一档」是设备级记忆，与上面三个跟账号同步的开关**作用域不同**——
-        放在同一张卡里必须点破，否则用户会以为"选了档就到处都这样"。
+        同一张卡里点破这件事的是下面那行的 `本机` 标记（v0.8.16 起只有例外才标）。
       */}
       <div className="setrow">
         <div className="setrow__label">
           <span className="setrow__name">
             打开时用哪一档
-            <ScopeTag scope="device" />
+            <LocalOnlyTag />
           </span>
           <span className="setrow__desc">记的是你上次用的那一档，只在本机生效</span>
         </div>

@@ -476,23 +476,25 @@ describe("设置壳", () => {
     expect(screen.queryByText(/共 \d+ 个分类/)).toBeNull();
   });
 
-  it("作用域标记：设备级标「本机」、账号级标「跟随账号」，且平铺可见（v0.8.4）", () => {
+  it("作用域标记**只标例外**：设备级标「本机」，跟随账号的不标（v0.8.16）", () => {
     render(<SettingsPanel {...baseProps} page="general" />);
 
-    // 主题是**设备级**偏好，其余几项跟随账号——这正是过去只写在 ⓘ 里、界面上看不出来的那条差别
+    // 「主题」是这一类里唯一的设备级偏好：改完在另一台没变时，名称旁的标记就是唯一能解释的标识
     const themeRow = screen.getByText("主题").closest(".setrow") as HTMLElement;
     expect(within(themeRow).getByText("本机")).toBeTruthy();
 
+    // **整页不再出现「跟随账号」**：8 项里 7 项是账号级，把默认逐行标出来，
+    // 反而把唯一的例外淹在一片同款徽标里（v0.8.4 → v0.8.16 的收窄）
+    expect(screen.queryByText("跟随账号")).toBeNull();
+
     for (const name of ["启动视图", "时区", "待办筛选条", "笔记本树结构"]) {
       const row = screen.getByText(name).closest(".setrow") as HTMLElement;
-      expect(within(row).getByText("跟随账号"), name).toBeTruthy();
-      // 作用域是**标识**不是说明文字，不进 ⓘ（DESIGN.md §5.4-1 管的是说明性文字）
       expect(within(row).queryByText("本机"), name).toBeNull();
     }
 
-    // 编辑体验卡里两种作用域并存：开关跟账号、"上次用的那一档"记本机
+    // 编辑体验卡同口径：开关跟账号（不标），"上次用的那一档"记本机（标）
     const modeRow = screen.getByRole("switch", { name: "仅编辑" }).closest(".setrow") as HTMLElement;
-    expect(within(modeRow).getByText("跟随账号")).toBeTruthy();
+    expect(within(modeRow).queryByText("本机")).toBeNull();
     const lastUsed = screen.getByText("打开时用哪一档").closest(".setrow") as HTMLElement;
     expect(within(lastUsed).getByText("本机")).toBeTruthy();
   });
