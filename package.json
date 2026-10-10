@@ -25,5 +25,6 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.11"
-  }
+  },
+  "license": "LGPL-3.0-only"
 }

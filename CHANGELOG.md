@@ -2,6 +2,10 @@
 
 > 每次改动在最上方追加；日期用小标题，同一天条目不重复写日期。版本号规范见 AGENTS.md「版本号规范」：主版本号仅用户主动提出变更；次版本号随里程碑收口 +0.1；修复/优化/小功能 +0.0.1（同一问题分批调整可合并后一次 +0.0.1）；纯文档改动沿用当前版本号。
 
+## 2026-10-11
+
+- v0.8.17 — **许可证转 LGPL-3.0-only**（用户 2026-10-11 确认）：根目录新增 `LICENSE`（GNU LGPL v3 标准全文），根 `package.json` 补 `"license": "LGPL-3.0-only"` 字段。背景：编辑器专项优化以 shuaiplus/inkstone（LGPL-3.0-only）为蓝本并借鉴其代码，借鉴代码的前提就是本项目转为同许可证；纯约定改动，版本号不升。设计与实施计划见 `docs/modules/Menote-编辑器专项优化-设计-v1.md`、`docs/todo/Menote-编辑器专项优化-实施计划-v1.md`。
+
 ## 2026-10-05
 
 - v0.8.17 / `f700913` — **修 CI 每次推送必红：`memos-timeline` 用例把时区写成了本机时区，CI 的 UTC runner 上三条断言当场翻车**（用户 2026-10-05 反馈「每次推送都给我发失败邮件」）。`apps/web/src/features/memos/model.ts` 的 `DEFAULT_TIME_ZONE` 是**固定的 `Asia/Shanghai`**，模块注释第 5 行就写着「天边界要按设置时区算……不能用本机时区」；而 `apps/web/test/memos-timeline.test.tsx` 造数据用的是 `new Date(2026, 8, 27, 13, 5)` ——**运行机本地时区**的 13:05，注释还特意写「本地时区构造，避免时区相关的期望值漂移」。**这个假设恰好在 UTC+8 上成立**：本机 13:05 本地 = 13:05 上海，两边重合所以一直是绿的；CI 的 `ubuntu-latest` 是 UTC，同一份数据整体挪 8 小时 —— 21:40 那条落到**次日 05:40**，两条 Memo 分进不同日历日，`.timeline__node` 从 1 变 2。**复现**（本地把 `TZ` 改成 CI 的值）：`TZ=UTC` 红 3 条（`'9月28日' ≠ '9月27日'`、`['05:40','21:05'] ≠ ['21:40','13:05']`、节点 `2 ≠ 1`），`TZ=America/New_York` 红 4 条；web 包另外 131 个测试文件在这两个时区下都绿，**就这一个文件踩雷**。**修法**：新增 `atInZone(zone, y, m, d, hh, mm)` —— 先按 UTC 猜一个瞬间，再用 `Intl` 把该瞬间在目标时区显示出的墙上时间读回来求偏移、一次收敛（`Asia/Shanghai` 固定 UTC+8、无夏令时）；三处 fixture 改用它，并给两处 `<MemoTimeline>` **显式传 `timeZone={DEFAULT_TIME_ZONE}`**（断言用的时区要写出来，别靠组件的隐式默认值）。走 `Intl` 而不是写死 `-8h`：将来改默认时区时它自己跟上。**顺带**给 `apps/worker/test/trash.test.ts` 的「清空回收站」加显式 `testTimeout` 20s —— 那条要串行发 13 个请求，实测满负载 5187ms、正好摸到 vitest 默认的 5s，而单独跑只要 526ms；**这一条未能确认就是 CI 上的第 4 条失败**（本机没装 `gh`、仓库私有读不到日志；邮件里的总数 127 文件 / 1267 用例只对得上 apps-web 一个包，v0.8.5 前后 web 正好 127 个测试文件），属预防性放宽。**验证**：`memos-timeline` 在 `UTC` / `America/New_York` / `Asia/Shanghai` / `Pacific/Kiritimati` 四个时区下各 7 条全绿；**`TZ=UTC` 全量** web 1376 / worker 371 / shared 117 / mdcore 119；typecheck 4 包 0 error；lint 0 error。**未验证**：线上 CI 本身（要推送后看 GitHub 那封邮件变绿）；CI 上第 4 条失败的真实身份。
