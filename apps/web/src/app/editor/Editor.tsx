@@ -299,7 +299,8 @@ export function Editor({
           keymap.of([...defaultKeymap, ...foldKeymap, ...searchKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
           /*
-            把 front matter 藏成一个可点的小标签（2026-10-04）。
+            把 front matter 整段藏掉，**一个字都不显示**（2026-10-11 用户决定，取代原先"藏成可点小标签"）。
+            要改属性走正文区顶部的属性卡片：那里按类型给控件、也只改 md 里对应的那几行。
             **纯视觉**：文档内容与保存链路一字未动——菜单改标签/清单/标题时直接改的是 md，
             编辑器若自己存一份 front matter 副本再回贴，会把那些改动抹回去。
           */

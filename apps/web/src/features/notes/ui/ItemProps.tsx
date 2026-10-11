@@ -16,6 +16,11 @@
  *    md 那一路走编辑器句柄（`replaceFrontmatter`），派生列那一路走 `actions.ts`。
  *    组件自己存的话会和编辑器的自动保存打架——用户看着标签还在，刷新一下就没了。
  *
+ * 4. **库只管候选与控件，不管真假**（2026-10-11 属性库 §3.4）。属性库
+ *    （`features/props/model.ts`）给的是「这个键通常填什么、用哪个控件」，**不是白名单**：
+ *    库里没有的值照样写得进去（否则外部导入的笔记会被字典判成非法）。卡片只把"用户真的
+ *    改过"的值上报给库（§6.4），渲染本身一个都不收录。
+ *
  * ## 为什么形态是胶囊
  *
  * `DESIGN.md` §5.3 已定「条目属性（标签、截止、优先级、状态）→ 胶囊 `chip`」，所以复用
@@ -33,8 +38,18 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@menote/mdcore";
+import type { PropLibraryEntry } from "@menote/shared";
 import { Chip } from "../../../app/ui/Chip";
 import { ConfirmDialog } from "../../../app/ui/ConfirmDialog";
+import {
+  addEntry,
+  entryFor,
+  PROP_KEY_PATTERN,
+  registerValue,
+  RESERVED_PROP_KEYS,
+} from "../../props/model";
+import { PropPicker } from "../../props/ui/PropPicker";
+import { PropValueField } from "../../props/ui/PropValueField";
 import { readPropsCollapsed, writePropsCollapsed } from "../props-collapse";
 
 export interface ItemPropsProps {
@@ -53,6 +68,13 @@ export interface ItemPropsProps {
   onForeignChange: (key: string, value: string, block: boolean) => void;
   onForeignRemove: (key: string) => void;
   onForeignAdd: (key: string, value: string) => void;
+  /** 属性库（账号级，设计 §4）。**可选**：老调用点与只读场景不传就是空库 */
+  library?: readonly PropLibraryEntry[];
+  /**
+   * 库变了（新建键 / 登记一个值 / 把未入库的键收进来）。
+   * 只在**用户真的动过**时调用（§6.4）——渲染、切换条目都不该改库。
+   */
+  onLibraryChange?: (next: PropLibraryEntry[]) => void;
   /** 校验没过时把理由报上来（错误必须可见，不静默） */
   onError?: (message: string) => void;
 }
@@ -80,18 +102,21 @@ const PRIORITY_OPTIONS: Array<{ value: TaskPriority | ""; label: string }> = [
   { value: "low", label: TASK_PRIORITY_LABELS.low },
 ];
 
-/**
- * 键名只能用这些字符——含冒号或空格的键写进去会让整块 YAML 坏掉（与 mdcore 同一口径）
- */
-const KEY_PATTERN = /^[A-Za-z0-9_-]+$/;
-/** MeNote 自己的键：上面几行已经有它们的位置，不能再当外来属性新增（2026-10-11 加清单三键） */
-const RESERVED = new Set(["title", "tags", "menote", "status", "due", "priority"]);
+/*
+  键名与保留字的口径**只在 `features/props/model.ts` 里定义一份**（2026-10-11）：属性库的
+  管理页、卡片、导入录入步三处都要用同一套判据，各写一份必然会漂。
+*/
 
 /** 从 md 解析出这一篇要给卡片看的全部属性（纯函数，便于单测） */
 export function readItemProps(body: string): {
   tags: string[];
   task: { status: string | null; due: string | null; priority: string | null } | null;
   foreign: ForeignKey[];
+  /**
+   * 清单三键的**原文**（未归一）。路 A（用户 2026-10-11 拍板）要把它显示出来：
+   * `status: unread` 这种值不再"看不见"，而是作为「原样保留」的选项摆在那一行上。
+   */
+  rawTask: { status: string | null; due: string | null; priority: string | null } | null;
   /** 被接管、但值 MeNote 不认识的键，如 `status: unread`（设计 §4 的缓解，一行可见文案） */
   unrecognized: string[];
 } {
@@ -109,6 +134,7 @@ export function readItemProps(body: string): {
       ? { status: derived.status, due: derived.due, priority: derived.priority }
       : null,
     foreign: readForeignKeys(body),
+    rawTask: meta.task ? { ...meta.task } : null,
     unrecognized: unrecognizedTaskValues(meta.task, derived),
   };
 }
@@ -180,10 +206,12 @@ export function ItemProps({
   onForeignChange,
   onForeignRemove,
   onForeignAdd,
+  library = [],
+  onLibraryChange,
   onError,
 }: ItemPropsProps) {
   const props = readItemProps(body);
-  const { tags, task, foreign, unrecognized } = props;
+  const { tags, task, foreign, rawTask, unrecognized } = props;
   const disabled = !editable;
 
   /** 待确认删除的外来键（设计 §6.5：破坏性操作二次确认）；`null` = 没在确认 */
@@ -207,6 +235,18 @@ export function ItemProps({
     }
   }
 
+  /**
+   * 路 A（2026-10-11 用户拍板）：清单键**有原文、但 MeNote 不认识**时，把原文交出去当选项。
+   *
+   * 从前这种情况界面显示的是归一化后的空值，用户改一次就把它覆盖掉了——现在 `status: unread`
+   * 会作为「原样保留」摆在状态行上：看得见、能留着、不被静默改写。
+   */
+  function rawUnknown(field: "status" | "due" | "priority"): string | null {
+    const raw = rawTask?.[field] ?? null;
+    if (raw === null || raw === "") return null;
+    return (task?.[field] ?? null) === null ? raw : null;
+  }
+
   function addTag(): void {
     const raw = window.prompt("标签名");
     const name = (raw ?? "").trim();
@@ -219,15 +259,31 @@ export function ItemProps({
     guard(() => onTagsChange([...tags, name]));
   }
 
-  function addForeign(): void {
+  /** 库变了就上报（`onLibraryChange` 可选：没有宿主接收时什么也不做，不静默改本地状态） */
+  function changeLibrary(next: PropLibraryEntry[]): void {
+    onLibraryChange?.(next);
+  }
+
+  /**
+   * 「用一个属性」选中了一个**已经在库里**的键：只把它写进这一篇（空值），库不动。
+   *
+   * 与旧「+ 添加属性」的差别是这里**不再问键名**——键是菜单里选的，问一遍是白问。
+   */
+  function useForeign(key: string): void {
+    if (foreign.some((one) => one.key === key)) return;
+    guard(() => onForeignAdd(key, ""));
+  }
+
+  /** 「新建键…」：问键名 → 进库 → 写进这一篇。类型先给默认（管理页可改） */
+  function newForeign(): void {
     const raw = window.prompt("键名（只能用字母、数字、下划线、连字符）");
     const key = (raw ?? "").trim();
     if (key === "") return;
-    if (!KEY_PATTERN.test(key)) {
+    if (!PROP_KEY_PATTERN.test(key)) {
       onError?.("键名只能用字母、数字、下划线、连字符——含冒号或空格的键写进去会让整块 YAML 坏掉。");
       return;
     }
-    if (RESERVED.has(key)) {
+    if (RESERVED_PROP_KEYS.has(key)) {
       onError?.(`「${key}」是 MeNote 自己的键，上面已经有它的位置了。`);
       return;
     }
@@ -235,7 +291,24 @@ export function ItemProps({
       onError?.(`「${key}」已经在了。`);
       return;
     }
+    changeLibrary(addEntry(library, key));
     guard(() => onForeignAdd(key, ""));
+  }
+
+  /**
+   * 改一个外来键的值：先推回编辑器，再把"用户填过的这个值"报给库。
+   *
+   * 顺序与条件都重要：**只有值真的变了才上报**（`previous !== value`），否则光是点进来
+   * 又点出去就会把这一篇的所有键收进库——设计 §6.4 要的是"用户主动动过"。
+   */
+  function changeForeign(key: string, previous: string, value: string, block: boolean): void {
+    guard(() => onForeignChange(key, value, block));
+    if (previous !== value && value !== "") changeLibrary(registerValue(library, key, value, block));
+  }
+
+  /** 把这一篇里一个"库还不知道"的键收进库（类型按它现在的形状给个默认） */
+  function adoptForeign(key: string, block: boolean): void {
+    changeLibrary(addEntry(library, key, block ? "multiline" : "text"));
   }
 
   return (
@@ -308,7 +381,7 @@ export function ItemProps({
             <select
               id="itemprops-status"
               className="itemprops__field"
-              value={task?.status ?? ""}
+              value={task?.status ?? rawUnknown("status") ?? ""}
               disabled={disabled}
               title={disabled ? readOnlyReason : undefined}
               onChange={(event) =>
@@ -322,7 +395,11 @@ export function ItemProps({
               }
             >
               {/* 占位项只在当前值就是空的时候存在——它不提供「从已设置回到空」的路径 */}
-              {task?.status ? null : <option value="">未设置</option>}
+              {task?.status || rawUnknown("status") ? null : <option value="">未设置</option>}
+              {/* 路 A：不认识的原值自己占一个选项，选中它 = 原样留着（写回的仍是这个字符串） */}
+              {rawUnknown("status") ? (
+                <option value={rawUnknown("status") ?? ""}>{rawUnknown("status")}（原样保留）</option>
+              ) : null}
               {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -339,9 +416,13 @@ export function ItemProps({
           <div className="itemprops__vals">
             <input
               id="itemprops-due"
-              type="date"
+              /*
+                路 A：截止值不是 `YYYY-MM-DD` 时改用纯文本框。`date` 控件拿到认不出的值会把它
+                显示成空，失焦再写回一个空值——**等于把用户的数据抹掉**，宁可退成文本。
+              */
+              type={rawUnknown("due") ? "text" : "date"}
               className="itemprops__field"
-              value={task?.due ?? ""}
+              value={task?.due ?? rawUnknown("due") ?? ""}
               disabled={disabled}
               title={disabled ? readOnlyReason : undefined}
               onChange={(event) =>
@@ -365,7 +446,7 @@ export function ItemProps({
             <select
               id="itemprops-priority"
               className="itemprops__field"
-              value={task?.priority ?? ""}
+              value={task?.priority ?? rawUnknown("priority") ?? ""}
               disabled={disabled}
               title={disabled ? readOnlyReason : undefined}
               onChange={(event) =>
@@ -379,6 +460,12 @@ export function ItemProps({
                 )
               }
             >
+              {/* 路 A：与状态行同一口径——不认识的原值作为一个可选项留着 */}
+              {rawUnknown("priority") ? (
+                <option value={rawUnknown("priority") ?? ""}>
+                  {rawUnknown("priority")}（原样保留）
+                </option>
+              ) : null}
               {PRIORITY_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -391,12 +478,13 @@ export function ItemProps({
 
       {/*
         被接管、但值不识别的键（如顶层 `status: unread`）：**必须说出来**。它已经被认成清单
-        条目、不再出现在「其他属性」段里，行上显示的还是归一化后的空值——不提示的话用户改一次
-        属性就把这个值默默覆盖掉了（设计 §4 的缓解，就是一行文案，不加控件）。
+        条目、不再出现在「其他属性」段里。2026-10-11 起走**路 A**：那三行各自把原值作为
+        「原样保留」的选项摆出来（可见 / 可留 / 可改），这行文案只负责说明"它不是错的写法"。
       */}
       {unrecognized.length > 0 ? (
         <div className="itemprops__warn">
-          {unrecognized.join("、")} 不是 MeNote 认识的值，改动上面这几行会把它覆盖掉。
+          {unrecognized.join("、")} 不是 MeNote 认识的值——它已作为「原样保留」摆在上面对应那一行，
+          留着不影响别的；选中别的值才会把它改成 MeNote 的写法。
         </div>
       ) : null}
 
@@ -410,56 +498,66 @@ export function ItemProps({
           {foreign.length > 0 ? (
             <div className="itemprops__head">其他属性 · 键名原样保留</div>
           ) : null}
-          {foreign.map((one) => (
-            <div className="itemprops__row" key={one.key}>
-              <span className="itemprops__key" title="键名原样保留，不翻译也不改写">
-                {one.key}
-              </span>
-              <div className="itemprops__vals">
-                {one.block ? (
-                  <textarea
-                    className="itemprops__value itemprops__value--block"
-                    rows={Math.min(4, one.value.split("\n").length)}
-                    defaultValue={one.value}
-                    readOnly={disabled}
-                    title={disabled ? readOnlyReason : undefined}
-                    aria-label={`${one.key} 的值`}
-                    onBlur={(event) =>
-                      guard(() => onForeignChange(one.key, event.target.value, true))
-                    }
+          {foreign.map((one) => {
+            /*
+              未入库 = 属性库还不知道这个键。（内置键不可能出现在 `foreign` 里：`title` / `tags` /
+              清单三键都被 `mdcore` 当顶层白名单取走了。）
+            */
+            const entry = entryFor(library, one.key);
+            return (
+              <div className="itemprops__row" key={one.key}>
+                <span className="itemprops__key" title="键名原样保留，不翻译也不改写">
+                  {one.key}
+                </span>
+                <div className="itemprops__vals">
+                  <PropValueField
+                    propKey={one.key}
+                    entry={entry}
+                    value={one.value}
+                    block={one.block}
+                    disabled={disabled}
+                    readOnlyReason={readOnlyReason}
+                    onCommit={(value, block) => changeForeign(one.key, one.value, value, block)}
                   />
-                ) : (
-                  <input
-                    className="itemprops__value"
-                    defaultValue={one.value}
-                    readOnly={disabled}
-                    title={disabled ? readOnlyReason : undefined}
-                    aria-label={`${one.key} 的值`}
-                    onBlur={(event) => guard(() => onForeignChange(one.key, event.target.value, false))}
-                  />
-                )}
-                {editable ? (
-                  <button
-                    type="button"
-                    className="itemprops__x itemprops__x--row"
-                    aria-label={`删除属性 ${one.key}`}
-                    title={`删除 ${one.key}`}
-                    /* 破坏性操作要二次确认（设计 §6.5）：删完这篇 md 里就没有了，Obsidian 那边也看不到 */
-                    onClick={() => setPendingRemove(one.key)}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                  </button>
-                ) : null}
+                  {editable && !entry ? (
+                    <button
+                      type="button"
+                      className="itemprops__lib"
+                      title={`把「${one.key}」收进属性库——只是让以后新建它时能选中、按类型给控件，不改这一篇的内容`}
+                      onClick={() => adoptForeign(one.key, one.block)}
+                    >
+                      未入库
+                    </button>
+                  ) : null}
+                  {editable ? (
+                    <button
+                      type="button"
+                      className="itemprops__x itemprops__x--row"
+                      aria-label={`本篇不再用 ${one.key}`}
+                      title={`本篇不再用 ${one.key}`}
+                      /*
+                        这里的 ⓧ 是「本篇不用」，**不是删库条目**（用户 2026-10-11：删除只在管理页）。
+                        破坏性后果（这一行 md 从这篇里消失、Obsidian 也看不到）仍要二次确认。
+                      */
+                      onClick={() => setPendingRemove(one.key)}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {editable ? (
             <div className="itemprops__foot">
-              <button type="button" className="itemprops__add" onClick={addForeign}>
-                + 添加属性
-              </button>
+              <PropPicker
+                library={library}
+                used={foreign.map((one) => one.key)}
+                onPick={useForeign}
+                onNewKey={newForeign}
+              />
             </div>
           ) : null}
         </div>
@@ -467,13 +565,13 @@ export function ItemProps({
 
       <ConfirmDialog
         open={pendingRemove !== null}
-        title={pendingRemove === null ? "" : `删除属性 ${pendingRemove}？`}
+        title={pendingRemove === null ? "" : `本篇不再用 ${pendingRemove}？`}
         desc={
           pendingRemove === null
             ? ""
-            : `删掉「${pendingRemove}」之后，这篇 md 的 front matter 里就没有这一行了，Obsidian 那边也看不到它。`
+            : `这一篇不再有「${pendingRemove}」了：这篇 md 的 front matter 里那一行会被删掉，Obsidian 那边也看不到它。属性库里的定义还在（设置 › 属性库 里可以改或删），别的笔记不受影响。`
         }
-        confirmLabel="删除属性"
+        confirmLabel="从本篇移除"
         onConfirm={() => {
           const key = pendingRemove;
           setPendingRemove(null);

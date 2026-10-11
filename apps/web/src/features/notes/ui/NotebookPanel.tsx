@@ -29,6 +29,7 @@ import { ImportNotesFlow, type ImportNotesFlowHandle } from "./ImportNotesFlow";
 import { NbAddButton } from "./NbAddButton";
 import { canCreateChildFolder, folderMoveTargets, type MoveTarget } from "../folders";
 import type { ImportNotesSummary } from "../import-md";
+import type { PropLibraryEntry } from "../../props/model";
 import type { NotesView } from "../views";
 
 export interface NotebookPanelProps {
@@ -80,6 +81,12 @@ export interface NotebookPanelProps {
    */
   onImportNotes: (files: readonly File[]) => Promise<ImportNotesSummary>;
   /**
+   * 属性库（2026-10-11 设计 §6.3）：导入流程的**录入步**要这两项才出现。
+   * 缺省 = 不做这一步（老调用点与用例不必补参数）——它是加分项，不该成为导入路径上的新堵点。
+   */
+  propLibrary?: readonly PropLibraryEntry[];
+  onLearnProps?: (next: PropLibraryEntry[]) => void;
+  /**
    * 新建表格（v0.6.16）：**先在面板里定列结构**，定完才建条目。给的是渲染好的表格文档。
    * 取消定义 = 不建（`TableColumnManager` 的 `mode="create"` 不可点遮罩关闭，只能「创建表格」或「取消」）。
    */
@@ -102,6 +109,8 @@ export function NotebookPanel({
   selectedItemId = null,
   onImportNotes,
   onCreateTable,
+  propLibrary,
+  onLearnProps,
 }: NotebookPanelProps) {
   const [creatingIn, setCreatingIn] = useState<{ parentId: string | null } | null>(null);
   const [draftName, setDraftName] = useState("");
@@ -374,6 +383,8 @@ export function NotebookPanel({
         ref={importRef}
         targetLabel={importTargetLabel}
         onImport={onImportNotes}
+        library={propLibrary}
+        onLearn={onLearnProps}
       />
 
       {/*

@@ -11,6 +11,7 @@
 import type { ReactNode } from "react";
 import type { NotesWorkspace } from "../features/notes/useNotesWorkspace";
 import { NotebookPanel } from "../features/notes/ui/NotebookPanel";
+import type { PropLibraryEntry } from "../features/props/model";
 import { isScopeGateOpen, type PrivacyGate } from "@menote/shared";
 import type { LocalFolder } from "../data/db";
 import { isInVault } from "../features/privacy/vault";
@@ -45,6 +46,10 @@ export interface NavPanelsInput {
   onOpenItem: (itemId: string) => void;
   /** 正文区当前打开的条目（树内文档的选中反馈） */
   selectedItemId: string | null;
+  /** 属性库（2026-10-11 设计 §6.3）：导入流程的录入步要用它判"哪些键还不认识" */
+  propLibrary?: readonly PropLibraryEntry[];
+  /** 收录导入时勾选的属性键（写入在 `App`：`patchSettings`） */
+  onLearnProps?: (next: PropLibraryEntry[]) => void;
 }
 
 export interface FnBarWiringInput {
@@ -165,6 +170,8 @@ export function navPanels(input: NavPanelsInput): {
       /* v0.6.16：`+` 菜单的「导入笔记」与「新建表格」——落点由 workspace 按当前选中的笔记本算 */
       onImportNotes={workspace.importNotes}
       onCreateTable={workspace.createTable}
+      propLibrary={input.propLibrary}
+      onLearnProps={input.onLearnProps}
       /* 树里列条目（B2 批）：开关来自设置（默认关），条目来自 workspace 那张稳定的索引表 */
       showItems={input.showItems}
       itemsByFolder={workspace.itemsByFolder}

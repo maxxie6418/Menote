@@ -8,7 +8,7 @@
  * M1 起初只放 3 个分类（通用 / 账户与安全 / 实例管理），其余分类在 M2/M6 补内容后再进导航。
  * 「实例管理」仅 owner 可见。
  */
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 import type { StartView, TaskFilterForm, UserSettings } from "@menote/shared";
 import { TASK_FILTER_FORMS } from "@menote/shared";
 import { Button, Field } from "../../../app/ui/Controls";
@@ -23,6 +23,8 @@ import { BackupPage } from "../../backup/ui/BackupPage";
 import { MySharesPage } from "../../shares/ui/MySharesPage";
 import { McpSettingsPage } from "../../mcp/ui/McpSettingsPage";
 import { AttachmentManagerPage } from "../../attachments/ui/AttachmentManagerPage";
+import { PropLibraryPage } from "../../props/ui/PropLibraryPage";
+import type { PropLibraryEntry } from "../../props/model";
 import { InstancePage } from "./InstancePage";
 
 /**
@@ -34,6 +36,7 @@ import { InstancePage } from "./InstancePage";
  * **【v0.8.4 调整】9 类**（决定见 `docs/modules/Menote-M8-设置页信息架构-v1.md`）：
  * 原 11 类里「编辑器」与「关于」被撤销、内容并进「通用」；原「数据管理」改名「附件」
  * （**id 仍是 `data`**，只换显示名，老书签与深链照旧能用）。
+ * **【v0.8.30】10 类**：新增「属性库」（`prop-library`，用户 2026-10-11 拍板，设计 §6.2）。
  * 简述不进页面正文，只进页头那个 ⓘ（DESIGN.md §5.4-1：说明性文字不平铺）。
  */
 const PAGE_META: Record<SettingsPageId, { title: string; summary: string }> = {
@@ -53,12 +56,16 @@ const PAGE_META: Record<SettingsPageId, { title: string; summary: string }> = {
   privacy: { title: "隐私锁", summary: "加密空间、门禁与隐私密码" },
   versions: { title: "版本与回收站", summary: "版本封存与保留策略、回收站保留天数" },
   data: { title: "附件", summary: "附件占用、孤儿附件与清理" },
+  "prop-library": {
+    title: "属性库",
+    summary: "笔记属性的键值字典：有哪些属性、各是什么类型、有哪些候选取值",
+  },
   instance: { title: "实例管理", summary: "本实例的注册开关与分享子域（仅管理员）" },
 };
 
 /**
- * 导航顺序即当前生效的 9 类（v0.8.4 起，见 `docs/modules/Menote-M8-设置页信息架构-v1.md`）：
- * 通用 / 账户与安全 / 隐私锁 / 版本与回收站 / 备份与导出 / 分享 / MCP / 附件 / 实例管理。
+ * 导航顺序即当前生效的 10 类（v0.8.4 起 9 类，v0.8.30 加「属性库」）：
+ * 通用 / 账户与安全 / 隐私锁 / 版本与回收站 / 备份与导出 / 分享 / MCP / 附件 / 属性库 / 实例管理。
  * 「实例管理」只对 owner 列出（见下方 `pages` 的过滤）。
  *
  * **清单直接引用路由那一份**：两处各写一份会漂移——M3 加「隐私锁」时只加了
@@ -192,6 +199,15 @@ export function SettingsPanel({
   onBackToNotes,
 }: SettingsPanelProps) {
   const pages = NAV_ORDER.filter((candidate) => candidate !== "instance" || role === "owner");
+
+  /**
+   * 属性库（v0.8.30）的写入：**整份替换**而不是合并——删条目就是"给出少了的那份"。
+   * 在这一层包一层，`SettingsPanel` 的调用点（`SettingsView`）不必为属性库再开一个 prop。
+   */
+  const patchPropLibrary = useCallback(
+    (next: PropLibraryEntry[]) => onPatchSettings({ prop_library: [...next] }),
+    [onPatchSettings],
+  );
   const meta = PAGE_META[page];
 
   return (
@@ -435,6 +451,11 @@ export function SettingsPanel({
         {page === "mcp" ? <McpSettingsPage /> : null}
 
         {page === "data" ? <AttachmentManagerPage /> : null}
+
+        {/* 属性库（v0.8.30）：条目数据来自账号级设置，页面自己读 `userSettings` 并回报改动 */}
+        {page === "prop-library" ? (
+          <PropLibraryPage library={userSettings.prop_library} onChange={patchPropLibrary} />
+        ) : null}
 
         {page === "privacy" ? (
           privacyPage ?? (

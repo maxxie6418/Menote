@@ -1339,6 +1339,140 @@ button {
   font-size: var(--fs-micro);
   padding: var(--sp-1) 0 0 84px;
 }
+/*
+ * 「未入库」标记（属性库 v2.1 §6.1）：点它只是把键收进库（以后新建时能选中、按类型给控件），
+ * 不改这一篇的内容——所以它是**提示性**的虚线 chip，不是危险动作，也不做成主按钮。
+ */
+.itemprops__lib {
+  flex: none;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.itemprops__lib:hover {
+  color: var(--primary-ink);
+  border-color: var(--primary-line);
+  background: var(--primary-soft);
+}
+.itemprops__lib:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/*
+ * 导入时的录入步（属性库 v2.1 §6.3）：只列陌生键；**默认全不勾**。
+ * 一行 = 勾选 + 键名 + 出现篇数 + 一个样例值；勾上才长出类型与「记住取值」。
+ */
+.learnlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.learnlist__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.learnlist__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+.learnlist__key {
+  font-family: var(--mono);
+  word-break: break-all;
+}
+/* 样例值只是"认出是哪个属性"的线索，长值截断由 `sampleHint` 负责 */
+.learnlist__sample {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  word-break: break-all;
+}
+.learnlist__opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-left: var(--sp-4);
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+.learnlist__opts .field__input {
+  width: auto;
+}
+
+/* 设置 › 属性库（管理页，设计 §6.2）：一张卡管自建条目，一张卡只读展示内置键 */
+.proplib__new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.proplib__new .field__input:first-child {
+  flex: 1 1 12rem;
+}
+.proplib__list {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+/* 四列：键名 / 类型 / 候选取值 / 删除。窄了会换行（不做固定宽 + 绝对定位） */
+.proplib__row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) 9rem minmax(9rem, 1.3fr) auto;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.proplib__row--builtin {
+  align-items: baseline;
+}
+.proplib__key {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.proplib__keyname {
+  font-family: var(--mono);
+  word-break: break-all;
+}
+.proplib__type {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+.proplib__usage {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+.proplib__badge {
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding: 1px 8px;
+}
+.proplib__note {
+  margin: var(--sp-3) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
 
 /* 代码块：编辑器侧只上底色，围栏与语言保持源码可见（首期不做语言高亮） */
 .cm-live-codeblock {

@@ -18,6 +18,7 @@ import { DocStatusBar } from "./DocStatusBar";
 import { buildMoreMenuItems } from "./moreMenuItems";
 import { ItemProps, shouldShowItemProps } from "./ItemProps";
 import { useItemProps } from "../useItemProps";
+import type { PropLibraryEntry } from "../../props/model";
 import { TitleInput } from "./TitleInput";
 import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
 import { useTableDoc } from "../../tables/useTableDoc";
@@ -175,6 +176,13 @@ export interface NoteWorkspaceProps {
   editorHandle?: EditorHandle | null;
   /** 属性改动失败时的提示出口（校验没过、正文已变等） */
   onPropsError?: (message: string) => void;
+  /**
+   * 属性库（2026-10-11 设计 §6.1；账号级偏好，存在 `user_settings.prop_library`）。
+   * 组件一行都不改它——库条目只在用户**主动动过**时（新建键 / 改了值 / 点「未入库」）才收录，
+   * 渲染不自动收录（设计 §6.4）；真正的写入在宿主那一侧。
+   */
+  propLibrary?: readonly PropLibraryEntry[];
+  onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
 }
 
 export function NoteWorkspace({
@@ -206,6 +214,8 @@ export function NoteWorkspace({
   onEditorReady,
   editorHandle = null,
   onPropsError,
+  propLibrary = [],
+  onPropLibraryChange,
 }: NoteWorkspaceProps) {
   /** 用户在设置里**开着**的档（`editor_modes`）；这里同时收口"产品允许哪几档" */
   const available = useMemo(() => normalizeEditorModes(availableModes), [availableModes]);
@@ -459,6 +469,8 @@ export function NoteWorkspace({
           onForeignChange={propsApi.onForeignChange}
           onForeignRemove={propsApi.onForeignRemove}
           onForeignAdd={propsApi.onForeignAdd}
+          library={propLibrary}
+          onLibraryChange={onPropLibraryChange}
           onError={onPropsError}
         />
       ) : null}

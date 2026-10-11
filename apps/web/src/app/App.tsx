@@ -19,6 +19,7 @@ import { changeLoginPassword } from "../features/settings/model";
 import { PrivacySettingsPage } from "../features/settings/ui/PrivacySettingsPage";
 import { SettingsView } from "./SettingsView";
 import { useUserSettings } from "../features/settings/useUserSettings";
+import type { PropLibraryEntry } from "../features/props/model";
 import type { UserSettings } from "@menote/shared";
 import { AppShell } from "./AppShell";
 import { FnBar } from "./fnbar/FnBar";
@@ -122,6 +123,14 @@ export default function App() {
     },
     [userSettings],
   );
+  /**
+   * 属性库（2026-10-11 设计 §6）：**账号级**偏好，写入只这一条路径
+   * （属性卡片与导入录入步共用）。整份替换而不是合并——删条目靠"给出少了的那份"表达。
+   */
+  const patchPropLibrary = useCallback(
+    (next: PropLibraryEntry[]) => patchSettings({ prop_library: [...next] }),
+    [patchSettings],
+  );
 
   /**
    * 隐私锁（M3-4）：材料缓存、门禁状态、档位计时与跨标签一致都在这里；
@@ -217,6 +226,9 @@ export default function App() {
       setBrowse(null);
       workspace.setView({ kind: "notebook", folderId: folderId ?? workspace.vault.id });
     },
+    /* 属性库（2026-10-11）：导入流程的录入步——库是账号级偏好，写入只此一处 */
+    propLibrary: userSettings.settings.prop_library,
+    onLearnProps: patchPropLibrary,
   });
 
   /**
@@ -621,6 +633,8 @@ export default function App() {
               `NoteRow` 的 `memo` 浅比较（列表行的重渲染守卫，2026-09-27 性能修复）。
             */
             onToast={pushToast}
+            propLibrary={userSettings.settings.prop_library}
+            onPropLibraryChange={patchPropLibrary}
           />
         )}
       </AppShell>

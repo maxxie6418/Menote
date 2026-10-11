@@ -280,6 +280,40 @@ export type NotebookSettings = v.InferOutput<typeof NotebookSettingsSchema>;
 
 export const DEFAULT_NOTEBOOK_SETTINGS: NotebookSettings = { show_items: false };
 
+/**
+ * 属性库条目的类型（2026-10-11，《属性库设计》v2.1 §3.2）。
+ *
+ * **只影响前台用什么控件，不参与 md 解析与往返**：`mdcore` 不读属性库，YAML 里不认识的值
+ * 仍按原格式原样带回（「键名原样、值不替用户猜」的底线）。
+ */
+export const PROP_TYPES = ["text", "multiline", "date", "number", "boolean", "choice"] as const;
+export const PropTypeSchema = v.union([
+  v.literal("text"),
+  v.literal("multiline"),
+  v.literal("date"),
+  v.literal("number"),
+  v.literal("boolean"),
+  v.literal("choice"),
+]);
+export type PropType = (typeof PROP_TYPES)[number];
+
+/**
+ * 属性库里的一条：一个键（+ 可选类型与候选取值）。
+ *
+ * `values` 是**候选**不是白名单——`text` / `multiline` / `date` / `number` 下库里没有的值照样
+ * 写得进去（否则外部导入的笔记会被"字典"判成非法）；只有用户明确把某个键设成 `choice` 才收窄。
+ *
+ * `builtin` 为 `true` 的是内置键（`title` / `tags` / `status` / `due` / `priority`）：
+ * 前三类的定义**不落库**（由 `apps/web` 现成给出），这条字段留在契约里是为了前向兼容。
+ */
+export const PropLibraryEntrySchema = v.object({
+  key: v.string(),
+  builtin: v.optional(v.boolean(), false),
+  type: v.optional(PropTypeSchema, "text"),
+  values: v.optional(v.array(v.string()), []),
+});
+export type PropLibraryEntry = v.InferOutput<typeof PropLibraryEntrySchema>;
+
 export const UserSettingsSchema = v.object({
   start_view: StartViewSchema,
   timezone: v.string(),
@@ -337,6 +371,14 @@ export const UserSettingsSchema = v.object({
    * （旧客户端 PUT 设置不带该字段不会被 422）；默认 `false`，见 `NotebookSettingsSchema`。
    */
   notebook: v.optional(NotebookSettingsSchema, DEFAULT_NOTEBOOK_SETTINGS),
+  /**
+   * 属性库（2026-10-11，《属性库设计》v2.1 §4）：**账号级**一份，跨设备、跨笔记本共用。
+   *
+   * 同样是 **optional + 默认值**（旧客户端 PUT 设置不带该字段不会被 422，
+   * 服务端读旧 JSON 由 schema 补默认值——**不需要迁移**：设置是整份 JSON）。
+   * 默认**空库**：不预设任何自定义键（内置键的定义由前端现成给出，不落库）。
+   */
+  prop_library: v.optional(v.array(PropLibraryEntrySchema), []),
 });
 export type UserSettings = v.InferOutput<typeof UserSettingsSchema>;
 
@@ -353,6 +395,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   task_view: DEFAULT_TASK_VIEW_SETTINGS,
   memo_view: DEFAULT_MEMO_VIEW_SETTINGS,
   notebook: DEFAULT_NOTEBOOK_SETTINGS,
+  prop_library: [],
 };
 
 /** `GET /api/settings` 与同步响应里的设置载荷 */

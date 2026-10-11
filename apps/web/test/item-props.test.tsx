@@ -154,13 +154,13 @@ describe("卡片渲染", () => {
     expect(screen.getByLabelText("移除标签 claude")).toBeTruthy();
   });
 
-  it("外来键行有删除按钮，标签行没有删除整行的", () => {
+  it("外来键行有「本篇不再用」按钮，标签行没有删除整行的（用户 2026-10-11：删条目只在管理页）", () => {
     render(<ItemProps body={OB} editable {...noop} />);
-    expect(screen.getByLabelText("删除属性 url")).toBeTruthy();
+    expect(screen.getByLabelText("本篇不再用 url")).toBeTruthy();
     // tags 的删除是「删这一个 chip」，不是「删掉 tags 键」
-    expect(screen.queryByLabelText("删除属性 tags")).toBeNull();
-    expect(screen.queryByLabelText("删除属性 title")).toBeNull();
-    expect(screen.queryByLabelText("删除属性 menote")).toBeNull();
+    expect(screen.queryByLabelText("本篇不再用 tags")).toBeNull();
+    expect(screen.queryByLabelText("本篇不再用 title")).toBeNull();
+    expect(screen.queryByLabelText("本篇不再用 menote")).toBeNull();
   });
 
   it("块序列键用多行框、单行键用单行框", () => {
@@ -184,24 +184,24 @@ describe("卡片渲染", () => {
     expect((screen.getByLabelText("url 的值") as HTMLInputElement).readOnly).toBe(true);
     expect(screen.getByLabelText("url 的值").getAttribute("title")).toBe("切到「仅编辑」才能改属性");
     // 只读时不给删除入口
-    expect(screen.queryByLabelText("删除属性 url")).toBeNull();
+    expect(screen.queryByLabelText("本篇不再用 url")).toBeNull();
   });
 
-  it("没有外来键时「+ 添加属性」仍在（空白笔记的唯一新增入口，设计 §6.4）", () => {
+  it("没有外来键时「+ 用一个属性」仍在（空白笔记的唯一新增入口，设计 §6.4）", () => {
     render(<ItemProps body="---\ntitle: T\ntags: [a]\n---\n\n正文" editable {...noop} />);
     // 段头只在真有外来键时渲染——空着也不留一行「其他属性」噪声
     expect(screen.queryByText(/其他属性/)).toBeNull();
-    expect(screen.getByText("+ 添加属性")).toBeTruthy();
+    expect(screen.getByText("+ 用一个属性")).toBeTruthy();
   });
 
   it("完全没有 front matter 的笔记也有新增入口（从前这里什么都没有）", () => {
     render(<ItemProps body="正文" editable {...noop} />);
-    expect(screen.getByText("+ 添加属性")).toBeTruthy();
+    expect(screen.getByText("+ 用一个属性")).toBeTruthy();
   });
 
   it("只读（预览）时不给新增入口", () => {
     render(<ItemProps body="---\ntitle: T\n---\n\n正文" editable={false} {...noop} />);
-    expect(screen.queryByText("+ 添加属性")).toBeNull();
+    expect(screen.queryByText("+ 用一个属性")).toBeNull();
   });
 
   it("被接管但值不认识的键有一行可见提示（设计 §4：不能默默覆盖掉）", () => {
@@ -213,9 +213,19 @@ describe("卡片渲染", () => {
     render(<ItemProps body={OB} editable {...noop} />);
     const select = screen.getByLabelText("状态") as HTMLSelectElement;
     const labels = [...select.options].map((one) => one.text);
-    // 当前状态就是空 → 多一个只在此时出现的占位项
-    expect(labels).toEqual(["未设置", "待办", "进行中", "已完成"]);
+    /*
+      OB 是「键在、值不认识」的清单条目（路 A）：原值自己占一项、摆在真实选项之前。
+      **没有「未设置」占位**——当前不是空。更没有「未设为清单」：取消清单的入口已摘掉。
+    */
+    expect(labels).toEqual(["unread（原样保留）", "待办", "进行中", "已完成"]);
     expect(labels).not.toContain("未设为清单");
+  });
+
+  it("状态键在、值为空 → 才有「未设置」占位（它只如实显示，不是回到空的路径）", () => {
+    render(<ItemProps body={"---\nstatus:\n---\n\n正文"} editable {...noop} />);
+    const select = screen.getByLabelText("状态") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect([...select.options].map((one) => one.text)).toEqual(["未设置", "待办", "进行中", "已完成"]);
   });
 
   it("点状态下拉里任何一个真实选项，都只写一个非空 status（卡片里没有「清掉三键」那条路）", () => {
@@ -223,10 +233,11 @@ describe("卡片渲染", () => {
     render(<ItemProps body={OB} editable {...noop} onTaskChange={onTaskChange} />);
     const select = screen.getByLabelText("状态") as HTMLSelectElement;
     const real = [...select.options].filter((one) => one.value !== "");
-    expect(real.map((one) => one.value)).toEqual(["todo", "doing", "done"]);
+    // OB 的原值 `unread` 也算一个非空 status（路 A：选中它 = 原样留着），所以是 4 个
+    expect(real.map((one) => one.value)).toEqual(["unread", "todo", "doing", "done"]);
     for (const option of real) fireEvent.change(select, { target: { value: option.value } });
 
-    expect(onTaskChange).toHaveBeenCalledTimes(3);
+    expect(onTaskChange).toHaveBeenCalledTimes(4);
     for (const [payload] of onTaskChange.mock.calls) {
       expect(typeof payload.status).toBe("string");
     }
@@ -234,7 +245,11 @@ describe("卡片渲染", () => {
 
   it("「未设置」占位项只在当前就是空的时候在，不提供回到空的路径", () => {
     const withStatus = updateMenoteKeys("正文", { task: { status: "todo", due: null, priority: null } });
-    const first = render(<ItemProps body={OB} editable {...noop} />);
+    /*
+      前半段必须用「键在、值为空」的正文：OB 的值是 `unread`，那是"有值但陌生"（路 A 会把它
+      摆成一个选项），不是空 —— 拿 OB 验不到这个占位项。
+    */
+    const first = render(<ItemProps body={"---\nstatus:\n---\n\n正文"} editable {...noop} />);
     expect((screen.getByLabelText("状态") as HTMLSelectElement).value).toBe("");
     first.unmount();
 
@@ -271,13 +286,14 @@ describe("删外来键要二次确认（设计 §6.5：破坏性操作必须写�
     const onForeignRemove = vi.fn();
     render(<ItemProps body={OB} editable {...noop} onForeignRemove={onForeignRemove} />);
 
-    fireEvent.click(screen.getByLabelText("删除属性 url"));
+    fireEvent.click(screen.getByLabelText("本篇不再用 url"));
     expect(onForeignRemove).not.toHaveBeenCalled();
-    expect(screen.getByText("删除属性 url？")).toBeTruthy();
-    // 后果要说到位：md 里没有了、Obsidian 那边也看不到
-    expect(screen.getByText(/这篇 md 的 front matter 里就没有这一行/)).toBeTruthy();
+    expect(screen.getByText("本篇不再用 url？")).toBeTruthy();
+    // 后果要说到位：md 里那一行会没、Obsidian 那边也看不到、库里的定义还在
+    expect(screen.getByText(/这篇 md 的 front matter 里那一行会被删掉/)).toBeTruthy();
+    expect(screen.getByText(/属性库里的定义还在/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "删除属性" }));
+    fireEvent.click(screen.getByRole("button", { name: "从本篇移除" }));
     expect(onForeignRemove).toHaveBeenCalledWith("url");
   });
 
@@ -285,7 +301,7 @@ describe("删外来键要二次确认（设计 §6.5：破坏性操作必须写�
     const onForeignRemove = vi.fn();
     render(<ItemProps body={OB} editable {...noop} onForeignRemove={onForeignRemove} />);
 
-    fireEvent.click(screen.getByLabelText("删除属性 url"));
+    fireEvent.click(screen.getByLabelText("本篇不再用 url"));
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(onForeignRemove).not.toHaveBeenCalled();
   });

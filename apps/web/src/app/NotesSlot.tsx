@@ -10,6 +10,7 @@ import type { NotesWorkspace } from "../features/notes/useNotesWorkspace";
 import { isScopeGateOpen, type EditorMode } from "@menote/shared";
 import { useCallback, useMemo } from "react";
 import type { DocMode } from "../features/notes/ui/NoteWorkspace";
+import type { PropLibraryEntry } from "../features/props/model";
 import { formatCountdown } from "../features/privacy/model";
 import type { PrivacyLockState } from "../features/privacy/usePrivacyLock";
 import { useTicker } from "./ui/useTicker";
@@ -32,6 +33,12 @@ export interface NotesSlotProps {
    */
   onRequestItemUnlock: (itemId: string) => void;
   onToast: (message: string, tone: "success" | "warn" | "error") => void;
+  /**
+   * 属性库（2026-10-11 设计 §6）：账号级偏好，正文区的属性卡片要在库里查候选与控件类型。
+   * 写入在 `App`（`patchSettings`）；本层只转发——卡片自己一行都不落地。
+   */
+  propLibrary?: readonly PropLibraryEntry[];
+  onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
 }
 
 /** 把动作里的异常转成一句能读的提示（服务端 message 已经是中文可读文案） */
@@ -49,6 +56,8 @@ export function NotesSlot({
   onRequestUnlock,
   onRequestItemUnlock,
   onToast,
+  propLibrary,
+  onPropLibraryChange,
 }: NotesSlotProps) {
   const gate = privacy.gate;
   const unlocked = isScopeGateOpen(gate);
@@ -169,6 +178,8 @@ export function NotesSlot({
       }}
       onToast={onToast}
       vault={vault}
+      propLibrary={propLibrary}
+      onPropLibraryChange={onPropLibraryChange}
     />
   );
 }

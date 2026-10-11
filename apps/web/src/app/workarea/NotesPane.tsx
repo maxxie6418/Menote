@@ -29,6 +29,7 @@ import { useAttachments } from "../../features/attachments/useAttachments";
 import { LEFTOVER_HINT } from "../../features/attachments/model";
 import { RemoveAttachmentRefDialog } from "../../features/attachments/ui/RemoveAttachmentRefDialog";
 import type { EditorHandle } from "../editor/Editor";
+import type { PropLibraryEntry } from "../../features/props/model";
 import { TwoPane } from "./TwoPane";
 
 export interface NotesPaneProps {
@@ -68,6 +69,12 @@ export interface NotesPaneProps {
     onLock?: () => void;
     lockLabel?: string;
   } | null;
+  /**
+   * 属性库（2026-10-11 设计 §6）：账号级偏好（`user_settings.prop_library`）。
+   * 本组件只**转发**——属性卡片与导入录入步报改动，写入在 `App`（`patchSettings`）。
+   */
+  propLibrary?: readonly PropLibraryEntry[];
+  onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
 }
 
 export function NotesPane({
@@ -79,6 +86,8 @@ export function NotesPane({
   onToggleEncryption,
   onToast,
   vault,
+  propLibrary,
+  onPropLibraryChange,
 }: NotesPaneProps) {
   const selected = workspace.selected;
   /** 待确认删除的条目 id（确认框在下方渲染；列表行只报事件） */
@@ -320,6 +329,8 @@ export function NotesPane({
           <NoteWorkspace
             key={`${workspace.selectedId ?? "none"}:${workspace.docEpoch}`}
             item={selected}
+            propLibrary={propLibrary}
+            onPropLibraryChange={onPropLibraryChange}
             initialBody={workspace.initialBody}
             snapshot={workspace.snapshot}
             initialMode={editorMode}
