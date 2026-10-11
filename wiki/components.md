@@ -5,8 +5,8 @@
 | 文档性质 | 前端组件规划：**组件名、所属 feature / 落点、职责、props 约定、复用关系**，以及与界面原型的对应。是架构文档 §2.3.2「功能 → 代码落点对照表」在**组件层**的展开 |
 | 基准 | 需求文档 `wiki/Menote-设计文档-v7.4.md`（下称“需求文档”）；功能点编号与验收看 `wiki/Menote-功能拆解-v2.md`（下称“功能拆解”）；落点、分层与依赖方向看 `wiki/Menote-项目架构-v1.md`（下称“架构”）§2.3、§3.1；视觉与令牌看根目录 `DESIGN.md`（下称“视觉源”） |
 | 主要来源 | 界面原型 `prototype/menote-prototype.html`（高保真）与 `prototype/menote-framework.html`（线框评审页）。引用原型**只写元素名或选择器**（如 `#topAccount`、`.composer`、`.nav-seg`），不写行号——行号随原型改动会失效 |
-| 版本 | v15（文件名 `components.md` 不变，版本在修订记录内演进） |
-| 日期 | 2026-09-29（v7）/ **2026-10-02（v8 笔记本添加菜单加导入笔记、新建表格接线）** / **2026-10-03（v9 M5 分享收口回写、v10 M6 第一批回写、v11 M6 MCP 回写、v12 M7 定时自动备份回写）** / **2026-10-04（v13 设置页信息架构 11 → 9 类、v14 快捷菜单「立即备份」接线）** |
+| 版本 | v17（文件名 `components.md` 不变，版本在修订记录内演进） |
+| 日期 | 2026-09-29（v7）/ **2026-10-02（v8 笔记本添加菜单加导入笔记、新建表格接线）** / **2026-10-03（v9 M5 分享收口回写、v10 M6 第一批回写、v11 M6 MCP 回写、v12 M7 定时自动备份回写）** / **2026-10-04（v13 设置页信息架构 11 → 9 类、v14 快捷菜单「立即备份」接线）** / **2026-10-11（v16 编辑器专项优化 P1、v17 属性库落地回写）** |
 | 状态 | 首稿。**代码尚未初始化**：组件名与 props 均为**约定名**，实现时如无充分理由不要改名；若实现中发现更合适的拆法，先回报本文再改 |
 | 不包含 | 颜色 / 字号 / 间距 / 圆角 / 阴影的具体数值（归 `DESIGN.md`，本文只写“走令牌”，不复制令牌值）；接口、表结构、同步算法（归架构文档）；功能规则与验收口径（归需求文档与功能拆解） |
 
@@ -34,6 +34,7 @@
 | v8 | 2026-10-02 | 笔记本「添加」菜单加「导入笔记」【已定·用户确认 2026-10-02】：①`NbAddButton` 菜单由两项增至三项（**新建文件夹 / 新建表格 / 导入笔记**），触发器无障碍名同步列出三项；②**新建表格自此可用**——M4 交付了表格编辑器与 `TableColumnManager` 的 `mode="create"`，但该模式**一直没有任何调用方**、菜单项还挂着"M5 提供"的过期理由，v0.6.16 接线（先定列结构再建条目）；③新增 **`ImportNotesFlow`**（落 `features/notes/ui/`）：隐藏的文件选择器（可多选 `.md`）+ **多选时的一次确认**（报"几个文件 → 哪个笔记本"）+ 失败清单弹窗（`DESIGN.md` §5.4-2：错误必须保持可见，不用会自动消失的 Toast 承载）；④新增 `import-md.ts`（纯逻辑：文件名→标题、剥 UTF-8 BOM、按正文派生 `type` / 标签 / 待办字段）与 `emptyTableDoc()`（`features/tables/model.ts`）。（应用版本 v0.6.16；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v12 | 2026-10-03 | **M7 定时自动备份回写**【已定·用户确认 2026-10-03 拍板 §六 五点】：新增 **7.9 定时自动备份** 一节，登记 `BackupTargetsCard`（设置 › 备份页**第一张卡**——这一屏叫「备份」而不叫「导出」；每行一个启用 `role="switch"` 与三个次操作**测连接 / 编辑 / 推一次**；删除走行内二次确认且**后果平铺那句"远端文件一个都不会动"**）、`BackupTargetDialog`（新建 / 编辑**两态合一**，`dismissable={false}`）、`features/backup/model.ts`（纯函数）、以及**单独一个 `data/api/backup-targets.ts`**（`endpoints.ts` 已 489 行、`max-lines` 的 500 硬上限就在眼前）。记下四条贯穿口径：**凭据 label 必须写清「留空 = 不改」**且编辑时**不送 `secret` 键**、删除走行内确认 + 后果平铺、读失败不写空态、**失败原因与推送结果都平铺**（三处都不进 `InfoHint`、不靠 Toast）。**零新增 CSS**。记明**未做**：浏览器循环 + 进度条 + 中断续传（见《功能拆解》M16-03）。（应用版本 v0.8.0；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v15 | 2026-10-05 | **作用域标记收窄为「只标例外」**【已定·用户确认 2026-10-05】：改 §7.5 `SettingsPanel` 通用页那一行——`本机` / `跟随账号` **两值标记改为只标 `本机`**，**没标的即跟随账号**。**为什么收窄**：v0.8.4 引入它是为了让"我改完为什么另一台没变"一眼有答案，而那张卡 8 项里 **7 项是账号级**——把默认逐行铺出来，恰好把唯一的例外（主题、「上次用的那一档」）淹在一片同款徽标里，**与引入它的初衷相反**。记下三条口径：①**组件 `ScopeTag` 改名 `LocalOnlyTag` 并去掉 `scope` 参数**——只剩一种取值时留着那个 prop 就是一条永远走不到的死分支（`.scope-tag` 这个 CSS 类名不变，视觉零改动）；②**例外仍平铺可见、不进 `InfoHint`**（作用域是标识不是说明性文字），但**卡片标题的 ⓘ 里必须留一句"没标的就是跟随账号"**——否则新口径成了要靠猜的减法；③当前只有**两处**标 `本机`（主题、打开时用哪一档），其余 9 处标记已移除。顺带**订正一处漏账**：§组件清单里 `SettingsPanel` 那行仍写"六个分类"，v0.8.4 改成 9 类时漏改，本次一并订正为九个。功能侧见《功能拆解》v2.18。（应用版本 v0.8.16；修改模型ID：MiniMax-M3.1-Flash-Preview） |
+| v17 | 2026-10-11 | **属性库（键值字典）落地回写**【已定·用户确认 2026-10-11】：新增 **7.10 属性卡片与属性库** 一节，登记三件新组件（`PropValueField` / `PropPicker` / `PropLibraryPage`）与三个新模块（`features/props/` 的 `model.ts` / `scan.ts` / `usage.ts`），并记下**卡片本身不是新组件**——还是 `ItemProps.tsx`，它只新增两个**可选** props（`library?` / `onLibraryChange?`）；**可选是有意的**（缺省时只给「新建键…」）。§7.5 `SettingsPanel` 的分类 **9 → 10**（新增「**属性库**」，路由 id `prop-library`，位置在「附件」之后、「实例管理」之前），连带组件地图、清单表与装配说明里的"九个分类"三处同步。四条贯穿口径：①**前台只能"用或不用"、删除只在设置页**——卡片上那个 ⓧ 的部位没变但**表意变了**（`aria-label` = `本篇不再用 <键>`、确认框题目 `本篇不再用 <键>？`、按钮「从本篇移除」）；②`library` 由 `App` 一处持有当 props 往下传，**不为它新建 store**；③**只在用户主动动过时才收录**（新建键 / 改过值 / 导入时点录入），渲染不收录；④**类型只决定控件、不改 md 写法**（键名与值一律原样保留）。**未做**：路 B（内置键值域扩展 + 归一档）、接进 `@` 命令面、账号级库**不进备份**。功能侧见《功能拆解》v2.20、界面侧见 `DESIGN.md` v1.14 §5.6。（应用版本 v0.8.30；修改模型ID：DeepSeek v4.1） |
 | v16 | 2026-10-11 | **编辑器专项优化 P1 回写**（设计 `docs/modules/Menote-编辑器专项优化-设计-v1.md` v1.1，蓝本 shuaiplus/inkstone、许可证转 LGPL-3.0-only）：§7.2 新增 **`EditorToolbar`** 行——正文格式工具栏，**只做呈现与转发**（按钮交回 `FormatCommandId`，落盘走 `EditorHandle.applyFormat`，`format-commands.ts` 仍是唯一 Markdown 拼装处）；出现在 Markdown 条目「仅编辑 / 即时渲染」两档，仅预览 / 表格 / 锁定不显示。连带三处命令层扩展：**删除线**（GFM `~~`，只进正文命令集、快捷输入基础集不动——v3 §三-2 边界不变）、**标题命令级别参数**（1–6 设级别、0 去标题；不带参数仍是 `##`，`/` 菜单行为不变）、**最小变更落盘**（`minimalChange`：命令落盘从"整篇替换"改为最小变更区间，撤销粒度变小）。新增 `app/editor/shortcuts.ts` 编辑器键位（不进全局和弦表，`Ctrl/Cmd+K` 刻意不绑——DESIGN §6.3 全局搜索占用；`Ctrl/Cmd+F/H` 待查找替换落地再绑）。图标 sprite 增补 10 个格式字形（仍 1.6px 描边、不引外部图标库）。（应用版本 v0.8.18；修改模型ID：GLM-5.3-Flash（ZCode）） |
 | v14 | 2026-10-04 | **快捷菜单「立即备份」接线**【已定·用户确认 2026-10-04】：改 §6 `AccountEntry` 的「可配置功能项」行——**5 项候选至此全部可用**，菜单里不再有禁用项。这项此前是 `disabled: true` 的硬编码死件、而清单上标着早已收口的「M5」，**两处口径都说"还没做"，实际是"M5 早已交付、但这一项从没接线"**。**做成「入口」不是「动作」**：点它去「备份与导出」页，推哪个目标由用户自己选（备份目标可以有多个，一键推的话"推哪个"没有答案；真做成动作得先给契约加「默认目标」并动服务端）。连带三处改动：`AccountQuickMenu` 新增 `onOpenBackup` 并**删掉 `featureItem` 的 `pendingStep` 参数**（5 项全可用后"未实现就禁用"这条分支一个不剩，留着那个参数只会让人以为还能配未交付项）、`topbar/wiring.ts` 透传同一回调、`CardQuickMenu` 的 ⓘ 文案由"带里程碑标记的项可以现在就配好"改为说明它是入口，并给该卡每行补上 `.scope-tag` 作用域标记（账号级，与「通用」其余几项同口径；**该标记已于 v0.8.16 移除**，见 v15）。**零新增 CSS**。**一条通用教训**：这类"两处口径都说未做、实际是没接线"的情况，光看任一处都发现不了——**清单与实现必须一起查**。功能侧见《功能拆解》v2.17。（应用版本 v0.8.5；修改模型ID：MiniMax-M3.1-Flash-Preview） |
 | v13 | 2026-10-04 | **设置页信息架构 11 → 9 类**【已定·用户确认 2026-10-04】：改 §7.5 `SettingsPanel` 四行——**分类清单 11 → 9**（**「编辑器」「关于」不再是独立分类**、内容并进「通用」；原「数据管理」改名**「附件」**，**路由 id 仍是 `data`**）、**卡片装配**去掉 `cardEditor` / `cardAbout` 两个独立分类卡（改挂在「通用」页内）、**页头删掉「分类总数」**、**通用页由两张卡变四张卡**并新增**作用域标记 `.scope-tag`**。组件树里 `SettingsPanel` 那行同步改为「9 分类」。记下三条口径：①**撤销的分类要显式重定向**（`LEGACY_SETTINGS_PAGES`）——只从 `SETTINGS_PAGES` 拿掉会被 `parseRoute` 那句"匹配不到就回落 `general`"**自动**接住，表现与 2026-09-27 修过的 bug **完全同形**；②**作用域标记复用 `.badge` 的视觉但不复用它的 `margin-left: auto`**（那条是给行尾用的，与"紧跟设置项名称"的定位目的不同），且**不进 `InfoHint`**（作用域是标识、不是说明性文字），对读屏 `aria-hidden`；③**新组件 `GeneralCards.tsx`**（`features/settings/ui/`）——`EditorModesCard` + `AboutCard` + `ScopeTag`（**该组件已于 v0.8.16 改名 `LocalOnlyTag` 并去掉 `scope` 参数**，见 v15），因搬迁后 `SettingsPanel.tsx` 触发 `max-lines` 的 500 硬上限而抽出，它重新只管**分类与版式**。决定与影响面见 `docs/modules/Menote-M8-设置页信息架构-v1.md` v1；功能侧同步见《功能拆解》v2.16。（应用版本 v0.8.4；修改模型ID：MiniMax-M3.1-Flash-Preview） |
@@ -135,7 +136,7 @@ AppShell                                    app/
 ├─ SearchPanel        features/search/
 ├─ VaultPanel         features/privacy/     —— 锁定 / 解锁两态
 ├─ TrashPanel         features/settings/    —— 设置子页面
-└─ SettingsPanel      features/settings/    —— 两栏分页，9 分类（v0.8.4 起）
+└─ SettingsPanel      features/settings/    —— 两栏分页，10 分类（v0.8.4 起为 9 类，v0.8.30 增至 10）
 ```
 
 ---
@@ -410,7 +411,7 @@ AppShell                                    app/
 | 原型 | `.set-wrap` > `.set-nav`（`#setNav`）+ `.set-pages`（`.set-page` / `.set-grid`） |
 | 结构 | **左列分类导航 + 右侧当前分类内容**；**一次只渲染一个分类**（§7.5，功能拆解 M18-01） |
 | 子组件 | `SetNav`（`.set-nav-item[data-set]`，含 `owner` 徽标）、`SetCard`（`.set-card` / `.set-head` / `.set-body`）、`SetRow`（`.set-row`）、`Toggle`、`RadioSet`（`.radio-opt` / `.radio-dot`）、`Field`、`KeyCap`、`WarnBox`、`BackupTargetCard`（`.bk-card`） |
-| 分类（**9 个**） | 通用（**默认落地页**）/ 账户与安全 / 隐私锁 / 版本与回收站 / 备份 / 分享 / MCP / **附件** / 实例管理（带 `owner` 徽标）。**【v0.8.4，11 → 9】**「编辑器」与「关于」不再是独立分类、内容并进「通用」（分别是「编辑体验」卡与页面最底部的「关于 MeNote」卡）；原「数据管理」改名**「附件」**（它本来就只管附件占用与孤儿清理；**路由 id 仍是 `data`**，老书签与深链不失效）。除「通用」提到首位外，顺序同 §7.5 表。**撤销的两类由 `LEGACY_SETTINGS_PAGES` 显式重定向到「通用」**——不补映射的话 `#/settings/editor` 会走进"匹配不到就静默回落"，表现与 2026-09-27 修过的 bug 同形 |
+| 分类（**10 个**） | 通用（**默认落地页**）/ 账户与安全 / 隐私锁 / 版本与回收站 / 备份 / 分享 / MCP / **附件** / **属性库** / 实例管理（带 `owner` 徽标）。**【v0.8.30，9 → 10】**新增「**属性库**」（路由 id `prop-library`，位置在「附件」之后、「实例管理」之前；详情见 §7.10）。**【v0.8.4，11 → 9】**「编辑器」与「关于」不再是独立分类、内容并进「通用」（分别是「编辑体验」卡与页面最底部的「关于 MeNote」卡）；原「数据管理」改名**「附件」**（它本来就只管附件占用与孤儿清理；**路由 id 仍是 `data`**，老书签与深链不失效）。除「通用」提到首位外，顺序同 §7.5 表。**撤销的两类由 `LEGACY_SETTINGS_PAGES` 显式重定向到「通用」**——不补映射的话 `#/settings/editor` 会走进"匹配不到就静默回落"，表现与 2026-09-27 修过的 bug 同形。**新增分类只改 `SETTINGS_PAGES` 与 `PAGE_META`，不动 `LEGACY_*`** |
 | 卡片装配 | 按分类拆成 `cardGeneral` / `cardAccount` / `cardQuickMenu` / `cardPrivacy` / `cardMemoPrivacy` / `cardMcp` / `cardBackup` / `cardShare` / `cardVersion` / `cardData` / `cardInstance`，由 `setPageBody(id)` 装配。**【v0.8.4】**原 `cardEditor` 与 `cardAbout` 不再是独立分类的卡片，改挂在「通用」页内（前者作为「编辑体验」块、后者作为底部「关于 MeNote」块） |
 | 页头 | 显示「分类名 · 简述」（简述收进 `ⓘ`）。**【v0.8.4】删掉「分类总数」**——那个数字对用户零信息量，且**随角色变化**（owner 10 / member 9）容易被误读成"漏了分类" |
 | 通用页 | **四张卡**：`界面偏好`（启动视图 / 时区 / 主题 / 待办筛选条 / 笔记本树结构）＋ `编辑体验`（v0.8.4 由原「编辑器」分类搬来）＋ 快捷菜单配置 ＋ 最底部的 `关于 MeNote`。**【v0.8.16】只给设备级的项带作用域标记**（`.scope-tag`，文案 `本机`，组件 `LocalOnlyTag`，对读屏 `aria-hidden`）——**只标例外、不标默认**：`本机` = 只在这台设备生效，**没标的 = 跟随账号**。当前只有两处标：主题、编辑体验卡的「打开时用哪一档」。**【v0.8.4 → v0.8.16】原先每个设置项都标**（`本机` / `跟随账号` 两值），但那张卡 8 项里 7 项是账号级，把默认逐行铺出来反而把唯一的例外淹了。**引它的初衷不变**：用户改完主题发现另一台没变时，名称旁这个标记是唯一能立刻解释的标识；作用域属**标识**不是说明性文字，所以**不进 `InfoHint`**，但卡片标题的 ⓘ 里必须留一句"没标的就是跟随账号"，否则新口径成了要靠猜的减法 |
@@ -498,6 +499,32 @@ M16-01 / M16-02 / M16-03 的设置页部分（v0.7.2–v0.7.5，四批）。**�
 4. **失败原因与「推一次」的结果都平铺**（§5.4-2）：`last_error`、测连接结果、推送结果——三处都**不藏进 `InfoHint`、不靠 Toast**，它们要留到用户下一次打开这一屏时还在。辅助说明（这是什么、为什么私密的出站前要加密）才进 `ⓘ`。
 
 **【M7 落地补记】**「推一次」**一轮就是一批**（架构 §14.3 的外部子请求限额），所以界面上**必须把 `remaining > 0` 说成常态而不是出错**——把后两种情况都说成"失败"或都说成"成功"都会误导。**浏览器循环 + 进度条 + 中断续传未做**（见《功能拆解》M16-03）。
+
+---
+
+### 7.10 属性卡片与属性库（`features/props/ui/`）【v0.8.30 新增】
+
+属性库（键值字典）落地（v0.8.30 / commit `70e7ad2`，设计 `docs/modules/MeNote-属性库-设计-v1.md` v2.1）。**卡片本身不是新组件**——还是 `features/notes/ui/ItemProps.tsx`，这一节登记它新增的 props 与三件新件。
+
+| 组件 / 模块 | 落点 | 职责与关键约定 |
+|---|---|---|
+| `ItemProps`（改） | `features/notes/ui/ItemProps.tsx` | 正文区顶部第三带（标题带之下、正文之上）。新增两个**可选** props：`library?: readonly PropLibraryEntry[]` 与 `onLibraryChange?(next: PropLibraryEntry[])`——**可选是有意的**，既有调用方与用例不必逐个补上（缺省时"用一个属性"只给「新建键…」）。四行固定且**默认空**；「其他属性」段**常显**（`foreign.length > 0 \|\| editable`），段脚是新增入口；每行值控件交给 `PropValueField` |
+| `PropValueField` | `features/props/ui/PropValueField.tsx` | 一行外来键的**值控件**。形状由**库里声明的类型**决定（`controlFor(entry, block, value)`：text→单行 / multiline→多行 / date / number / boolean / choice→`<select>`），**没入库的键按块序列还是单行回落 text / multiline**；`choice` 的候选来自条目 `values`，**候选里没有的当前值也要列出来**（否则一开就把它改写了）。文本类挂 `datalist`（id `propcand-<key>`，上限 `VALUE_CANDIDATE_LIMIT`）。提交时机是**失焦且值真的变了**（`onCommit(value, block)`），因此"点开又点走"不产生写入 |
+| `PropPicker` | `features/props/ui/PropPicker.tsx` | **「+ 用一个属性」锚定菜单**（`DropdownMenu`，`DESIGN.md` §5.6-3）。列出**库里本篇还没用到**的键（label 形如 `键名 · 类型`），末尾固定一项「新建键…」。**"新建键…"仍走 `window.prompt` 问键名**（此处是录入一个自由文本，不是选择，5.3 的"短菜单"约束针对的是选择场景）；键名照 `PROP_KEY_PATTERN` 与 `RESERVED_PROP_KEYS` 校验，不通过就 `onError`、两处都不写 |
+| `PropLibraryPage` | `features/props/ui/PropLibraryPage.tsx` | 设置 › 属性库（第 10 分类）。两张 `.setcard`：**条目表**（键名 / 类型 / 候选取值 / 「被 N 篇用到」+ 行内删除）与**内置属性表**（五个内置键，标「内置」、**不可删不可改键名**）。删除走 `ConfirmDialog`，后果写明"已用它的笔记 md 一动不动，只是变成未入库的键"。写回一律用 `normalizeLibrary` 规范化后的数组 |
+| `model.ts` | `features/props/model.ts` | 纯函数：`PROP_TYPE_LABELS` / `BUILTIN_PROP_ENTRIES` / `RESERVED_PROP_KEYS` / `isPropKey` / `normalizeLibrary` / `addEntry` / `removeEntry` / `updateEntry` / `renameEntry` / `registerValue` / `candidateValues` / `collectUsedKeys`。**条目 = 键名 + 类型 + 候选值**（`values` 是**候选不是校验**：只有 `choice` 会收窄输入；其余类型照写原值） |
+| `scan.ts` | `features/props/scan.ts` | 扫描正文里的**陌生键**（导入录入步用）：返回 `UnknownKeyHit`（键名 / 出现篇数 / 样例值 / 是否块序列），**跳过已在库里的键**，**不写任何东西** |
+| `usage.ts` | `features/props/usage.ts` | `countPropUsage()`——**只数本机 `db.bodies` + `db.drafts`**（草稿覆盖同篇缓存），先按外来键计数、再补**内置键**（`title` 非空串 / `tags` 非空 / 清单三字段非 null；`readForeignKeys` **不返回**内置键，所以要单独数）。返回 `{counts, scanned}`——界面上那句"已看 N 篇"就是它 |
+| `ImportNotesFlow`（改） | `features/notes/ui/ImportNotesFlow.tsx` | 导入流程**多一步「录入属性」**：真正导入**之前**扫一遍陌生键，**扫出才插这一步**；`.learnlist` 每行 checkbox + 键名 + `（N 篇）` + 一个样例值，勾上才出「类型」select 与「记住取值」。**默认全部不勾、一个都不勾也照样导入**，`finishLearn()` 只在 `Object.keys(picks).length > 0` 时回调 `onLearn` |
+
+四条贯穿的口径：
+
+1. **前台只能"用或不用"，删除只在设置页**（`DESIGN.md` §5.6-4）。卡片上那个 ⓧ 的部位没变，但**表意变了**：`aria-label`/`title` 是 `本篇不再用 <键>`、确认框题目是 `本篇不再用 <键>？`、确认按钮是「从本篇移除」——**不是"删除属性"**（属性定义还在库里，别的笔记不受影响）。
+2. **`library` 由 `App` 一处持有、当 props 往下传**，不为它新建 store：它是 `userSettings` 的一个字段（账号级），跟着既有的 `useUserSettings` 走就够。
+3. **只在用户主动动过时才收录**（新建键 / 改过值 / 导入时点录入）。**渲染不收录**——否则打开一篇外来 md 就把一次性键收进候选。
+4. **类型只决定控件，不改 md 的写法**：键名与值一律**原样保留**（这是"键名原样、不替用户猜"那条老口径的延续）；把陌生值收进值域是**路 B**，另开一稿。
+
+**未做**：路 B（内置键值域扩展 + 归一档）、把属性库接进 `@` 命令面、备份契约里的 `settings.json`（账号级库**不进备份**）。
 
 ---
 
@@ -710,7 +737,7 @@ M16-01 / M16-02 / M16-03 的设置页部分（v0.7.2–v0.7.5，四批）。**�
 | `MemoPanel` | `features/memos/ui/` | Memo 时间轴（分天 / 筛选 / 原地编辑 / 发布） | 同上三类数据槽；`tags` 供筛选 |
 | `NotebookPanel` / `NoteList` / `NoteWorkspace` | `features/notes/ui/` | 笔记本与文件夹树、条目列表、正文区 | `NoteWorkspace` 含模式切换、**跨标签页提示条**与**冲突处理条** |
 | `HomePanel` / `StatCards` / `TodayTasks` / `RecentActivity` / `ShortcutGrid` / `QuickNav` | `features/home/ui/` | 首页三块：概括预览（三卡）→ 快捷方式 → 快速导航 | `memoLocked`（M2 恒 false，M3 接门禁）；各卡自带空态 |
-| `SettingsPanel` + `CardGeneral` / `CardQuickMenu` 等卡片 | `features/settings/ui/` | 设置两栏分页（**九个分类**，v0.8.4 起）与各分类卡片 | 即时生效 + 整份上传（`useUserSettings`） |
+| `SettingsPanel` + `CardGeneral` / `CardQuickMenu` 等卡片 | `features/settings/ui/` | 设置两栏分页（**十个分类**，v0.8.4 起 9 类、v0.8.30 增至 10）与各分类卡片 | 即时生效 + 整份上传（`useUserSettings`） |
 | `AccountQuickMenu` | `app/topbar/` | 账户快捷菜单（账户头 → 可配置功能项 → 设置 / 退出登录） | 显示项由 `settings.quick_menu` 决定；`MenuItemSpec.keepOpen` 让主题切换**不收起菜单** |
 
 ### 14.2 六处「文档与实现不一致」的收敛去向
