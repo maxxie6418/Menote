@@ -60,6 +60,7 @@ function makeHandle(initial: string) {
       state.text = state.text.slice(0, at) + text + state.text.slice(at + marker.length);
     },
     applyFormat: () => undefined,
+    openSearch: () => {},
     replaceFrontmatter: (next) => {
       const range = frontmatterRange(state.text);
       if (range === null) {

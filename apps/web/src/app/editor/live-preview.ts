@@ -31,6 +31,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { highlightSpans, type TokenSpan } from "./code-highlight";
+import { searchPanelOpen } from "@codemirror/search";
 
 /** 补解析的时间预算（超出就先用部分树；与 CM6 自带高亮器同一量级） */
 const PARSE_BUDGET_MS = 50;
@@ -689,8 +690,15 @@ function buildFor(
       「光标所在行显示源码」只在**编辑器真的聚焦时**成立。
       否则刚打开一篇笔记（CM6 的选区默认落在文档开头）会让第一行一直露着 `##`——
       看着像"没渲染"。失焦状态下整篇按渲染呈现，点进哪一行哪一行才回到源码。
+
+      查找面板打开时**整篇回落源码**（P3）：面板在数匹配、结果要对着源码看，
+      被渲染样式盖着的标记会让人找不到北。
     */
-    activeRange: view.hasFocus ? activeRangeOf(view.state) : null,
+    activeRange: searchPanelOpen(view.state)
+      ? { from: 0, to: view.state.doc.length }
+      : view.hasFocus
+        ? activeRangeOf(view.state)
+        : null,
     codeTokenMarks,
   });
 }

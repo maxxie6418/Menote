@@ -11,6 +11,7 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
+import { searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   EditorView,
@@ -32,6 +33,7 @@ import {
 } from "./format-commands";
 import { frontmatterHide, frontmatterRange } from "./frontmatter-hide";
 import { livePreview } from "./live-preview";
+import { openReplacePanel, openFindPanel, noteSearch } from "./search";
 import { editorKeymap } from "./shortcuts";
 import { editorBaseTheme } from "./theme";
 import { applyFormatAt, triggerAt } from "./trigger";
@@ -51,6 +53,11 @@ export interface EditorHandle {
    * ——按钮点的是明确的动作，光标前碰巧有个 `/日期` 也不该被吃掉。
    */
   applyFormat(command: FormatCommandId, arg?: FormatCommandArg): void;
+  /**
+   * 打开本篇内查找/替换面板（编辑器专项优化 P3；工具栏的「查找」按钮走这里）。
+   * `find` = 查找档，`replace` = 替换档；带着选区打开时选区成为初始查询词。
+   */
+  openSearch(mode: "find" | "replace"): void;
   /**
    * 把文档开头的 front matter 整段换成 `next`（含两侧 `---`）。
    *
@@ -273,6 +280,11 @@ export function Editor({
           editorBaseTheme(),
           highlightActiveLine(),
           /*
+            本篇内查找与替换（编辑器专项优化 P3）：编辑 / 即时渲染两档常驻。
+            面板打开时即时渲染整篇回落源码（live-preview 自己查 `searchPanelOpen`）。
+          */
+          noteSearch(),
+          /*
             占位提示。**默认不显示**——空正文该写什么属于产品文案，
             按 DESIGN.md §5.4 不由实现自行发明；调用方传 `placeholder` 才出现。
           */
@@ -283,7 +295,7 @@ export function Editor({
             与 DESIGN.md §6.2「焦点与键盘可达（底线）」冲突。外部项目加了，我们不跟。
           */
           keymap.of([...editorKeymap]),
-          keymap.of([...defaultKeymap, ...foldKeymap, ...historyKeymap]),
+          keymap.of([...defaultKeymap, ...foldKeymap, ...searchKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
           /*
             把 front matter 藏成一个可点的小标签（2026-10-04）。
@@ -430,6 +442,10 @@ function makeHandle(view: EditorView): EditorHandle {
         return;
       }
       view.dispatch({ changes: { from: index, to: index + marker.length, insert: text } });
+    },
+    openSearch: (mode) => {
+      (mode === "replace" ? openReplacePanel : openFindPanel)(view);
+      view.focus();
     },
     replaceFrontmatter: (next) => {
       const doc = view.state.doc.toString();

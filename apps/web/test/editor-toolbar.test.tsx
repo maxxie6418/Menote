@@ -18,7 +18,8 @@ afterEach(cleanup);
 
 function setup(overrides: Partial<Parameters<typeof EditorToolbar>[0]> = {}) {
   const onCommand = vi.fn();
-  render(<EditorToolbar onCommand={onCommand} {...overrides} />);
+  const onFind = vi.fn();
+  render(<EditorToolbar onCommand={onCommand} onFind={onFind} {...overrides} />);
   return { onCommand };
 }
 

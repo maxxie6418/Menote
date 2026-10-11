@@ -1410,6 +1410,254 @@ button {
 }
 
 /*
+  本篇内查找与替换（编辑器专项优化 P3，移植自 inkstone 的浮动面板）：
+  挂在 `.cm-panels-top`（编辑器顶部、正文之上，不占正文滚动）；尺寸可拖拽。
+  全走令牌：面板底 `--panel`、边 `--line`、圆角/间距按刻度；主按钮 = 次操作描边，
+  没有"两个实心主色"的问题（DESIGN §5.1）。
+*/
+.cm-note-search {
+  position: relative;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: var(--note-search-max-height, 50vh);
+}
+
+.cm-note-search-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.cm-note-search.is-resizing {
+  user-select: none;
+}
+
+.cm-note-search-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cm-note-search-tabs {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.cm-note-search-tabs button {
+  border: none;
+  background: none;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.cm-note-search-tabs button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.cm-note-search-tabs button[aria-pressed="true"] {
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cm-note-search-context {
+  flex: 1;
+  text-align: right;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+.cm-note-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cm-note-search-row textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  padding: 4px var(--sp-2);
+  height: auto;
+}
+
+.cm-note-search-row textarea:focus-visible {
+  outline: 2px solid var(--primary-ink);
+  outline-offset: 0;
+}
+
+.cm-note-search-row textarea[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+.cm-note-search-navigation {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cm-note-search-count {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+}
+
+.cm-note-search button {
+  border: none;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-small);
+  padding: 2px var(--sp-2);
+}
+
+.cm-note-search button:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.cm-note-search button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cm-note-search button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: block;
+}
+
+.cm-note-search-actions {
+  flex: none;
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.cm-note-search-actions .cm-note-search-primary {
+  border: 1px solid var(--line-2);
+}
+
+.cm-note-search-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+}
+
+.cm-note-search-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-micro);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.cm-note-search-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 18px;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+.cm-note-search-results {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cm-note-search-results summary {
+  cursor: pointer;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+.cm-note-search-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.cm-note-search-result {
+  display: flex;
+  gap: var(--sp-2);
+  text-align: left;
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+
+.cm-note-search-result[aria-current="true"] {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.cm-note-search-line {
+  flex: none;
+  min-width: 24px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-note-search-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-note-search-snippet mark {
+  background: var(--amber-soft);
+  color: var(--text);
+}
+
+.cm-note-search-result-limit {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+
+/* 右下角拖拽柄：三条斜线的暗示（inkstone 同款路径） */
+.cm-note-search-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+/*
   任务清单复选框（编辑器专项优化 P2-1）——**预览与即时渲染共用这一组**：
   - 预览（`.markdown-body`）：markdown-it-task-lists 输出的 `.task-list-item-checkbox`（disabled）；
   - 即时渲染（`.cm-task-checkbox`）：`TaskCheckboxWidget` 里的真复选框（可点、点了改文档）。

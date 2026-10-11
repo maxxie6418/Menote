@@ -473,7 +473,10 @@ export function NoteWorkspace({
         命令只转发给编辑器句柄：工具栏不碰文档，句柄不在（还没挂上）时点了也无害。
       */}
       {!isTable && !bodyLocked && (shownMode === "edit" || shownMode === "live") ? (
-        <EditorToolbar onCommand={(command, arg) => editorHandle?.applyFormat(command, arg)} />
+        <EditorToolbar
+          onCommand={(command, arg) => editorHandle?.applyFormat(command, arg)}
+          onFind={() => editorHandle?.openSearch("find")}
+        />
       ) : null}
 
       <div className="docpane__body">

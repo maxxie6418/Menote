@@ -130,6 +130,7 @@ function fakeHandle(doc: { text: string }, onChange: (text: string) => void): Ed
       onChange(doc.text);
     },
     applyFormat: noop,
+    openSearch: () => {},
     // 与真 Editor 同口径：区间从**替身自己的文本**算，不收 expected
     replaceFrontmatter: (next: string): boolean => {
       const at = doc.text.indexOf("---", 3);

@@ -21,6 +21,8 @@ export interface EditorToolbarProps {
   disabledReason?: string;
   /** 按钮落点：宿主转发给编辑器句柄，工具栏自己不碰文档 */
   onCommand: (command: FormatCommandId, arg?: FormatCommandArg) => void;
+  /** 打开查找面板（P3）：工具栏不持有视图，转发给宿主 → `EditorHandle.openSearch("find")` */
+  onFind: () => void;
 }
 
 /** 一枚格式按钮需要的最小描述 */
@@ -100,10 +102,25 @@ function GroupSeparator() {
   return <span className="editor-toolbar__sep" aria-hidden="true" />;
 }
 
-export function EditorToolbar({ disabled, disabledReason, onCommand }: EditorToolbarProps) {
+export function EditorToolbar({ disabled, disabledReason, onCommand, onFind }: EditorToolbarProps) {
   const heading = headingItems(onCommand);
+  const findHint = hintFor("find", "查找与替换");
   return (
     <div className="editor-toolbar" role="toolbar" aria-label="格式" aria-disabled={disabled || undefined}>
+      {/*
+        查找放最前（蓝本同位）：它是"操作"不是"格式"，与后面格式按钮用分隔线隔开。
+        面板本体在编辑器里（`app/editor/search.ts`），这里只是入口。
+      */}
+      <IconButton
+        label={findHint}
+        icon="search"
+        size={13}
+        disabled={disabled}
+        title={disabled ? disabledReason : findHint}
+        data-toolbar-button="find"
+        onClick={onFind}
+      />
+      <GroupSeparator />
       {/*
         禁用时不渲染真菜单：`DropdownMenu` 是公共组件，没有 disabled 口子——
         为禁用态给它加参数，比在这里放一个"点了还是会开"的菜单划算。

@@ -69,6 +69,7 @@ vi.mock("../src/app/editor/Editor", async (importOriginal) => {
           const result = actual.applyFormatAt(valueRef.current, { from: caret, to: caret }, command);
           apply(result.text);
         },
+        openSearch: () => {},
       };
       onReady?.(handle);
       // 真 Editor 也只在挂载时交一次句柄

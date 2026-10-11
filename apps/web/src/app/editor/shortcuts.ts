@@ -20,6 +20,7 @@ import {
   type FormatCommandArg,
   type FormatCommandId,
 } from "./format-commands";
+import { openFindPanel, openReplacePanel } from "./search";
 
 /** 是不是苹果系平台（键位提示的写法随它变：`⌘B` vs `Ctrl+B`） */
 const IS_MAC =
@@ -98,6 +99,9 @@ export const EDITOR_SHORTCUTS: readonly EditorShortcutSpec[] = [
   { id: "bullet-list", combo: "mod+shift+8", label: "无序列表", command: "bullet-list" },
   { id: "task-list", combo: "mod+shift+9", label: "任务清单", command: "task-list" },
   { id: "quote", combo: "mod+shift+.", label: "引用", command: "quote" },
+  /* 无 command 字段：查找替换的执行不走 format-commands，键位在 editorKeymap 里单独绑 */
+  { id: "find", combo: "mod+f", label: "查找与替换" },
+  { id: "replace", combo: "mod+h", label: "替换" },
 ];
 
 /** 按 id 反查键位提示（工具栏 `title` 用）；没有键位的命令返回 undefined */
@@ -128,4 +132,10 @@ export const editorKeymap = [
   { key: "Mod-Shift-k", run: deleteLine },
   { key: "Mod-]", run: indentMore },
   { key: "Mod-[", run: indentLess },
+  /*
+    查找 / 替换（编辑器专项优化 P3）：`Mod-F` 打开查找、`Mod-H` 直接进替换档。
+    排在 `searchKeymap`（默认面板）之前—— ours 的浮动面板接手，默认面板不再出现。
+  */
+  { key: "Mod-f", run: openFindPanel },
+  { key: "Mod-h", run: openReplacePanel },
 ];
