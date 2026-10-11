@@ -25,6 +25,12 @@ export interface SyncEngineOptions {
   onStatus?: (status: SyncStatus) => void;
   /** 别的标签页同步完了：本页据此刷新（M2-9 跨标签页通知） */
   onRemoteChange?: (event: "item-updated" | "cursor-advanced") => void;
+  /**
+   * 本页自己跑完一轮同步（含推送与拉取）后回调，先于 `onStatus("idle")`——
+   * UI 用 `result.pushed.pushedItemIds` 把"打开时的正文基线"跟到刚推上去的内容
+   * （编辑器专项优化 v0.8.24：新建笔记后第一次编辑不再误报"别处改过"）。
+   */
+  onSynced?: (result: SyncRunResult) => void;
   /** 便于测试注入广播通道替身 */
   channel?: SyncChannel;
 }
@@ -98,8 +104,11 @@ export function createSyncEngine(options: SyncEngineOptions = {}): SyncEngine {
         channel.post({ kind: "cursor-advanced", cursor: outcome.pulled.cursor });
       }
 
+      // 先报"同步完成"再回 idle：UI 要先把基线跟上去，随后的刷新才不会误报
+      const runResult: SyncRunResult = { ran: true, pushed: outcome.pushed, pulled: outcome.pulled };
+      options.onSynced?.(runResult);
       options.onStatus?.("idle");
-      return { ran: true, pushed: outcome.pushed, pulled: outcome.pulled };
+      return runResult;
     } catch (error) {
       options.onStatus?.("error");
       return {

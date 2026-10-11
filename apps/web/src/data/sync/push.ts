@@ -16,21 +16,14 @@ import {
   sha256Hex,
   type ApiErrorCode,
   type BatchOp,
-  type BatchResponse,
   type BatchResult,
-  type FolderCreate,
-  type FolderPatch,
-  type FolderWriteResponse,
   type ItemBodyWriteResponse,
   type ItemMetaPatch,
-  type ItemMetaWriteResponse,
   type ItemWriteMeta,
-  type TrashItemResponse,
-  type UserSettingsPayload,
-  type UserSettingsWrite,
 } from "@menote/shared";
 import { ApiError } from "../api/client";
-import { foldersApi, itemsApi, settingsApi, trashApi } from "../api/endpoints";
+import { type PushApi } from "./push-api";
+import { httpPushApi } from "./push-api";
 import {
   clearDraft,
   createLocalItem,
@@ -57,48 +50,9 @@ import { FAILED_RETRY_AT, backoffDelayMs } from "./backoff";
 /** 单次推送最多处理多少项，避免长时间占住主线程 */
 const MAX_OPS_PER_RUN = 20;
 
-export interface PushApi {
-  createItem(id: string, meta: ItemWriteMeta, body: string): Promise<ItemBodyWriteResponse>;
-  /**
-   * 参数顺序**与 `itemsApi.saveBody` 保持一致**（deviceId 在前、引用集合在后）。
-   *
-   * 之前两者的顺序不同，于是要靠一层包装来「把 deviceId 插到中间」——那层包装迟早会因为
-   * 某个新调用点漏传参数而把引用数组当成 deviceId 发出去。顺序对齐后 `httpPushApi` 直接
-   * 引用 `itemsApi.saveBody` 即可，**少一处转接、少一个坑**。
-   */
-  saveBody(
-    id: string,
-    baseRev: number,
-    contentHash: string,
-    body: string,
-    deviceId?: string,
-    /** 当前稿引用的 sha256 列表（M6 批 2a）；`undefined` = 不带这个头 = 不动引用表 */
-    attachmentRefs?: readonly string[],
-  ): Promise<ItemBodyWriteResponse>;
-  patchMeta(id: string, patch: ItemMetaPatch): Promise<ItemMetaWriteResponse>;
-  /** 服务端软删（移入回收站）。目前只由备份恢复的 `trash_item` 出队触发（M5 设计 §4.2） */
-  trashItem(id: string): Promise<TrashItemResponse>;
-  createFolder(input: FolderCreate): Promise<FolderWriteResponse>;
-  patchFolder(id: string, patch: FolderPatch): Promise<FolderWriteResponse>;
-  /** 用户设置：整份覆盖（M2-7） */
-  putSettings(input: UserSettingsWrite): Promise<UserSettingsPayload>;
-  /**
-   * 批量写入（M2-9，可选）：把一串条目操作合并成一次请求，省的是客户端到 Worker 的网络往返。
-   * 不实现时队列退回逐条调用（假实现与测试用得上）。
-   */
-  batch?(ops: BatchOp[]): Promise<BatchResponse>;
-}
+// PushApi 接口与 HTTP 实现在 `./push-api`（v0.8.24 抽出，见该文件头）；类型原样再出口给既有引用方。
 
-const httpPushApi: PushApi = {
-  createItem: itemsApi.create,
-  saveBody: itemsApi.saveBody,
-  patchMeta: itemsApi.patchMeta,
-  trashItem: trashApi.deleteItem,
-  createFolder: foldersApi.create,
-  patchFolder: foldersApi.patch,
-  putSettings: settingsApi.put,
-  batch: itemsApi.batch,
-};
+export type { PushApi } from "./push-api";
 
 export interface PushContext {  api?: PushApi;
   now?: () => number;
@@ -128,6 +82,12 @@ export interface PushBatchResult {
   failed: number;
   /** 队列里还有到点的项（调用方可以立刻再跑一轮） */
   more: boolean;
+  /**
+   * 本次**推送成功**的条目 id（只含 create / save_body——它们动了正文）。
+   * UI 层用它把"打开时的正文基线"跟到刚推上去的内容，避免把自己的上传误报成
+   * "别的标签页改过"（编辑器专项优化 v0.8.24）。
+   */
+  pushedItemIds: string[];
 }
 
 type PushOutcome = "done" | "conflict" | "failed";
@@ -593,6 +553,7 @@ export async function pushQueue(context: PushContext = {}): Promise<PushBatchRes
     conflicted: 0,
     failed: 0,
     more: false,
+    pushedItemIds: [],
   };
 
   /** 一批最多 `BATCH_MAX_OPS` 个操作（服务端按 3 条写语句/操作、45 条上限算出来的） */
@@ -638,8 +599,13 @@ export async function pushQueue(context: PushContext = {}): Promise<PushBatchRes
 
           const outcome = await applyBatchResult(entry.row, entry.ready, opResult, ctx, seq);
           result.processed += 1;
-          if (outcome === "done") result.succeeded += 1;
-          else if (outcome === "conflict") result.conflicted += 1;
+          if (outcome === "done") {
+            result.succeeded += 1;
+            // 只记动了正文的条目操作：基线跟随只关心 create / save_body
+            if (entry.row.entity === "item" && (entry.row.op === "create" || entry.row.op === "save_body")) {
+              result.pushedItemIds.push(entry.row.entity_id);
+            }
+          } else if (outcome === "conflict") result.conflicted += 1;
           else result.failed += 1;
         }
         continue;
@@ -651,8 +617,12 @@ export async function pushQueue(context: PushContext = {}): Promise<PushBatchRes
 
     result.processed += 1;
     const outcome = await pushOne(row, ctx);
-    if (outcome === "done") result.succeeded += 1;
-    else if (outcome === "conflict") result.conflicted += 1;
+    if (outcome === "done") {
+      result.succeeded += 1;
+      if (row.entity === "item" && (row.op === "create" || row.op === "save_body")) {
+        result.pushedItemIds.push(row.entity_id);
+      }
+    } else if (outcome === "conflict") result.conflicted += 1;
     else result.failed += 1;
   }
 

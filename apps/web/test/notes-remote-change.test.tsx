@@ -87,6 +87,58 @@ describe("跨标签页改动的事前提示", () => {
     expect(result.current.remoteChanged).toBe(false);
   });
 
+  /*
+    新建笔记误报的回归（编辑器专项优化 v0.8.24）：新建 → 打开 → 输入 → 推送落地，
+    这一路**全是自己的操作**，绝不该弹"别处改过"。此前 `notifyUploaded` 是死代码、
+    基线从不跟随自己的推送，第一轮刷新就把刚落地的保存误报成横幅。
+    修复走 `notifyOwnPush`（引擎把本次推送成功的条目 id 回报上来，基线跟着缓存走）。
+  */
+  it("自己的推送落地后基线跟上，不误报（notifyOwnPush 回归）", async () => {
+    await createLocalNote(ITEM, "标题", "原始正文", 1000);
+
+    const { result } = renderHook(() => useNotesWorkspace({ gate: noPrivacyGate() }));
+    await act(async () => {
+      await result.current.open(ITEM);
+    });
+
+    // 模拟"输入并推送落地"：缓存与条目 rev 都前进、草稿被清（afterBodySynced 的行为）。
+    // 真实时序里引擎的 onSynced 紧随推送落地、先于 idle 刷新，中间没有别的刷新窗口。
+    await act(async () => {
+      result.current.input("原始正文加了一句");
+      await db.bodies.update(ITEM, { body: "原始正文加了一句", content_hash: "my-hash" });
+      await db.items.update(ITEM, { content_hash: "my-hash", rev: 1, sync_seq: 2 });
+      await db.drafts.delete(ITEM);
+      // 引擎回报"这条推送成功了"：基线跟到新正文
+      await result.current.notifyOwnPush([ITEM]);
+      await result.current.refresh();
+    });
+    expect(result.current.remoteChanged).toBe(false);
+
+    // 基线已经跟上去：再刷新也不翻案
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.remoteChanged).toBe(false);
+  });
+
+  it("回报里没有当前条目时基线不动，别处的改动照常提示", async () => {
+    await createLocalNote(ITEM, "标题", "原始正文", 1000);
+
+    const { result } = renderHook(() => useNotesWorkspace({ gate: noPrivacyGate() }));
+    await act(async () => {
+      await result.current.open(ITEM);
+    });
+
+    await act(async () => {
+      await db.bodies.update(ITEM, { body: "别处改过的正文", content_hash: "other-hash" });
+      await db.items.update(ITEM, { content_hash: "other-hash", rev: 2, sync_seq: 9 });
+      // 回报的是**别的**条目：当前这条的基线不许跟着动
+      await result.current.notifyOwnPush(["01JCX0000000000000000000Z"]);
+      await result.current.refresh();
+    });
+    await waitFor(() => expect(result.current.remoteChanged).toBe(true));
+  });
+
   it("没打开任何条目时不提示", async () => {
     await createLocalNote(ITEM, "标题", "原始正文", 1000);
 

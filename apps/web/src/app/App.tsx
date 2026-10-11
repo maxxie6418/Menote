@@ -10,7 +10,8 @@ import { outboxCount } from "../data/db";
 import { trashApi } from "../data/api/endpoints";
 import { moveToTrash, useTrashCount } from "../features/trash/useTrash";
 import { VersionsTrashPage } from "../features/settings/ui/VersionsTrashPage";
-import { createSyncEngine, type SyncEngine } from "../data/sync";
+import type { SyncEngine } from "../data/sync";
+import { useSyncEngineLifecycle } from "./useSyncEngineLifecycle";
 import { useAuth } from "../features/auth/model";
 import { AuthLoading, AuthScreens } from "./AuthScreens";
 import { useNotesWorkspace, type NotesWorkspace } from "../features/notes/useNotesWorkspace";
@@ -77,8 +78,6 @@ export default function App() {
   })();
 
   const engineRef = useRef<SyncEngine | null>(null);
-  /** 跨标签页刷新是否正在跑（合并连发事件，避免刷新风暴） */
-  const remoteRefreshRunning = useRef(false);
 
   const refreshPending = useCallback(async () => {
     setPendingCount(await outboxCount());
@@ -301,45 +300,30 @@ export default function App() {
     refreshAllRef.current = refreshAll;
   }, [refreshAll]);
 
-  // 登录后启动同步引擎：应用打开即同步一次，之后由引擎按触发时机自行推进
+  /** 与 refreshAllRef 同一套 ref 手法：引擎 effect 只依赖登录态，回调读 ref 拿最新身份 */
+  const notifyOwnPushRef = useRef(workspace.notifyOwnPush);
   useEffect(() => {
-    if (auth.snapshot.status !== "authenticated") return undefined;
+    notifyOwnPushRef.current = workspace.notifyOwnPush;
+  }, [workspace.notifyOwnPush]);
 
-    const engine = createSyncEngine({
-      onStatus: (status) => {
-        setSyncStatus(status);
-        // 失败要看得见：被 void 掉的 rejected promise 会让状态永远停在旧值（M1-11 踩过）
-        if (status === "idle") {
-          void refreshAllRef.current().catch((error: unknown) => {
-            console.error("同步后刷新界面状态失败", error);
-          });
-        }
-      },
-      /**
-       * 别的标签页写入/同步完（M2-9）：本页**只重读本地库**，不再跑一轮同步——数据已经在本地
-       * 库里了，省掉一次网络往返。用 in-flight 标记合并连发事件，避免多标签页同时活动时刷新风暴。
-       */
-      onRemoteChange: () => {
-        if (remoteRefreshRunning.current) return;
-        remoteRefreshRunning.current = true;
-        void refreshAllRef
-          .current()
-          .catch((error: unknown) => {
-            console.error("跨标签页刷新失败", error);
-          })
-          .finally(() => {
-            remoteRefreshRunning.current = false;
-          });
-      },
-    });
-    engineRef.current = engine;
-    engine.start();
-
-    return () => {
-      engine.stop();
-      engineRef.current = null;
-    };
-  }, [auth.snapshot.status]);
+  // 登录后启动同步引擎：应用打开即同步一次，之后由引擎按触发时机自行推进。
+  // 装配细节（含 onSynced → 基线跟随 → idle 刷新的顺序）在 `useSyncEngineLifecycle`。
+  useSyncEngineLifecycle({
+    enabled: auth.snapshot.status === "authenticated",
+    onStatus: setSyncStatus,
+    onOwnPush: async (itemIds) => {
+      await notifyOwnPushRef.current(itemIds);
+    },
+    onIdle: async () => {
+      await refreshAllRef.current();
+    },
+    onRemoteChange: async () => {
+      await refreshAllRef.current();
+    },
+    onEngine: (engine) => {
+      engineRef.current = engine;
+    },
+  });
 
   // 未登录一律回登录页；库中还没有用户时直接回注册页（拆解 M01-01）
   useEffect(() => {

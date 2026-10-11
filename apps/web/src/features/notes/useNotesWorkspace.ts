@@ -10,7 +10,7 @@ import {
   countItemsByFolder,
   db,
   enqueueBodySave,
-  findConflictForOriginal,
+  findConflictView,
   getCachedBody,
   getDraft,
   getLocalItem,
@@ -196,6 +196,13 @@ export interface NotesWorkspace extends NoteCreationActions {
   notifyUploaded: () => void;
   notifyFailed: () => void;
   notifyConflict: () => void;
+  /**
+   * 同步引擎回报"这些条目这次推送成功了"（编辑器专项优化 v0.8.24 接上，App 的
+   * `onSynced` → `onOwnPush` 链）。打开中的条目在列时，把"打开时的正文基线"跟到
+   * 刚推上去的缓存正文、并清掉"别处改过"提示——此前这条链路没人调用
+   * （`notifyUploaded` 是死代码），新建笔记后第一次编辑必现误报横幅。
+   */
+  notifyOwnPush: (itemIds: readonly string[]) => Promise<void>;
   /** 打开着的这条被别的标签页改过（M2-9 的事前提示；保存仍会走冲突副本路径） */
   remoteChanged: boolean;
   /** 打开着的这条的冲突副本（M2-9 对比 UI）；`null` = 没有冲突 */
@@ -316,17 +323,8 @@ export function useNotesWorkspace(
    * `refresh` 与 `open` 都会调它——打开一条有副本的笔记时就该看见提示。
    */
   const syncConflictState = useCallback(async (id: string | null) => {
-    if (id === null) {
-      setConflictCopy(null);
-      return;
-    }
-    const conflict = await findConflictForOriginal(id);
-    if (!conflict) {
-      setConflictCopy(null);
-      return;
-    }
-    const copy = await getLocalItem(conflict.copy_id);
-    setConflictCopy({ copyId: conflict.copy_id, copyTitle: copy?.title ?? "冲突副本" });
+    // 取值逻辑在 `data/db/conflicts.findConflictView`（v0.8.24 下沉）
+    setConflictCopy(id === null ? null : await findConflictView(id));
   }, []);
 
   /** 内容没变就不要替换数组：每次同步都塞新数组会让下游依赖无谓地变身份 */
@@ -358,6 +356,14 @@ export function useNotesWorkspace(
     const current = selectedIdRef.current;
     if (current !== null) {
       const cached = await getCachedBody(current);
+      /*
+        缓存正文与基线不一致 → 弹"别处改过"。基线**只跟自己的推送走**：
+        `notifyOwnPush`（同步引擎把本次实际推送成功的条目 id 回报上来，App 的
+        `onSynced` → `onOwnPush` 链）在推送落地时把基线更新为刚推上去的缓存正文。
+        新建笔记后立刻输入是必经之路，此前基线没人更新，第一轮刷新就误报
+        「另一个标签页被修改过」（v0.8.24 修）。别处（含同机其他标签页）的写入
+        不经过这条回报，照常弹横幅；编辑中被抢先写的场景由推送 409 → 冲突副本兜底。
+      */
       if (cached && cached.body !== initialBodyRef.current) setRemoteChanged(true);
     }
     // 冲突提示：`refresh` 与 `open` 都要算（打开一条有副本的笔记时就该看见）
@@ -693,6 +699,17 @@ export function useNotesWorkspace(
       resolveConflict,
       reloadSelected,
       input: (text: string) => editorRef.current?.onInput(text),
+      notifyOwnPush: async (itemIds: readonly string[]) => {
+        const id = editorIdRef.current;
+        // 迟到的回报可能属于上一篇：只认当前打开着的这一篇
+        if (id === null || id !== selectedIdRef.current || !itemIds.includes(id)) return;
+        const cached = await getCachedBody(id);
+        if (!cached) return;
+        // 自己的推送刚落地：缓存正文就是编辑器推上去的那份（上传期间又敲的字由
+        // `afterBodySynced` 重新入队、下一轮再推），基线跟上去、清掉"别处改过"。
+        applyInitialBody(cached.body);
+        setRemoteChanged(false);
+      },
       notifyUploaded: () => {
         editorRef.current?.notifyUploaded();
         const id = editorIdRef.current;

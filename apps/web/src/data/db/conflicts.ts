@@ -29,6 +29,19 @@ export async function findConflictForOriginal(
   return rows.sort((a, b) => b.created_at - a.created_at)[0];
 }
 
+/**
+ * 横幅要显示的冲突视图（v0.8.24 从 `useNotesWorkspace` 下沉）：原条目的最新冲突副本
+ * 加上它的标题（副本行可能已被清掉，标题回落到"冲突副本"）。没有冲突时返回 `null`。
+ */
+export async function findConflictView(
+  originalId: string,
+): Promise<{ copyId: string; copyTitle: string } | null> {
+  const conflict = await findConflictForOriginal(originalId);
+  if (!conflict) return null;
+  const rows = await db.items.get(conflict.copy_id);
+  return { copyId: conflict.copy_id, copyTitle: rows?.title ?? "冲突副本" };
+}
+
 /** 冲突已处理（不论保留哪一份），把关联记录清掉 */
 export async function clearConflict(copyId: string): Promise<void> {
   await db.conflicts.delete(copyId);
