@@ -534,6 +534,34 @@ describe("外来顶层键：读 / 写 / 删", () => {
     expect(parseMenoteMeta(next).meta.type).toBe("note");
   });
 
+  /*
+    回归（2026-10-11 用户报「在属性里改了一个属性之后出现两个」）。触发条件是**被改的键排在
+    自有键之后**——Obsidian 导出最常见的形状正是 `title` 在第一行、外来键跟在后面。从前
+    「插在第一个自有键之前」那一支不问键在不在，于是先在 `title:` 前插一份、再在原位置替换出
+    第二份 = 同一个键两行（卡片上同名的属性也就出现两条）。判据改成「整段里有没有」。
+  */
+  it("被改的键排在自有键之后（title 在最前）→ 原位替换，不许出现两条", () => {
+    const obsidianLike = '---\ntitle: T\nurl: "a"\nauthor:\n  - "枕鹤"\n---\n\n正文';
+    const next = writeForeignKey(obsidianLike, "url", { value: '"b"', block: false });
+
+    expect(next.match(/^url\s*:/gm) ?? []).toHaveLength(1);
+    expect(next).toContain('url: "b"');
+    // 顺序也不动：title 仍在 url 之前
+    expect(next.indexOf("title:")).toBeLessThan(next.indexOf("url:"));
+    expect(next).toContain('author:\n  - "枕鹤"');
+    // 幂等：同一个值再写一次必须是同一份
+    expect(writeForeignKey(next, "url", { value: '"b"', block: false })).toBe(next);
+  });
+
+  it("块序列同理：自有键排在前时改写也只留一条", () => {
+    const obsidianLike = '---\ntitle: T\nurl: "a"\nauthor:\n  - "枕鹤"\n---\n\n正文';
+    const next = writeForeignKey(obsidianLike, "author", { value: '- "花间"', block: true });
+
+    expect(next.match(/^author\s*:/gm) ?? []).toHaveLength(1);
+    expect(next).toContain('author:\n  - "花间"');
+    expect(readForeignKeys(next).map((k) => k.key)).toEqual(["url", "author"]);
+  });
+
   it("本来没有 front matter 的空白笔记，加外来键时**建出** front matter", () => {
     const next = writeForeignKey("正文", "rating", { value: "5", block: false });
     expect(next).toBe("---\nrating: 5\n---\n\n正文");

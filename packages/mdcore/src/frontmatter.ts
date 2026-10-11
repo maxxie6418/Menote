@@ -521,6 +521,15 @@ export function writeForeignKey(
   let replaced = false;
   let inserted = false;
 
+  /*
+    **先问一句「这一段里到底有没有这个键」，不能边扫边决定**。
+    2026-10-11 修的那次重复就出在这里：从前只有「扫到一个自有键之前就插一份」这一个岔口，
+    于是「被改的外来键排在自有键**之后**」（Obsidian 导出最常见的形状——`title` 在第一行、
+    `url` / `author` 跟在后面）会先在 `title` 前面插一份、再在原位置替换出第二份，
+    结果是**同一个键两行**（卡片上同名的属性也就出现两条）。判据必须是「整段里有没有」。
+  */
+  const exists = segments.some((segment) => segment.key === key);
+
   for (const segment of segments) {
     if (segment.key === key && !replaced) {
       out.push(...renderForeignSegment(key, input.value, input.block));
@@ -528,7 +537,7 @@ export function writeForeignKey(
       inserted = true;
       continue;
     }
-    if (!inserted && RESERVED_KEYS.has(segment.key)) {
+    if (!exists && !inserted && RESERVED_KEYS.has(segment.key)) {
       out.push(...renderForeignSegment(key, input.value, input.block));
       inserted = true;
     }
