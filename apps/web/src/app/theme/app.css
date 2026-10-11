@@ -747,11 +747,28 @@ button {
   color: var(--text);
 }
 
+/*
+  正文区**纸面**（2026-10-11 用户要求）。
+
+  问题：浅色主题下 `--bg` 与 `--panel` **都是 #ffffff**——正文编辑区跟整块面板同色，
+  点进去看不出哪儿是能打字的地方（深色主题下这两个令牌恰好不同色，所以只有浅色暴露）。
+  做法照「桌面 + 一张纸」两层：
+
+  · 滚动容器（本行）当桌面，用 `--bg-soft`；
+  · 正文列（编辑器 `.cm-scroller` / 预览 `.markdown-body`，见下）当纸，用 `--panel` +
+    `--line` 描边 + `--radius-lg` 圆角。
+
+  两个令牌在两个主题下都天然成立（浅色：白纸 / 灰桌；深色：抬起的纸 / 更暗的桌），
+  所以**不新增令牌、不写主题特例**。高度取 A4 比例（宽 740px ÷ 210 × 297 ≈ 1047px，
+  740px 是 `DESIGN.md` §2.3 的正文宽度上限）：内容短时是一张 A4 纸，写长了 `min-height`
+  不再起作用，纸面**无缝往下延伸**——没有分页，也没有第二个滚动容器（§2.7）。
+*/
 .docpane__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
+  background: var(--bg-soft);
 }
 
 .docpane__center {
@@ -808,11 +825,16 @@ button {
 [data-editor] .cm-scroller {
   width: 100%;
   max-width: 740px;
-  margin: 0 auto;
+  margin: var(--sp-5) auto;
   padding: var(--sp-5) var(--sp-6) 80px;
   font-family: var(--mono);
   font-size: var(--fs-body);
   line-height: 1.7;
+  /* 纸面（见 `.docpane__body` 那处注释）：A4 比例 = 740 : 297/210 */
+  min-height: calc(740px * 297 / 210);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
 }
 
 [data-editor] .cm-content {
@@ -1709,11 +1731,15 @@ button {
   line-height: 1.75;
 }
 
-/* 正文阅读区的宽度与内边距（DESIGN.md §2.3：Markdown 正文宽度上限 740px） */
+/* 正文阅读区的宽度与内边距（DESIGN.md §2.3：Markdown 正文宽度上限 740px）+ 同一张纸面 */
 .docpane__body .markdown-body {
   max-width: 740px;
-  margin: 0 auto;
+  margin: var(--sp-5) auto;
   padding: var(--sp-5) var(--sp-6) 80px;
+  min-height: calc(740px * 297 / 210);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
 }
 
 /*

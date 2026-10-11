@@ -89,7 +89,8 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
   it("编辑器各档与仅预览共享同一内容边界", () => {
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "width")).toBe("100%");
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "max-width")).toBe("740px");
-    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "margin")).toBe("0 auto");
+    // 2026-10-11：纸面上下各留一段间距（`--sp-5`），左右仍是 auto 居中
+    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "margin")).toBe("var(--sp-5) auto");
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "padding")).toBe(
       "var(--sp-5) var(--sp-6) 80px",
     );
@@ -97,7 +98,31 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "max-width")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "margin")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "padding")).toBe("");
-    expect(effectiveValue(rules, ".docpane__body .markdown-body", "max-width")).toBe("740px");
+    // 仅预览档是**同一组边界**：逐字比编辑档，而不是各写各的期望值
+    for (const prop of ["max-width", "margin", "padding"]) {
+      expect(effectiveValue(rules, ".docpane__body .markdown-body", prop)).toBe(
+        effectiveValue(rules, "[data-editor] .cm-scroller", prop),
+      );
+    }
+  });
+
+  /*
+    2026-10-11 补（用户反馈"正文编辑区与背景完全同色、点击时无法分辨"）：正文区改成**桌面 + 一张纸**——
+    底色 `--bg-soft` 是桌面、纸面 `--panel` 加一圈 `--line` 描边、A4 比例下限让短内容也是一张纸
+    （长内容 `min-height` 不再起作用，纸面无缝往下延伸）。编辑档与仅预览档是同一张纸，
+    所以两边**必须逐字相同**；只有一边改了就是"切档时纸变了个样"。
+  */
+  it("编辑档与仅预览是同一张纸（底色 / 描边 / A4 下限三件套两边逐字相同）", () => {
+    for (const prop of ["background", "border", "border-radius", "min-height"]) {
+      const editor = effectiveValue(rules, "[data-editor] .cm-scroller", prop);
+      expect(editor).toBe(effectiveValue(rules, ".docpane__body .markdown-body", prop));
+      expect(editor, prop).not.toBe("");
+    }
+    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "min-height")).toBe(
+      "calc(740px * 297 / 210)",
+    );
+    // 桌面色（纸外那圈）挂在外层滚动容器上
+    expect(effectiveValue(rules, ".docpane__body", "background")).toBe("var(--bg-soft)");
   });
 
   /*

@@ -39,8 +39,9 @@
  *
  * ## 四条配套
  *
- * 1. **判据与 mdcore 的 `splitFences` 一致**：第一行必须是 `---`、必须能闭合；
- *    没闭合就不隐藏（用户可能正在写第一行，此时隐藏只是干扰）。
+ * 1. **判据与 mdcore 的 `splitFences` 逐条一致**：先摘掉开头的 U+FEFF（BOM），再要求第一行
+ *    必须是 `---`、必须能闭合；没闭合就不隐藏（用户可能正在写第一行，此时隐藏只是干扰）。
+ *    **两处口径必须一起改**——2026-10-11 就漏了 BOM 这一格（见 `frontmatterRange` 的注释）。
  * 2. **光标不许钻进被藏起来的那一段**：否则用户会「明明看不见却能改，改完还找不到」。
  *    选区落进去就顶到隐藏区末尾；已经在该位置就不再派发，避免自激循环。
  * 3. **隐藏区是原子的**（`EditorView.atomicRanges`）：不然在边界上退格会只吃掉围栏、把
@@ -53,19 +54,37 @@ import { Decoration, EditorView, type DecorationSet, type ViewUpdate } from "@co
 /**
  * front matter 在文档里的区间（`{from, to}`，to 含结尾围栏后的换行）。
  *
- * **判据与 mdcore 的 `splitFences` 保持一致**：第一行必须是 `---`、必须能找到收尾的 `---`；
- * 没闭合就返回 `null`（当没有——用户可能正在写第一行，此时任何隐藏都是干扰）。
+ * **判据与 mdcore 的 `splitFences` 逐条对齐**（`packages/mdcore/src/frontmatter.ts` 里那一份），
+ * 因为同一个文件会被两处判两次：这里判「藏不藏」，那里判「属性卡片读得到读不到」。
+ * 判据一旦不一致，就会出**只有一边知道**的怪状。
+ *
+ * 【2026-10-11 补 BOM】此前这里第一句是 `text.startsWith("---\n")`，而 `splitFences` 是
+ * **先摘掉开头的 U+FEFF 再判**。于是 Windows 上外部工具存的 `.md`（开头带 BOM）会出现：
+ * 属性卡片照读不误（mdcore 摘了 BOM），**编辑器却把整段 YAML 露在正文里**——用户看到的是
+ * 「yaml 没被识别到」。现在两边都用「摘 BOM → 首行 trim 后必须是 `---`」这一条判据
+ * （`frontmatter-hide.test.ts` 里有一条不变式用例把两边钉在一起）。
+ *
+ * 前导空行**两边都不接受**（front matter 必须紧贴文件开头）：这是 `splitFences` 的既定判据，
+ * 这里跟它对齐。若哪天要放宽，必须两处一起改，否则会出现「藏了但读不到」——
+ * 那比露出来更糟：属性看不见、还改不了。
  */
 export function frontmatterRange(text: string): { from: number; to: number } | null {
-  if (!text.startsWith("---\n")) return null;
-  const lines = text.split("\n");
+  const bom = text.startsWith("\uFEFF") ? 1 : 0;
+  const content = bom === 1 ? text.slice(1) : text;
+  // 与 `splitFences` 同一句：必须紧贴文件开头，不许前导空行 / 空格
+  if (!content.startsWith("---")) return null;
+
+  const lines = content.split("\n");
+  // `trim()` 顺带吃掉了 CRLF 的那个 `\r`（编辑器里的文档已被 CodeMirror 归一成 `\n`，
+  // 纯函数这一层仍要能吃 CRLF——它同时被别处的用例直接调用）
   if (lines[0]?.trim() !== "---") return null;
   const end = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
   if (end === -1) return null;
 
-  let to = 0;
+  // BOM 那一格本身不藏（它是零宽字符，藏不藏都看不见），所以起点跳过它、长度按摘掉 BOM 的文本算
+  let to = bom;
   for (let index = 0; index <= end; index += 1) to += (lines[index] ?? "").length + 1;
-  return { from: 0, to: Math.min(to, text.length) };
+  return { from: bom, to: Math.min(to, text.length) };
 }
 
 /**

@@ -13,6 +13,7 @@
  */
 import { EditorState } from "@codemirror/state";
 import type { Decoration, DecorationSet } from "@codemirror/view";
+import { parseMenoteMeta } from "@menote/mdcore";
 import { describe, expect, it } from "vitest";
 import {
   buildFrontmatterDecorations,
@@ -121,6 +122,64 @@ describe("装饰：整段零宽藏起来，不留任何可点元素（设计 §7
   it("围栏没闭合 → 一个装饰都不加（让正在写的那一行原样可见）", () => {
     const text = "---\ntitle: 写了一半\n\n正文。";
     expect(pieces(text, buildFrontmatterDecorations(text))).toHaveLength(0);
+  });
+});
+
+/*
+  判据对齐（2026-10-11 补）：同一个文件被两处判两次——这里判「编辑器藏不藏」，mdcore 的
+  `splitFences` 判「属性卡片读得到读不到」。两处不一致时会出现「只有一边知道」的怪状：
+  用户报的「yaml 没被识别到」就是**开头带 BOM** 的文件——卡片照读（mdcore 摘 BOM），
+  编辑器却把整段 YAML 露在正文里（这里此前要求 `---\n` 精确开头）。
+*/
+describe("判据与 mdcore 的 splitFences 逐条对齐", () => {
+  it("开头带 BOM 的文件照藏（藏掉的是 BOM 之后的 front matter，BOM 那一格留着）", () => {
+    const text = `\uFEFF${OB}`;
+    const range = frontmatterRange(text);
+    expect(range).not.toBeNull();
+    expect(range?.from).toBe(1);
+    expect(text.slice(range?.from, range?.to)).toBe(
+      '---\ntitle: "Anatomy of the .claude/ folder"\nurl: "https://x.com/akshay_pachaar/status/2035341800739877091"\ntags: [claude]\nstatus: unread\n---\n',
+    );
+  });
+
+  it("CRLF 的文档照藏（首行那个 \\r 被 trim 吃掉）", () => {
+    const text = "---\r\ntitle: x\r\n---\r\n\r\n正文。";
+    const range = frontmatterRange(text);
+    expect(text.slice(range?.from, range?.to)).toBe("---\r\ntitle: x\r\n---\r\n");
+  });
+
+  it("前导空行：两边都不认（front matter 必须紧贴文件开头）", () => {
+    expect(frontmatterRange("\n---\ntitle: x\n---\n\n正文。")).toBeNull();
+  });
+
+  /*
+    不变式用例：**藏 = 认**。这条能一次钉住整类偏差（BOM 那次就是被它之外的用例放过去的），
+    所以样本要成对地覆盖「认」与「不认」两侧。
+  */
+  it("不变式：编辑器藏不藏，与 mdcore 认不认这段 front matter 同进同出", () => {
+    const samples = [
+      OB,
+      ME_NOTE,
+      "正文第一段。",
+      "",
+      "---",
+      "---\n",
+      "---\ntitle: x\n---\n",
+      `\uFEFF${OB}`,
+      "\uFEFF---\ntitle: x\n---\n\n正文。",
+      "---\r\ntitle: x\r\n---\r\n\r\n正文。",
+      "\n---\ntitle: x\n---\n\n正文。",
+      "  ---\ntitle: x\n---\n",
+      "---\ntitle: 写了一半\n\n正文。",
+      "正文\n---\n分隔线\n",
+      "---\rtitle: x\r---\r正文。",
+    ];
+
+    for (const one of samples) {
+      // mdcore 不认这段 front matter 时，body 就是原文一字不动
+      const recognised = parseMenoteMeta(one).body !== one;
+      expect(frontmatterRange(one) !== null, JSON.stringify(one)).toBe(recognised);
+    }
   });
 });
 
