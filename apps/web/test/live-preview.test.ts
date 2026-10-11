@@ -204,6 +204,39 @@ describe("即时渲染：标记藏起来、内容留样式", () => {
     expect(items[0]?.node.textContent).not.toContain("#pending-1");
   });
 
+  /*
+    图片内联（编辑器专项优化 P2-3，即时渲染设计 §七-4 销账）：真实地址渲染真图（懒加载）、
+    加载失败降级成可见占位、外链照常；sha 是内部标识，不进界面文字。
+  */
+  it("图片内联：真实地址渲染 <img>（懒加载），sha 不进界面文字", () => {
+    const sha = "a".repeat(64);
+    const doc = `![工作截图](/api/attachments/h/${sha})`;
+    const state = makeState(doc);
+    const items = widgets(state, doc);
+    expect(items).toHaveLength(1);
+    const img = items[0]?.node.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("src")).toBe(`/api/attachments/h/${sha}`);
+    expect(img?.getAttribute("loading")).toBe("lazy");
+    expect(items[0]?.node.textContent).not.toContain(sha);
+  });
+
+  it("图片内联：加载失败降级成可见占位，不静默烂图", () => {
+    const doc = `![坏图](/api/attachments/h/${"b".repeat(64)})`;
+    const state = makeState(doc);
+    const node = widgets(state, doc)[0]?.node as HTMLElement;
+    node.querySelector("img")?.dispatchEvent(new Event("error"));
+    expect(node.className).toContain("cm-live-img--broken");
+    expect(node.textContent).toContain("坏图");
+  });
+
+  it("图片内联：外链地址照常渲染", () => {
+    const doc = "![外部](https://example.com/a.png)";
+    const state = makeState(doc);
+    const img = widgets(state, doc)[0]?.node.querySelector("img");
+    expect(img?.getAttribute("src")).toBe("https://example.com/a.png");
+  });
+
   it("代码块：围栏与语言保持源码可见，只给行底色（首期不做语言高亮）", () => {
     const doc = "```js\nconst a = 1;\n```";
     const state = makeState(doc);

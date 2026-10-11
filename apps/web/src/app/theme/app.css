@@ -1383,6 +1383,33 @@ button {
 }
 
 /*
+  内联图片（编辑器专项优化 P2-3）——预览与即时渲染共用同一组：
+  宽度不出栏、等比缩放、细圆角；失败态可见（虚线框 + alt 文字，DESIGN §6.1），
+  不静默烂图。地址里的 sha 只进 `src`，不进界面文字（M4 界面稿 §7.4）。
+*/
+.markdown-body img,
+.cm-live-img img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.cm-live-img--broken {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--sp-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.cm-live-img--broken img {
+  display: none;
+}
+
+/*
   任务清单复选框（编辑器专项优化 P2-1）——**预览与即时渲染共用这一组**：
   - 预览（`.markdown-body`）：markdown-it-task-lists 输出的 `.task-list-item-checkbox`（disabled）；
   - 即时渲染（`.cm-task-checkbox`）：`TaskCheckboxWidget` 里的真复选框（可点、点了改文档）。

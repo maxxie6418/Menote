@@ -177,6 +177,53 @@ class TaskCheckboxWidget extends WidgetType {
 /** 行内任务标记的唯一正则（引用块与多级列表里的也算）；与命令层的语义一致 */
 const TASK_MARKER_RE = /^((?:[ \t]*>[ \t]?)*[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[)([ xX])(\])/;
 
+/**
+ * 内联图片（编辑器专项优化 P2-3，即时渲染设计 §七-4 销账）。
+ *
+ * 真实地址（`/api/attachments/h/<sha>` 或外链）→ 渲染**真图**：懒加载（同预览的
+ * `loading="lazy"` 口径）、加载失败降级成虚线占位（可见、可读，不静默烂图）。
+ * 地址里的 sha 是内部标识，**不进界面文字**（M4 界面稿 §7.4）——只进 `src`，
+ * 用户可见的文字只有 alt（title）。
+ *
+ * 上传中的 `#pending` 占位**不**走这里：地址还不是真的，保持原有的文字占位块
+ * （alt 就是「上传中：文件名」），上传完成队列会把地址换成真实 sha，widget 随之换图。
+ */
+class ImageInlineWidget extends WidgetType {
+  constructor(
+    readonly alt: string,
+    readonly src: string,
+  ) {
+    super();
+  }
+
+  override eq(other: ImageInlineWidget): boolean {
+    return other.alt === this.alt && other.src === this.src;
+  }
+
+  override toDOM(): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-live-img";
+    const img = document.createElement("img");
+    img.src = this.src;
+    img.alt = this.alt;
+    if (this.alt !== "") img.title = this.alt;
+    /* 属性用 setAttribute：`loading` 属性在 jsdom 里不反射，测试要能断言到它 */
+    img.setAttribute("loading", "lazy");
+    img.setAttribute("decoding", "async");
+    /* 失败可见（DESIGN §6.1 错误态）：虚线框 + 保留 alt 文字，不静默 */
+    img.addEventListener("error", () => {
+      wrap.classList.add("cm-live-img--broken");
+      const note = document.createElement("span");
+      note.className = "cm-live-img__alt";
+      note.textContent = this.alt === "" ? "图片" : this.alt;
+      wrap.append(note);
+    });
+    img.addEventListener("load", () => wrap.classList.remove("cm-live-img--broken"));
+    wrap.append(img);
+    return wrap;
+  }
+}
+
 const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
 
 export interface LivePreviewInput {
@@ -317,8 +364,14 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
         }
         case "Image": {
           if (inActive(node.from, node.to)) return; // 光标在这一行：看源码（含地址）
+          const alt = altOf(doc, node.from, node.to);
+          const urlNode = childrenOf(node.node).find((child) => child.name === "URL");
+          const raw = urlNode ? doc.sliceString(urlNode.from, urlNode.to) : "";
+          // 尖括号包地址（`![a](<u x>)`）剥掉壳；`#pending`/空地址是上传中占位，保持文字占位块
+          const src = raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw;
+          const isPending = src === "" || src.includes("#pending") || src.startsWith("#");
           const range = Decoration.replace({
-            widget: new ImagePlaceholderWidget(altOf(doc, node.from, node.to)),
+            widget: isPending ? new ImagePlaceholderWidget(alt) : new ImageInlineWidget(alt, src),
           }).range(node.from, node.to);
           ranges.push(range);
           atomicRanges.push(range);
