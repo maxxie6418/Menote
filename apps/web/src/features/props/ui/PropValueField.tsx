@@ -107,7 +107,7 @@ export function PropValueField({
   }
 
   const common = {
-    className: "itemprops__value",
+    className: "itemprops__input",
     readOnly: disabled,
     title: disabled ? readOnlyReason : undefined,
     "aria-label": `${propKey} 的值`,
@@ -120,7 +120,6 @@ export function PropValueField({
     return (
       <select
         {...common}
-        className="itemprops__value itemprops__field"
         value={value}
         disabled={disabled}
         onChange={(event) => commit(event.target.value, false)}
@@ -139,7 +138,7 @@ export function PropValueField({
     return (
       <textarea
         {...common}
-        className="itemprops__value itemprops__value--block"
+        className="itemprops__input itemprops__input--block"
         rows={Math.min(BLOCK_ROWS_MAX, Math.max(1, value.split("\n").length))}
         defaultValue={value}
         onBlur={(event) => commit(event.target.value, true)}

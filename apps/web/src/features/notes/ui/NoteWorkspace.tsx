@@ -18,7 +18,7 @@ import { DocStatusBar } from "./DocStatusBar";
 import { buildMoreMenuItems } from "./moreMenuItems";
 import { ItemProps, shouldShowItemProps } from "./ItemProps";
 import { useItemProps } from "../useItemProps";
-import type { PropLibraryEntry } from "../../props/model";
+import type { PropLabels, PropLibraryEntry } from "../../props/model";
 import { TitleInput } from "./TitleInput";
 import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
 import { useTableDoc } from "../../tables/useTableDoc";
@@ -183,6 +183,11 @@ export interface NoteWorkspaceProps {
    */
   propLibrary?: readonly PropLibraryEntry[];
   onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
+  /**
+   * 属性显示名（2026-10-11 重设计 v1 §4；账号级偏好 `user_settings.prop_labels`）。
+   * **只读**：界面怎么叫由设置页决定，正文侧一个字都不写它——写回 md 的永远是源键名。
+   */
+  propLabels?: PropLabels;
 }
 
 export function NoteWorkspace({
@@ -216,6 +221,7 @@ export function NoteWorkspace({
   onPropsError,
   propLibrary = [],
   onPropLibraryChange,
+  propLabels,
 }: NoteWorkspaceProps) {
   /** 用户在设置里**开着**的档（`editor_modes`）；这里同时收口"产品允许哪几档" */
   const available = useMemo(() => normalizeEditorModes(availableModes), [availableModes]);
@@ -471,6 +477,7 @@ export function NoteWorkspace({
           onForeignAdd={propsApi.onForeignAdd}
           library={propLibrary}
           onLibraryChange={onPropLibraryChange}
+          labels={propLabels}
           onError={onPropsError}
         />
       ) : null}

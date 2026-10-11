@@ -41,12 +41,15 @@ import {
 import type { PropLibraryEntry } from "@menote/shared";
 import { Chip } from "../../../app/ui/Chip";
 import { ConfirmDialog } from "../../../app/ui/ConfirmDialog";
+import { InfoHint } from "../../../app/ui/InfoHint";
 import {
   addEntry,
   entryFor,
+  labelFor,
   PROP_KEY_PATTERN,
   registerValue,
   RESERVED_PROP_KEYS,
+  type PropLabels,
 } from "../../props/model";
 import { PropPicker } from "../../props/ui/PropPicker";
 import { PropValueField } from "../../props/ui/PropValueField";
@@ -75,6 +78,11 @@ export interface ItemPropsProps {
    * 只在**用户真的动过**时调用（§6.4）——渲染、切换条目都不该改库。
    */
   onLibraryChange?: (next: PropLibraryEntry[]) => void;
+  /**
+   * 显示名（账号级，重设计 v1 §4）：键 → 界面叫法。**只改界面**——写回 md、导出、分享、
+   * 备份一律仍是源键名。不传就是源名（内置键回落内置中文名，见 `features/props/model`）。
+   */
+  labels?: PropLabels;
   /** 校验没过时把理由报上来（错误必须可见，不静默） */
   onError?: (message: string) => void;
 }
@@ -193,17 +201,30 @@ export function shouldShowItemProps(body: string): boolean {
  * 「有几项、是什么」，这是折叠该省的空间，不是该省的信息。口径都在既有数据上算，
  * 不额外派生：标签取卡片显示的那份（front matter 里的），状态取清单字段。
  */
-function collapsedSummary(props: ReturnType<typeof readItemProps>): string {
+/** 摘要里一个值最多显示多少字（摘要本来就只有一行、还会被 CSS 省略号截，先自己收一下） */
+const SUMMARY_VALUE_MAX = 14;
+
+/** 值的第一行（块序列取首行）、过长截断；空值说「空」而不是留一片白 */
+function summaryValue(value: string): string {
+  const first = (value.split("\n")[0] ?? "").trim();
+  if (first === "") return "空";
+  return first.length > SUMMARY_VALUE_MAX ? `${first.slice(0, SUMMARY_VALUE_MAX)}…` : first;
+}
+
+function collapsedSummary(props: ReturnType<typeof readItemProps>, labels?: PropLabels): string {
   const parts: string[] = [];
   if (props.tags.length > 0) parts.push(`${props.tags.length} 个标签`);
   if (props.task) {
     // 状态为空时不能回落「待办」——那是谎报，与卡片里的「未设置」占位项同一口径
     parts.push(
-      props.task.status ? (TASK_STATUS_LABELS[props.task.status as TaskStatus] ?? "清单") : "清单未设置",
+      props.task.status ? `${labelFor(labels, "status")} ${props.task.status}` : "清单未设置",
     );
   }
-  if (props.foreign.length > 0) parts.push(`${props.foreign.length} 项其他属性`);
-  return parts.length > 0 ? `属性 · ${parts.join(" · ")}` : "属性";
+  // 外来键逐条列「显示名 值」：折起来时最想知道的正是"这一篇都设了什么"（重设计 v1 §2.6）
+  for (const one of props.foreign) {
+    parts.push(`${labelFor(labels, one.key)} ${summaryValue(one.value)}`);
+  }
+  return parts.length > 0 ? `属性 · ${parts.join(" · ")}` : "属性 · 未设置";
 }
 
 export function ItemProps({
@@ -217,10 +238,15 @@ export function ItemProps({
   onForeignAdd,
   library = [],
   onLibraryChange,
+  labels,
   onError,
 }: ItemPropsProps) {
   const props = readItemProps(body);
-  const { tags, task, foreign, rawTask, unrecognized } = props;
+  /*
+    这里不再取 `unrecognized`：2026-10-11 起路 A 把"原值不识别"的提示落在**那一行值控件下方**，
+    段级横条已删。`readItemProps` 仍然返回它（有用例钉着这个解析结果），只是界面不用了。
+  */
+  const { tags, task, foreign, rawTask } = props;
   const disabled = !editable;
 
   /** 待确认删除的外来键（设计 §6.5：破坏性操作二次确认）；`null` = 没在确认 */
@@ -323,6 +349,11 @@ export function ItemProps({
   return (
     <section className="itemprops" aria-label="属性">
       <div className="itemprops__inner">
+      {/*
+        只读原因从前只挂在每个控件的 `title` 上——不悬停就等于不存在。做成一行看得见的
+        话（重设计 v1 §2.6），"为什么改不了"就不用用户去猜；能改的时候这一行不出现。
+      */}
+      {!editable && readOnlyReason ? <p className="itemprops__note">{readOnlyReason}</p> : null}
       {collapsed ? (
         // 折起来：只留一行摘要 + 展开按钮，属性本体不渲染（省地方，也省一次解析之外的绘制）
         <button
@@ -334,7 +365,7 @@ export function ItemProps({
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="m9 18 6-6-6-6" />
           </svg>
-          <span className="itemprops__summary">{collapsedSummary(props)}</span>
+          <span className="itemprops__summary">{collapsedSummary(props, labels)}</span>
         </button>
       ) : (
         <>
@@ -350,12 +381,12 @@ export function ItemProps({
             </svg>
             <span className="itemprops__summary">属性</span>
           </button>
-          <div className="itemprops__group">
         <div className="itemprops__row">
-          <span className="itemprops__label" id="itemprops-tags">
-            标签
+          <span className="itemprops__label" id="itemprops-tags" title="tags">
+            {labelFor(labels, "tags")}
           </span>
-          <div className="itemprops__vals">
+          <div className="itemprops__ctl">
+            <div className="itemprops__chips">
             {tags.map((tag) => (
               <Chip key={tag} variant="tag" title={editable ? `移除标签 ${tag}` : readOnlyReason}>
                 {tag}
@@ -379,17 +410,18 @@ export function ItemProps({
               </button>
             ) : null}
             {tags.length === 0 && !editable ? <span className="itemprops__none">没有标签</span> : null}
+            </div>
           </div>
         </div>
 
         <div className="itemprops__row">
-          <label className="itemprops__label" htmlFor="itemprops-status">
-            状态
+          <label className="itemprops__label" htmlFor="itemprops-status" title="status">
+            {labelFor(labels, "status")}
           </label>
-          <div className="itemprops__vals">
+          <div className="itemprops__ctl">
             <select
               id="itemprops-status"
-              className="itemprops__field"
+              className="itemprops__input"
               value={task?.status ?? rawUnknown("status") ?? ""}
               disabled={disabled}
               title={disabled ? readOnlyReason : undefined}
@@ -415,14 +447,27 @@ export function ItemProps({
                 </option>
               ))}
             </select>
+            {/*
+              路 A 的提示**就在它讲的那一行里**（重设计 v1 §2.3）：短句可见（警告不能藏），
+              完整解释收进 ⓘ——从前它是段级横条，位置在四行之下、讲的却是这一行。
+            */}
+            {rawUnknown("status") ? (
+              <p className="itemprops__note itemprops__note--warn">
+                ⚠ {rawUnknown("status")} 不是 MeNote 的值 · 已原样保留
+                <InfoHint label="状态值的说明">
+                  它已经被认成这一篇的清单状态。选中别的值才会把它改成 MeNote 的写法；
+                  留着不影响其它内容，下次保存也原样写回去。
+                </InfoHint>
+              </p>
+            ) : null}
           </div>
         </div>
 
         <div className="itemprops__row">
-          <label className="itemprops__label" htmlFor="itemprops-due">
-            截止
+          <label className="itemprops__label" htmlFor="itemprops-due" title="due">
+            {labelFor(labels, "due")}
           </label>
-          <div className="itemprops__vals">
+          <div className="itemprops__ctl">
             <input
               id="itemprops-due"
               /*
@@ -430,7 +475,7 @@ export function ItemProps({
                 显示成空，失焦再写回一个空值——**等于把用户的数据抹掉**，宁可退成文本。
               */
               type={rawUnknown("due") ? "text" : "date"}
-              className="itemprops__field"
+              className="itemprops__input"
               value={task?.due ?? rawUnknown("due") ?? ""}
               disabled={disabled}
               title={disabled ? readOnlyReason : undefined}
@@ -444,17 +489,26 @@ export function ItemProps({
                 )
               }
             />
+            {rawUnknown("due") ? (
+              <p className="itemprops__note itemprops__note--warn">
+                ⚠ {rawUnknown("due")} 不是 MeNote 的值 · 已原样保留
+                <InfoHint label="截止值的说明">
+                  MeNote 只认 `YYYY-MM-DD`。这个串不是那个形状，所以改用纯文本框原样摆着——
+                  交给日期控件的话，它会显示成空、一失焦就把这个值写没了。
+                </InfoHint>
+              </p>
+            ) : null}
           </div>
         </div>
 
         <div className="itemprops__row">
-          <label className="itemprops__label" htmlFor="itemprops-priority">
-            优先级
+          <label className="itemprops__label" htmlFor="itemprops-priority" title="priority">
+            {labelFor(labels, "priority")}
           </label>
-          <div className="itemprops__vals">
+          <div className="itemprops__ctl">
             <select
               id="itemprops-priority"
-              className="itemprops__field"
+              className="itemprops__input"
               value={task?.priority ?? rawUnknown("priority") ?? ""}
               disabled={disabled}
               title={disabled ? readOnlyReason : undefined}
@@ -481,32 +535,31 @@ export function ItemProps({
                 </option>
               ))}
             </select>
+            {rawUnknown("priority") ? (
+              <p className="itemprops__note itemprops__note--warn">
+                ⚠ {rawUnknown("priority")} 不是 MeNote 的值 · 已原样保留
+                <InfoHint label="优先级值的说明">
+                  选中别的值才会把它改成 MeNote 的写法；留着不影响其它内容。
+                </InfoHint>
+              </p>
+            ) : null}
           </div>
         </div>
-      </div>
 
       {/*
-        被接管、但值不识别的键（如顶层 `status: unread`）：**必须说出来**。它已经被认成清单
-        条目、不再出现在「其他属性」段里。2026-10-11 起走**路 A**：那三行各自把原值作为
-        「原样保留」的选项摆出来（可见 / 可留 / 可改），这行文案只负责说明"它不是错的写法"。
+        被接管、但值不识别的键（如顶层 `status: unread`）：**必须说出来**，但不再是段级横条——
+        2026-10-11 起走**路 A**：那三行各自把原值作为「原样保留」的选项摆出来，提示就落在
+        它讲的那一行里（见上面各行的 `__note--warn`）。这里不再渲染任何东西。
       */}
-      {unrecognized.length > 0 ? (
-        <div className="itemprops__warn">
-          {unrecognized.join("、")} 不是 MeNote 认识的值——它已作为「原样保留」摆在上面对应那一行，
-          留着不影响别的；选中别的值才会把它改成 MeNote 的写法。
-        </div>
-      ) : null}
 
       {/*
-        「其他属性」段**常显**（设计 §6.4）：从前它与段内的「+ 添加属性」都只在有外来键时
-        才渲染，等于空白笔记根本没有新增入口。只读档（预览）没有新增入口，空段就纯是噪声，
-        所以那种情况仍然只在真有外来键时渲染。
+        「其他属性」**常显且无分区头**（重设计 v1 §2.1）：它们和内置四行是同一种东西——都是
+        这一篇的属性，名字和值长得一样，没有理由把一半关进"其他"里。从前它与段内的
+        「+ 添加属性」都只在有外来键时才渲染，等于空白笔记根本没有新增入口。
+        只读档（预览）没有新增入口，空段就纯是噪声，所以那种情况仍然只在真有外来键时渲染。
       */}
       {foreign.length > 0 || editable ? (
-        <div className="itemprops__group itemprops__group--foreign">
-          {foreign.length > 0 ? (
-            <div className="itemprops__head">其他属性 · 键名原样保留</div>
-          ) : null}
+        <>
           {foreign.map((one) => {
             /*
               未入库 = 属性库还不知道这个键。（内置键不可能出现在 `foreign` 里：`title` / `tags` /
@@ -515,10 +568,11 @@ export function ItemProps({
             const entry = entryFor(library, one.key);
             return (
               <div className="itemprops__row" key={one.key}>
-                <span className="itemprops__key" title="键名原样保留，不翻译也不改写">
-                  {one.key}
+                {/* 名列显示的是显示名，`title` 永远是源名——写回 md、导出、分享的都是源名 */}
+                <span className="itemprops__label" title={one.key}>
+                  {labelFor(labels, one.key)}
                 </span>
-                <div className="itemprops__vals">
+                <div className="itemprops__ctl">
                   <PropValueField
                     propKey={one.key}
                     entry={entry}
@@ -529,15 +583,22 @@ export function ItemProps({
                     onCommit={(value, block) => changeForeign(one.key, one.value, value, block)}
                   />
                   {editable && !entry ? (
-                    <button
-                      type="button"
-                      className="itemprops__lib"
-                      title={`把「${one.key}」收进属性库——只是让以后新建它时能选中、按类型给控件，不改这一篇的内容`}
-                      onClick={() => adoptForeign(one.key, one.block)}
-                    >
-                      未入库
-                    </button>
+                    <div className="itemprops__libline">
+                      <button
+                        type="button"
+                        className="itemprops__lib"
+                        title={`把「${one.key}」收进属性库——只是让以后新建它时能选中、按类型给控件，不改这一篇的内容`}
+                        onClick={() => adoptForeign(one.key, one.block)}
+                      >
+                        未入库
+                      </button>
+                      <span className="itemprops__note">
+                        收进属性库可改类型与候选值，改的只是"以后怎么填"，这一篇一个字不动
+                      </span>
+                    </div>
                   ) : null}
+                </div>
+                <div className="itemprops__act">
                   {editable ? (
                     <button
                       type="button"
@@ -563,13 +624,14 @@ export function ItemProps({
             <div className="itemprops__foot">
               <PropPicker
                 library={library}
+                labels={labels}
                 used={foreign.map((one) => one.key)}
                 onPick={useForeign}
                 onNewKey={newForeign}
               />
             </div>
           ) : null}
-        </div>
+        </>
       ) : null}
 
       <ConfirmDialog

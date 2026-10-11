@@ -29,7 +29,7 @@ import { useAttachments } from "../../features/attachments/useAttachments";
 import { LEFTOVER_HINT } from "../../features/attachments/model";
 import { RemoveAttachmentRefDialog } from "../../features/attachments/ui/RemoveAttachmentRefDialog";
 import type { EditorHandle } from "../editor/Editor";
-import type { PropLibraryEntry } from "../../features/props/model";
+import type { PropLabels, PropLibraryEntry } from "../../features/props/model";
 import { TwoPane } from "./TwoPane";
 
 export interface NotesPaneProps {
@@ -75,6 +75,8 @@ export interface NotesPaneProps {
    */
   propLibrary?: readonly PropLibraryEntry[];
   onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
+  /** 属性显示名（2026-10-11 重设计 v1 §4）：只读转发，写入只在设置页的属性库 */
+  propLabels?: PropLabels;
 }
 
 export function NotesPane({
@@ -88,6 +90,7 @@ export function NotesPane({
   vault,
   propLibrary,
   onPropLibraryChange,
+  propLabels,
 }: NotesPaneProps) {
   const selected = workspace.selected;
   /** 待确认删除的条目 id（确认框在下方渲染；列表行只报事件） */
@@ -331,6 +334,7 @@ export function NotesPane({
             item={selected}
             propLibrary={propLibrary}
             onPropLibraryChange={onPropLibraryChange}
+            propLabels={propLabels}
             initialBody={workspace.initialBody}
             snapshot={workspace.snapshot}
             initialMode={editorMode}

@@ -23,7 +23,11 @@
  * **现成给出**，库里只存用户自建的条目。否则老账号（`prop_library: []`）打开管理页会缺五行，
  * 管理页得同时处理"库里有 / 没有内置键"两种状态——现成给出则只有一种。
  */
-import { readForeignKeys } from "@menote/mdcore";
+import {
+  readForeignKeys,
+  TASK_PRIORITY_LABELS,
+  TASK_STATUS_LABELS,
+} from "@menote/mdcore";
 import type { PropLibraryEntry, PropType } from "@menote/shared";
 
 /**
@@ -73,6 +77,19 @@ export const RESERVED_PROP_KEYS: ReadonlySet<string> = new Set([...BUILTIN_PROP_
 /** 键名可用字符。含冒号或空格的键写进去会让整块 YAML 坏掉（与 `mdcore` 的 `assertForeignKey` 同一口径） */
 export const PROP_KEY_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+/**
+ * 内置键的候选值域（管理页「候选取值」列只读展示用，2026-10-11 重设计 §3.2）。
+ *
+ * 它是**功能语义的一部分**（清单三键的归一档在 `mdcore` 里），既不在属性库里存、也不在
+ * 管理页改：扩展内置键的值域是设计稿 §8 的「路 B」，尚未做。展示出来只是为了让那一列
+ * 有话说——读者能看到「这些值是功能给定的」，而不是一个空框。
+ */
+export function builtinValueOptions(key: string): readonly string[] {
+  if (key === "status") return Object.keys(TASK_STATUS_LABELS);
+  if (key === "priority") return Object.keys(TASK_PRIORITY_LABELS);
+  return [];
+}
+
 const PROP_TYPES: readonly PropType[] = ["text", "multiline", "date", "number", "boolean", "choice"];
 
 export function isPropType(value: unknown): value is PropType {
@@ -90,6 +107,56 @@ export function isPropKey(key: string): boolean {
 
 export function typeLabel(type: PropType): string {
   return PROP_TYPE_LABELS[type];
+}
+
+/**
+ * 内置键的默认显示名（2026-10-11，《属性卡片与属性库-设计》v1 §4.2）。
+ *
+ * 没设 `prop_labels` 的键用它。**自建键没有默认值**——直接显示源名，
+ * 这是"键名原样、不替用户猜一个中文名"那条底线的显示层版本。
+ */
+export const BUILTIN_PROP_LABELS: Readonly<Record<string, string>> = {
+  title: "标题",
+  tags: "标签",
+  status: "状态",
+  due: "截止",
+  priority: "优先级",
+};
+
+/** 显示名表：键 → 界面叫法（存 `user_settings.prop_labels`，账号级、跟账号同步） */
+export type PropLabels = Readonly<Record<string, string>>;
+
+/**
+ * 一个键在界面上叫什么（设计 §4.2）：
+ *
+ * 1. 设了显示名 → 用它；
+ * 2. 内置键 → {@link BUILTIN_PROP_LABELS} 里的中文名；
+ * 3. 其余 → **就是源名本身**。
+ *
+ * 只影响界面：md 正文与 front matter、预览、分享页、导出、备份、MCP 一律源名（设计 §4.3）。
+ */
+export function labelFor(labels: PropLabels | undefined, key: string): string {
+  const custom = labels?.[key]?.trim();
+  if (custom) return custom;
+  return BUILTIN_PROP_LABELS[key] ?? key;
+}
+
+/**
+ * 设 / 清一个键的显示名，返回**新表**（不改传进来的那份）。
+ *
+ * 空串、以及"写成源名本身"都视为**清掉**——`url → url` 存进去只会让界面与默认值同形，
+ * 存着它等于给 `prop_labels` 留一条永远读不出差别的行。
+ */
+export function withPropLabel(
+  labels: PropLabels | undefined,
+  key: string,
+  value: string,
+): Record<string, string> {
+  const next: Record<string, string> = { ...(labels ?? {}) };
+  const trimmed = value.trim();
+  if (trimmed === "" || trimmed === key) delete next[key];
+  else next[key] = trimmed;
+  return next;
 }
 
 /**

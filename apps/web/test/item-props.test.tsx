@@ -206,7 +206,8 @@ describe("卡片渲染", () => {
 
   it("被接管但值不认识的键有一行可见提示（设计 §4：不能默默覆盖掉）", () => {
     render(<ItemProps body={OB} editable {...noop} />);
-    expect(screen.getByText(/status: unread 不是 MeNote 认识的值/)).toBeTruthy();
+    // 重设计 v1 §2.3：提示收进那一行、紧跟值控件下面，只留一句结论 + ⓘ 里展开
+    expect(screen.getByText(/unread 不是 MeNote 的值 · 已原样保留/)).toBeTruthy();
   });
 
   it("状态那一行没有「未设为清单」这一项（用户 2026-10-11 更正）", () => {
@@ -357,7 +358,9 @@ describe("整条属性栏折叠 / 展开（用户 2026-10-04 要求）", () => {
     expect(screen.getByText(/1 个标签/)).toBeTruthy();
     // `status: unread` 被接管成清单字段、值不认识 → 不能谎报成「待办」
     expect(screen.getByText(/清单未设置/)).toBeTruthy();
-    expect(screen.getByText(/2 项其他属性/)).toBeTruthy();
+    // 重设计 v1 §2.5：其他属性不再报个数，而是逐个说「名字 + 值」（显示名缺省就是源键名）
+    expect(screen.getByText(/url "https:\/\/x\.com/)).toBeTruthy();
+    expect(screen.getByText(/author - "Unknown"/)).toBeTruthy();
   });
 
   it("再点一次展开回来", () => {

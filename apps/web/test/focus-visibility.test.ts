@@ -20,6 +20,8 @@ const ALLOWED: Readonly<Record<string, string>> = {
   ".composer__input":
     "容器 .composer:focus-within 给 border-color + box-shadow 焦点环（录入框是整块高亮）",
   ".field__input": "同规则族有 .field__input:focus 给 border-color + box-shadow",
+  ".itemprops__input:focus":
+    "同一条规则里就给了补偿：border-color 变 --primary + box-shadow 0 0 0 3px --primary-soft（属性卡片的值控件，重设计 v1 §2.2）",
   "[data-editor] .cm-matchingBracket, [data-editor] .cm-nonmatchingBracket":
     "配对括号不可聚焦（不是可 Tab 到的控件），焦点可见性对它不适用；它的可见形式就是同一条规则里的 background: var(--primary-soft) 高亮",
 };

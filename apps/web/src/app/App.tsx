@@ -131,6 +131,8 @@ export default function App() {
     (next: PropLibraryEntry[]) => patchSettings({ prop_library: [...next] }),
     [patchSettings],
   );
+  /** 属性显示名（2026-10-11 重设计 v1 §4）由设置页自己写回（`SettingsPanel` 的 `patchPropLabels`）——
+   * 属性卡片不提供改显示名的入口，所以这里不再转一道手。 */
 
   /**
    * 隐私锁（M3-4）：材料缓存、门禁状态、档位计时与跨标签一致都在这里；
@@ -635,6 +637,7 @@ export default function App() {
             onToast={pushToast}
             propLibrary={userSettings.settings.prop_library}
             onPropLibraryChange={patchPropLibrary}
+            propLabels={userSettings.settings.prop_labels}
           />
         )}
       </AppShell>

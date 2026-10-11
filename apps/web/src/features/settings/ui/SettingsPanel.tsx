@@ -24,7 +24,7 @@ import { MySharesPage } from "../../shares/ui/MySharesPage";
 import { McpSettingsPage } from "../../mcp/ui/McpSettingsPage";
 import { AttachmentManagerPage } from "../../attachments/ui/AttachmentManagerPage";
 import { PropLibraryPage } from "../../props/ui/PropLibraryPage";
-import type { PropLibraryEntry } from "../../props/model";
+import type { PropLabels, PropLibraryEntry } from "../../props/model";
 import { InstancePage } from "./InstancePage";
 
 /**
@@ -206,6 +206,14 @@ export function SettingsPanel({
    */
   const patchPropLibrary = useCallback(
     (next: PropLibraryEntry[]) => onPatchSettings({ prop_library: [...next] }),
+    [onPatchSettings],
+  );
+  /**
+   * 属性显示名（2026-10-11 重设计 v1 §4）：与属性库同源、同一条写入路径。
+   * 只改界面叫法——md、导出、分享、备份里永远是源键名。
+   */
+  const patchPropLabels = useCallback(
+    (next: PropLabels) => onPatchSettings({ prop_labels: { ...next } }),
     [onPatchSettings],
   );
   const meta = PAGE_META[page];
@@ -454,7 +462,12 @@ export function SettingsPanel({
 
         {/* 属性库（v0.8.30）：条目数据来自账号级设置，页面自己读 `userSettings` 并回报改动 */}
         {page === "prop-library" ? (
-          <PropLibraryPage library={userSettings.prop_library} onChange={patchPropLibrary} />
+          <PropLibraryPage
+            library={userSettings.prop_library}
+            labels={userSettings.prop_labels}
+            onChange={patchPropLibrary}
+            onLabelsChange={patchPropLabels}
+          />
         ) : null}
 
         {page === "privacy" ? (

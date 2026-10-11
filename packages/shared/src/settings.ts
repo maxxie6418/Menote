@@ -379,6 +379,19 @@ export const UserSettingsSchema = v.object({
    * 默认**空库**：不预设任何自定义键（内置键的定义由前端现成给出，不落库）。
    */
   prop_library: v.optional(v.array(PropLibraryEntrySchema), []),
+  /**
+   * 显示名（2026-10-11，《属性卡片与属性库-设计》v1 §4）：**只改界面上的叫法**。
+   *
+   * 键 → 界面显示的名字（例 `url` → `链接`）。它**永不写进 md**：正文与 front matter、预览、
+   * 分享页、导出的 md、备份、MCP 输出一律源名——md 是唯一契约，改名只发生在界面。
+   *
+   * 独立于 `prop_library` 的原因：要能覆盖**内置键**（`title` / `tags` / …）与**未入库**的键，
+   * 且删掉属性库条目时不该连带丢掉显示名。
+   *
+   * 同样是 **optional + 默认值**（旧客户端 PUT 设置不带该字段不会被 422，
+   * 服务端读旧 JSON 由 schema 补默认值——**不需要迁移**：设置是整份 JSON）。
+   */
+  prop_labels: v.optional(v.record(v.string(), v.string()), {}),
 });
 export type UserSettings = v.InferOutput<typeof UserSettingsSchema>;
 
@@ -396,6 +409,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   memo_view: DEFAULT_MEMO_VIEW_SETTINGS,
   notebook: DEFAULT_NOTEBOOK_SETTINGS,
   prop_library: [],
+  prop_labels: {},
 };
 
 /** `GET /api/settings` 与同步响应里的设置载荷 */

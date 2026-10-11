@@ -10,7 +10,7 @@ import type { NotesWorkspace } from "../features/notes/useNotesWorkspace";
 import { isScopeGateOpen, type EditorMode } from "@menote/shared";
 import { useCallback, useMemo } from "react";
 import type { DocMode } from "../features/notes/ui/NoteWorkspace";
-import type { PropLibraryEntry } from "../features/props/model";
+import type { PropLabels, PropLibraryEntry } from "../features/props/model";
 import { formatCountdown } from "../features/privacy/model";
 import type { PrivacyLockState } from "../features/privacy/usePrivacyLock";
 import { useTicker } from "./ui/useTicker";
@@ -39,6 +39,8 @@ export interface NotesSlotProps {
    */
   propLibrary?: readonly PropLibraryEntry[];
   onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
+  /** 属性显示名（2026-10-11 重设计 v1 §4）：只读转发——写入只在设置页的属性库那一处 */
+  propLabels?: PropLabels;
 }
 
 /** 把动作里的异常转成一句能读的提示（服务端 message 已经是中文可读文案） */
@@ -58,6 +60,7 @@ export function NotesSlot({
   onToast,
   propLibrary,
   onPropLibraryChange,
+  propLabels,
 }: NotesSlotProps) {
   const gate = privacy.gate;
   const unlocked = isScopeGateOpen(gate);
@@ -180,6 +183,7 @@ export function NotesSlot({
       vault={vault}
       propLibrary={propLibrary}
       onPropLibraryChange={onPropLibraryChange}
+      propLabels={propLabels}
     />
   );
 }

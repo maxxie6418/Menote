@@ -1175,22 +1175,17 @@ button {
   margin: 0 auto;
   padding: 0 var(--sp-6);
 }
-.itemprops__group--foreign {
-  border-top: 1px solid var(--line);
-  margin-top: var(--sp-1);
-  padding-top: var(--sp-1);
-}
-.itemprops__head {
-  color: var(--muted);
-  font-size: var(--fs-micro);
-  padding: var(--sp-1) 0;
-}
+/*
+  一行 = 名字 / 值 / 行尾动作三列（重设计 v1 §2.2）。名字列定宽 88px：里面有「优先级」这样的
+  中文，也有 `captured` 这样的英文键名，取一个放得下常见长名的宽度，比让两列各分一半整齐。
+  行尾那 24px 始终留着——没有动作的行也留白，各行的值控件才会落在同一条右边界上。
+*/
 .itemprops__row {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 88px minmax(0, 1fr) 24px;
   gap: var(--sp-3);
   align-items: start;
-  padding: 3px 0;
+  padding: 5px 0;
 }
 /* 折叠 / 展开：整条属性栏一个按钮，不给每行各配一个 */
 .itemprops__toggle {
@@ -1226,56 +1221,86 @@ button {
   color: var(--text-2);
   margin-bottom: 0;
 }
-.itemprops__label,
-.itemprops__key {
+/*
+  名字列：显示名（源名在 `title` 里）。从前外来键这里是等宽字体的源键名——那是"文件里的键"，
+  不是界面文案；现在整片都按界面文案排版，源名靠悬停。
+*/
+.itemprops__label {
   color: var(--muted);
-  font-size: var(--fs-micro);
+  font-size: var(--fs-small);
   padding-top: 5px;
+  word-break: break-word;
 }
-/* 外来键用等宽：它就是文件里的一个键名，不是界面文案 */
-.itemprops__key {
-  font-family: var(--mono);
-  word-break: break-all;
-}
-.itemprops__vals {
+/*
+  值列：控件 + 跟在它下面的说明。**提示必须落在它讲的那一行里**——从前那段"原值不认识"的
+  横条排在四行末尾，讲的却是状态那一行，用户得自己回去找（重设计 v1 §2.3）。
+*/
+.itemprops__ctl {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-1);
-  align-items: center;
+  flex-direction: column;
+  gap: 3px;
   min-width: 0;
 }
-.itemprops__field,
-.itemprops__value {
+.itemprops__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 28px;
+}
+/* 所有值控件共用一套：一行只有一个控件，不再需要"谁占满剩余宽度"的分配 */
+.itemprops__input {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
   font: inherit;
   font-size: var(--fs-small);
   color: var(--text);
-  background: var(--bg);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  min-height: 26px;
-  min-width: 0;
+  padding: 0 var(--sp-2);
 }
-.itemprops__value {
-  flex: 1 1 220px;
-}
-.itemprops__value--block {
+.itemprops__input--block {
   font-family: var(--mono);
   font-size: var(--fs-micro);
   line-height: 1.6;
+  padding: 5px var(--sp-2);
   resize: vertical;
 }
-.itemprops__field:focus,
-.itemprops__value:focus {
-  outline: 2px solid var(--primary);
-  outline-offset: -1px;
-  border-color: var(--primary-line);
+.itemprops__input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
-.itemprops__field:disabled,
-.itemprops__value[readonly] {
+.itemprops__input:disabled,
+.itemprops__input[readonly] {
   background: var(--bg-soft);
   color: var(--muted);
   cursor: not-allowed;
+}
+/* 值控件下方的说明：只读原因 / 未入库 / 原值不认识，都走这一档 */
+.itemprops__note {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+}
+/* 原值会被原样保留——要看见（静默改写等于数据消失），但不是错误，所以是琥珀不是红 */
+.itemprops__note--warn {
+  color: var(--amber);
+}
+/* 「未入库」chip + 它的说明排在同一行，说明跟着 chip 走，不单独占一行 */
+.itemprops__libline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* 行尾动作列：右对齐、与值控件的第一行对齐 */
+.itemprops__act {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 5px;
 }
 .itemprops__add {
   border: 1px dashed var(--line-2);
@@ -1307,7 +1332,7 @@ button {
 .itemprops__x:hover {
   opacity: 1;
 }
-/* 外来键行上的删除是独立按钮（不在 chip 里），给足命中区；悬停走危险色（破坏性操作） */
+/* 行尾的删除是独立按钮（不在 chip 里），给足命中区；悬停走危险色（破坏性操作） */
 .itemprops__x--row {
   flex: none;
   margin-left: 0;
@@ -1321,7 +1346,8 @@ button {
   background: var(--red-soft);
 }
 .itemprops__x:focus-visible,
-.itemprops__add:focus-visible {
+.itemprops__add:focus-visible,
+.itemprops__pick:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
@@ -1330,14 +1356,25 @@ button {
   font-size: var(--fs-micro);
   padding: 5px 0;
 }
+/* 末行「用一个属性」与名字列左对齐：它是这一片的"再加一行"，不是值列里的东西 */
 .itemprops__foot {
-  padding: var(--sp-1) 0 0 84px;
+  padding: var(--sp-2) 0 0 0;
 }
-/* 被接管但值不识别的顶层键：必须可见（静默覆盖等于数据消失），但不做成警告条那么重 */
-.itemprops__warn {
-  color: var(--amber);
+/* 「用一个属性」是本片的唯一新增入口，做成与「+ 添加」同一族的虚线胶囊 */
+.itemprops__pick {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--muted);
+  font: inherit;
   font-size: var(--fs-micro);
-  padding: var(--sp-1) 0 0 84px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.itemprops__pick:hover {
+  color: var(--primary-ink);
+  border-color: var(--primary-line);
+  background: var(--primary-soft);
 }
 /*
  * 「未入库」标记（属性库 v2.1 §6.1）：点它只是把键收进库（以后新建时能选中、按类型给控件），
@@ -1413,7 +1450,10 @@ button {
   width: auto;
 }
 
-/* 设置 › 属性库（管理页，设计 §6.2）：一张卡管自建条目，一张卡只读展示内置键 */
+/*
+  设置 › 属性库（管理页，重设计 v1 §3）：**一张表管全部键**——内置五行在上（淡底、不可删），
+  自建行在下。从前是两张卡两套版式，同一列东西在两处字号、对齐、留白全不一样。
+*/
 .proplib__new {
   display: flex;
   flex-wrap: wrap;
@@ -1424,54 +1464,90 @@ button {
 .proplib__new .field__input:first-child {
   flex: 1 1 12rem;
 }
-.proplib__list {
-  list-style: none;
-  margin: var(--sp-3) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-/* 四列：键名 / 类型 / 候选取值 / 删除。窄了会换行（不做固定宽 + 绝对定位） */
+/*
+  表头与数据行**共用同一份列宽**：两条 grid 写同一个模板，宽度就永远对得上——
+  分成两套（表头一套、行一套）迟早会漂。六列 = 属性名 / 显示名 / 类型 / 候选取值 / 用到 / 操作。
+*/
 .proplib__row {
   display: grid;
-  grid-template-columns: minmax(7rem, 1fr) 9rem minmax(9rem, 1.3fr) auto;
-  gap: var(--sp-2);
+  grid-template-columns: 8.5rem minmax(6.5rem, 1fr) 8rem minmax(7rem, 1.3fr) 3.5rem 3.5rem;
+  column-gap: var(--sp-2);
   align-items: center;
 }
-.proplib__row--builtin {
-  align-items: baseline;
+.proplib__row--head {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding: var(--sp-2) 0 var(--sp-1);
 }
-.proplib__key {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.proplib__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.proplib__list .proplib__row {
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--line);
+}
+/* 内置键：淡底 + 一行说明，一眼看出"这一行不是你能删的" */
+.proplib__row--builtin {
+  background: var(--bg-soft);
+}
+.proplib__cell {
   min-width: 0;
 }
 .proplib__keyname {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   font-family: var(--mono);
+  font-size: var(--fs-small);
   word-break: break-all;
 }
-.proplib__type {
-  color: var(--muted);
-  font-size: var(--fs-micro);
-}
-.proplib__usage {
-  color: var(--muted);
-  font-size: var(--fs-micro);
-}
 .proplib__badge {
-  justify-self: start;
+  flex: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
   color: var(--muted);
   font-size: var(--fs-micro);
   padding: 1px 8px;
 }
+.proplib__usage {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+/* 只读格（内置行的"候选取值"）：是陈述不是控件，压到与"用到"同档 */
+.proplib__fixed {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+.proplib__empty {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  padding: var(--sp-3) 0;
+}
 .proplib__note {
   margin: var(--sp-3) 0 0;
   color: var(--muted);
   font-size: var(--fs-micro);
+  line-height: 1.6;
+}
+/* 窄屏（含移动端）：六列收成一列，表头隐藏，每格用自带的 `data-label` 当前缀 */
+@media (max-width: 900px) {
+  .proplib__row--head {
+    display: none;
+  }
+  .proplib__list .proplib__row {
+    grid-template-columns: 1fr;
+    row-gap: var(--sp-1);
+  }
+  .proplib__cell[data-label]::before {
+    content: attr(data-label) "：";
+    color: var(--muted);
+  }
+  .proplib__row--builtin {
+    padding: var(--sp-2);
+    border-radius: var(--radius-sm);
+  }
 }
 
 /* 代码块：编辑器侧只上底色，围栏与语言保持源码可见（首期不做语言高亮） */

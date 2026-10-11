@@ -6,28 +6,34 @@
  * 所以这里是个没有编辑能力的纯选择菜单。
  *
  * 已经在用的键**不再列出来**：它们就在下面几行里，列出来点了也不会有任何变化。
+ *
+ * 菜单里的名字走**显示名**（重设计 v1 §4.3）：设了「链接」就显示「链接 · 单行文本」，
+ * 源键名放进 `title`——**选中的仍然是源键**，md 里写出来的也永远是源键。
  */
 import type { PropLibraryEntry } from "@menote/shared";
 import { DropdownMenu, type MenuItemSpec } from "../../../app/ui/Menu";
-import { typeLabel } from "../model";
+import { labelFor, typeLabel, type PropLabels } from "../model";
 
 export interface PropPickerProps {
   /** 属性库（账号级） */
   library: readonly PropLibraryEntry[];
   /** 这一篇已经在用的键 */
   used: readonly string[];
+  /** 显示名表（账号级）；不传就一律显示源键名 */
+  labels?: PropLabels;
   /** 新建键的入口交给宿主（它要弹输入框、校验、再写库与正文） */
   onNewKey: () => void;
   onPick: (key: string) => void;
 }
 
-export function PropPicker({ library, used, onPick, onNewKey }: PropPickerProps) {
+export function PropPicker({ library, used, labels, onPick, onNewKey }: PropPickerProps) {
   const taken = new Set(used);
   const items: MenuItemSpec[] = library
     .filter((entry) => !taken.has(entry.key))
     .map((entry) => ({
       id: entry.key,
-      label: `${entry.key} · ${typeLabel(entry.type)}`,
+      label: `${labelFor(labels, entry.key)} · ${typeLabel(entry.type)}`,
+      title: entry.key,
       onSelect: () => onPick(entry.key),
     }));
   items.push({ id: "__new__", label: "新建键…", onSelect: onNewKey });
@@ -38,7 +44,7 @@ export function PropPicker({ library, used, onPick, onNewKey }: PropPickerProps)
       align="left"
       showChevron={false}
       header="用一个属性"
-      trigger={<span className="itemprops__add">+ 用一个属性</span>}
+      trigger={<span className="itemprops__pick">+ 用一个属性</span>}
       items={items}
     />
   );
