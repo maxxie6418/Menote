@@ -699,15 +699,22 @@ button {
   格式工具栏（编辑器专项优化 P1）：正文上方的一条固定带，与属性带同待遇——不随正文滚动。
   放不下的按钮**换行**而不是横向滚动：这里再造一个滚动容器就会和 `.docpane__body` 嵌套
   （DESIGN §2.7「每层一个滚动容器」），而换行只是让带子高一点，代价小得多。
+
+  按钮排在**内层**盒子里（`.editor-toolbar__inner`），收窄与居中的那三行与属性带共用
+  （写在 `.itemprops__inner` 那处）：顶满整个正文区的话，最左边的按钮和文章左边界对不齐，
+  看着像浮在外面。分隔线留在整条带上，所以内层才是那个收窄的盒子。
 */
 .editor-toolbar {
   flex: none;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.editor-toolbar__inner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-1);
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--line);
 }
 
 .editor-toolbar__sep {
@@ -729,13 +736,13 @@ button {
 
 /*
   标题菜单触发按钮的悬停反馈。`DropdownMenu` 的触发按钮不吃 className，
-  只能从工具栏的**直接子级**（它自己的定位容器）往下点——范围收得很窄，不会碰到别的按钮。
+  只能从内层盒子的**直接子级**（它自己的定位容器）往下点——范围收得很窄，不会碰到别的按钮。
 */
-.editor-toolbar > div > button {
+.editor-toolbar__inner > div > button {
   border-radius: var(--radius-sm);
 }
 
-.editor-toolbar > div > button:hover {
+.editor-toolbar__inner > div > button:hover {
   background: var(--panel-2);
   color: var(--text);
 }
@@ -1150,6 +1157,9 @@ button {
   **宽度与左右留白照抄正文阅读区**（`max-width: 740px` + 居中 + `--sp-6`，DESIGN.md §2.3
   那一组）：顶满整个正文区的话，属性栏的标签列和文章左边界对不齐，看着像浮在外面。
   分隔线留在整条带上，所以内层才是那个收窄的盒子。
+
+  这条列宽是**正文区各带的共享口径**：属性带与格式工具栏（`.editor-toolbar__inner`）都用它，
+  两条带的标签 / 按钮列才会和正文同一个左边界。改这里等于同时改两处。
 */
 .itemprops {
   flex: none;
@@ -1157,7 +1167,8 @@ button {
   padding: var(--sp-2) 0;
   font-size: var(--fs-small);
 }
-.itemprops__inner {
+.itemprops__inner,
+.editor-toolbar__inner {
   max-width: 740px;
   margin: 0 auto;
   padding: 0 var(--sp-6);

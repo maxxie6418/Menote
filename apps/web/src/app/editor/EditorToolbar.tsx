@@ -108,50 +108,74 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind }: E
   return (
     <div className="editor-toolbar" role="toolbar" aria-label="格式" aria-disabled={disabled || undefined}>
       {/*
-        查找放最前（蓝本同位）：它是"操作"不是"格式"，与后面格式按钮用分隔线隔开。
-        面板本体在编辑器里（`app/editor/search.ts`），这里只是入口。
+        按钮排在内层盒子里：收窄与居中的那组规则与属性带共用（见 `app.css` 的
+        `.itemprops__inner`），这样按钮列和文章左边界对齐，而分隔线仍留在整条带上。
       */}
-      <IconButton
-        label={findHint}
-        icon="search"
-        size={13}
-        disabled={disabled}
-        title={disabled ? disabledReason : findHint}
-        data-toolbar-button="find"
-        onClick={onFind}
-      />
-      <GroupSeparator />
-      {/*
-        禁用时不渲染真菜单：`DropdownMenu` 是公共组件，没有 disabled 口子——
-        为禁用态给它加参数，比在这里放一个"点了还是会开"的菜单划算。
-      */}
-      {disabled ? (
-        <IconButton label="标题样式" icon="heading" size={13} disabled title={disabledReason} />
-      ) : (
-        <DropdownMenu
-          /* 不叫「标题」：正文区的标题输入框已经占了这个可访问名，重名会砸了按名查询的用例 */
-          label="标题样式"
-          align="left"
-          trigger={
-            <span className="editor-toolbar__menu-trigger" aria-hidden="true">
-              <Icon name="heading" size={13} />
-            </span>
-          }
-          items={heading}
+      <div className="editor-toolbar__inner">
+        {/*
+          查找放最前（蓝本同位）：它是"操作"不是"格式"，与后面格式按钮用分隔线隔开。
+          面板本体在编辑器里（`app/editor/search.ts`），这里只是入口。
+        */}
+        <IconButton
+          label={findHint}
+          icon="search"
+          size={13}
+          disabled={disabled}
+          title={disabled ? disabledReason : findHint}
+          data-toolbar-button="find"
+          onClick={onFind}
         />
-      )}
-      <GroupSeparator />
-      {EMPHASIS_TOOLS.map((spec) => (
-        <ToolButton key={spec.id} spec={spec} disabled={disabled} disabledReason={disabledReason} onCommand={onCommand} />
-      ))}
-      <GroupSeparator />
-      {LIST_TOOLS.map((spec) => (
-        <ToolButton key={spec.id} spec={spec} disabled={disabled} disabledReason={disabledReason} onCommand={onCommand} />
-      ))}
-      <GroupSeparator />
-      {INSERT_TOOLS.map((spec) => (
-        <ToolButton key={spec.id} spec={spec} disabled={disabled} disabledReason={disabledReason} onCommand={onCommand} />
-      ))}
+        <GroupSeparator />
+        {/*
+          禁用时不渲染真菜单：`DropdownMenu` 是公共组件，没有 disabled 口子——
+          为禁用态给它加参数，比在这里放一个"点了还是会开"的菜单划算。
+        */}
+        {disabled ? (
+          <IconButton label="标题样式" icon="heading" size={13} disabled title={disabledReason} />
+        ) : (
+          <DropdownMenu
+            /* 不叫「标题」：正文区的标题输入框已经占了这个可访问名，重名会砸了按名查询的用例 */
+            label="标题样式"
+            align="left"
+            trigger={
+              <span className="editor-toolbar__menu-trigger" aria-hidden="true">
+                <Icon name="heading" size={13} />
+              </span>
+            }
+            items={heading}
+          />
+        )}
+        <GroupSeparator />
+        {EMPHASIS_TOOLS.map((spec) => (
+          <ToolButton
+            key={spec.id}
+            spec={spec}
+            disabled={disabled}
+            disabledReason={disabledReason}
+            onCommand={onCommand}
+          />
+        ))}
+        <GroupSeparator />
+        {LIST_TOOLS.map((spec) => (
+          <ToolButton
+            key={spec.id}
+            spec={spec}
+            disabled={disabled}
+            disabledReason={disabledReason}
+            onCommand={onCommand}
+          />
+        ))}
+        <GroupSeparator />
+        {INSERT_TOOLS.map((spec) => (
+          <ToolButton
+            key={spec.id}
+            spec={spec}
+            disabled={disabled}
+            disabledReason={disabledReason}
+            onCommand={onCommand}
+          />
+        ))}
+      </div>
     </div>
   );
 }

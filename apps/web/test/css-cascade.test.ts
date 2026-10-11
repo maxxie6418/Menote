@@ -100,6 +100,21 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
     expect(effectiveValue(rules, ".docpane__body .markdown-body", "max-width")).toBe("740px");
   });
 
+  /*
+    2026-10-11 补（用户反馈"工具栏还是全宽"）：正文区上方的两条带——属性带与格式工具栏——
+    共用**同一组**收窄规则（`.itemprops__inner, .editor-toolbar__inner`）。写成一条共享选择器
+    而不是各写一份，是因为"按钮 / 标签列与正文同一个左边界"是一条口径，不是两处巧合；
+    这里把这条口径连同"横向留白归内层"一起钉住，防着谁再让某条带顶满整个正文区。
+  */
+  it("属性带与格式工具栏共用正文的列宽口径", () => {
+    for (const selector of [".itemprops__inner", ".editor-toolbar__inner"]) {
+      expect(effectiveValue(rules, selector, "max-width")).toBe("740px");
+      expect(effectiveValue(rules, selector, "margin")).toBe("0 auto");
+      expect(effectiveValue(rules, selector, "padding")).toBe("0 var(--sp-6)");
+    }
+    expect(effectiveValue(rules, ".editor-toolbar", "padding")).toBe("var(--sp-2) 0");
+  });
+
   it("memo / 待办那三条显示修复的取值被钉住", () => {
     expect(effectiveValue(rules, ".markdown-body", "max-width")).toBe("");
     expect(effectiveValue(rules, ".markdown-body", "padding")).toBe("");
