@@ -39,7 +39,18 @@ export type IconName =
   /* 笔记本 `+` 菜单的「导入笔记」（2026-10-02 补：原型没有这一项，故无原型对应） */
   | "import"
   /* 待办页的「列表 / 看板」切换（2026-09-29 补：此前只有文字，原型 `#i-kanban` 那个字形没有） */
-  | "kanban";
+  | "kanban"
+  /* 正文格式工具栏（编辑器专项优化 P1，蓝本：inkstone 工具栏的按钮分组） */
+  | "bold"
+  | "italic"
+  | "strikethrough"
+  | "code"
+  | "code-block"
+  | "heading"
+  | "list-ul"
+  | "list-ol"
+  | "quote"
+  | "link";
 
 export function IconSprite() {
   return (
@@ -173,6 +184,51 @@ export function IconSprite() {
       <symbol id="i-import" viewBox="0 0 16 16">
         <path d="M8 2.6v7.2M5.2 7.2 8 10l2.8-2.8" />
         <path d="M3 11.4v1.2a.8.8 0 0 0 .8.8h8.4a.8.8 0 0 0 .8-.8v-1.2" />
+      </symbol>
+      {/*
+        —— 正文格式工具栏的十个字形（编辑器专项优化 P1）——
+        与 `#i-kanban` 同一画法：16 网格、1.6px 描边、`currentColor`；实心元素显式
+        `fill="currentColor" stroke="none"`。字形参考 inkstone 用的 lucide 语义（加粗=实心 B
+        的轮廓、列表=点 + 线），按本套 sprite 的网格与描边重画，不引外部图标库（DESIGN §5.5）。
+      */}
+      <symbol id="i-bold" viewBox="0 0 16 16">
+        <path d="M5 2.8h3.3a2.6 2.6 0 0 1 0 5.2H5zM5 8h3.9a2.7 2.7 0 0 1 0 5.4H5z" />
+        <path d="M5 2.8v10.6" />
+      </symbol>
+      <symbol id="i-italic" viewBox="0 0 16 16">
+        <path d="M6.6 2.8h5M4.4 13.2h5M9.8 2.8 6.2 13.2" />
+      </symbol>
+      <symbol id="i-strikethrough" viewBox="0 0 16 16">
+        <path d="M5.1 5.2c.4-1.4 1.6-2.3 3.1-2.3 1.7 0 2.9.9 2.9 2.2M5 10.8c.3 1.4 1.6 2.3 3.2 2.3 1.8 0 3-.9 3-2.2" />
+        <path d="M2.9 8h10.2" />
+      </symbol>
+      <symbol id="i-code" viewBox="0 0 16 16">
+        <path d="M5.3 4.5 2.3 8l3 3.5M10.7 4.5l3 3.5-3 3.5" />
+      </symbol>
+      <symbol id="i-code-block" viewBox="0 0 16 16">
+        <rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1.4" />
+        <path d="M6.2 6.4 4.6 8l1.6 1.6M9.8 6.4 11.4 8l-1.6 1.6" />
+      </symbol>
+      <symbol id="i-heading" viewBox="0 0 16 16">
+        <path d="M3.4 2.9v10.2M12.6 2.9v10.2M3.4 8h9.2" />
+      </symbol>
+      <symbol id="i-list-ul" viewBox="0 0 16 16">
+        <circle cx="3.1" cy="4.1" r="1" fill="currentColor" stroke="none" />
+        <circle cx="3.1" cy="8" r="1" fill="currentColor" stroke="none" />
+        <circle cx="3.1" cy="11.9" r="1" fill="currentColor" stroke="none" />
+        <path d="M6.2 4.1h6.8M6.2 8h6.8M6.2 11.9h6.8" />
+      </symbol>
+      <symbol id="i-list-ol" viewBox="0 0 16 16">
+        <path d="M4.1 3.3 5 2.7v3" />
+        <path d="M3.7 10.8c.2-.5.7-.9 1.3-.9.7 0 1.1.4 1.1.9 0 1-2.4 1.2-2.4 2.5h2.5" />
+        <path d="M8.3 3.9h4.9M8.3 8h4.9M8.3 12.1h4.9" />
+      </symbol>
+      <symbol id="i-quote" viewBox="0 0 16 16">
+        <path d="M7.2 4.2C5 4.9 3.9 6.3 3.9 8.4v3.4h3.5V8.3H5.2c.1-1.1.7-1.9 2-2.4zM13.4 4.2c-2.2.7-3.3 2.1-3.3 4.2v3.4h3.5V8.3h-2.2c.1-1.1.7-1.9 2-2.4z" />
+      </symbol>
+      <symbol id="i-link" viewBox="0 0 16 16">
+        <path d="M6.6 9.4 9.4 6.6" />
+        <path d="M7.6 4.4l1.3-1.3a2.5 2.5 0 0 1 3.5 3.5L11.1 7.9M8.4 11.6l-1.3 1.3a2.5 2.5 0 0 1-3.5-3.5L4.9 8.1" />
       </symbol>
     </svg>
   );

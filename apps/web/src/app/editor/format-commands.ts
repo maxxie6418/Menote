@@ -17,6 +17,7 @@
 export const FORMAT_COMMANDS = [
   "bold",
   "italic",
+  "strikethrough",
   "bullet-list",
   "ordered-list",
   "quote",
@@ -34,10 +35,17 @@ export type TextSelection = { from: number; to: number };
 
 export type FormatResult = { text: string; selection: TextSelection };
 
+/**
+ * 命令的附加参数（编辑器专项优化 P1）：目前只有标题命令的级别。
+ * 不带参数时 `heading` 保持既有行为（`##`），所以 `/` 菜单那边一个字都不用改。
+ */
+export type FormatCommandArg = { headingLevel?: number };
+
 /** 成对标记：包在选区两侧，选区留在标记内（继续打字就是标记里的内容）。 */
 const PAIR_MARKERS = {
   bold: "**",
   italic: "*",
+  strikethrough: "~~",
   "inline-code": "`",
 } as const;
 
@@ -281,24 +289,111 @@ type LineCommandId = keyof typeof LINE_RULES;
 /**
  * 执行一条格式命令。纯函数：同样的入参永远得到同样的结果，不改动入参。
  *
- * 分支顺序即分类：成对标记 → 链接 → 代码块 → 行前缀。最后一行的 `LINE_RULES[command]`
- * 依赖类型收窄——**新加一个命令 id 却忘了在这里实现，TypeScript 会直接报错**（不是静默不改文本）。
+ * 分支顺序即分类：成对标记 → 链接 → 代码块 → 标题（级别感知）→ 其余行前缀。最后一段的
+ * `LINE_RULES[command]` 依赖类型收窄——**新加一个命令 id 却忘了在这里实现，TypeScript 会直接报错**
+ * （不是静默不改文本）。
+ *
+ * 标题的级别语义（编辑器专项优化 P1，对齐工具栏的「标题 ▾」菜单）：
+ * **覆盖行全部是这一级 → 统一降回普通行；否则每一行都设成这一级**（已有的别的级别一起改掉）。
+ * 这比"已有任意标题就保留"更可预测——菜单里选的是「标题 3」，结果里就该全是三级。
+ * 不带参数时级别取 2，`/` 菜单与既有用例的 `##` 行为不变。级别 0（「正文」）只做去掉：
+ * 把覆盖行上的标题标记删掉，本来就没有标题时文本原样返回。
  */
 export function applyFormatCommand(
   text: string,
   selection: TextSelection,
   command: FormatCommandId,
+  arg?: FormatCommandArg,
 ): FormatResult {
   if (isPairCommand(command)) return applyPair(text, selection, PAIR_MARKERS[command]);
   if (command === "link") return applyLink(text, selection);
   if (command === "code-block") return applyCodeBlock(text, selection);
+  if (command === "heading") {
+    const level = Math.min(6, Math.max(0, Math.trunc(arg?.headingLevel ?? 2)));
+    if (level === 0) return stripHeadingPrefix(text, selection);
+    return applyHeading(text, selection, level);
+  }
   return applyLinePrefix(text, selection, LINE_RULES[command satisfies LineCommandId]);
+}
+
+/** 这一行标题的级别（`#` 的个数）；不是标题行时返回 0。 */
+function headingLevelOf(line: string): number {
+  const match = /^\s*(#{1,6})\s+/.exec(line);
+  return match ? (match[1]?.length ?? 0) : 0;
+}
+
+/**
+ * 标题命令（级别 1–6）：**覆盖行全部是这一级 → 统一降回普通行；否则每一行都设成这一级**
+ * ——先摘掉已有的别的级别标记，再上这一级的（"选了标题 3，结果就该全是三级"）。
+ * 不能走通用的 `applyLinePrefix`：它只会往行首加前缀，遇到 `# 旧标题` 会变成 `## # 旧标题`。
+ * 空文档时直接给出这一级的前缀（与行前缀命令的空文档分支同一待遇）。
+ */
+function applyHeading(text: string, selection: TextSelection, level: number): FormatResult {
+  if (text.trim() === "") {
+    const prefix = `${"#".repeat(level)} `;
+    return { text: prefix, selection: { from: prefix.length, to: prefix.length } };
+  }
+  const { start, end } = coveredLines(text, selection);
+  const lines = text.slice(start, end).split("\n");
+  const filled = lines.filter((line) => line.trim() !== "");
+  const allAtLevel = filled.length > 0 && filled.every((line) => headingLevelOf(line) === level);
+  const prefix = `${"#".repeat(level)} `;
+  const next = lines.map((line) => {
+    if (line.trim() === "") return line;
+    if (allAtLevel) return line.replace(/^(\s*)#{1,6}\s+/, "$1");
+    return prefix + line.replace(/^(\s*)#{1,6}\s+/, "$1");
+  });
+  const block = next.join("\n");
+  return { text: text.slice(0, start) + block + text.slice(end), selection: { from: start, to: start + block.length } };
+}
+
+/**
+ * 「正文」（级别 0）：把覆盖行上已有的标题标记去掉。
+ * 一行标题都没有时原样返回（调用方据此跳过落盘，不产生空撤销步）。
+ */
+function stripHeadingPrefix(text: string, selection: TextSelection): FormatResult {
+  const { start, end } = coveredLines(text, selection);
+  const lines = text.slice(start, end).split("\n");
+  let changed = false;
+  const next = lines.map((line) => {
+    if (headingLevelOf(line) === 0) return line;
+    changed = true;
+    return line.replace(/^(\s*)#{1,6}\s+/, "$1");
+  });
+  if (!changed) return { text, selection };
+  const block = next.join("\n");
+  return { text: text.slice(0, start) + block + text.slice(end), selection: { from: start, to: start + block.length } };
+}
+
+/**
+ * 两段文本的**最小变更区间**（编辑器专项优化 P1）：公共前缀 + 公共后缀之外的那一小段。
+ *
+ * 早先命令落盘走的是"整篇替换"（`{from: 0, to: 整篇}`），功能对但代价差：撤销一步的
+ * 粒度是整篇、CodeMirror 要重新映射全部行、自动保存的差分也白算。这里只把真正变了
+ * 的那一小段交给 CodeMirror。两段完全相同时返回空区间，调用方可据此跳过派发。
+ */
+export function minimalChange(
+  before: string,
+  after: string,
+): { from: number; to: number; insert: string } {
+  if (before === after) return { from: 0, to: 0, insert: "" };
+  const commonMax = Math.min(before.length, after.length);
+  let from = 0;
+  while (from < commonMax && before[from] === after[from]) from += 1;
+  let endBefore = before.length;
+  let endAfter = after.length;
+  while (endBefore > from && endAfter > from && before[endBefore - 1] === after[endAfter - 1]) {
+    endBefore -= 1;
+    endAfter -= 1;
+  }
+  return { from, to: endBefore, insert: after.slice(from, endAfter) };
 }
 
 /** 命令的中文名（菜单与提示共用，避免两处各写一份）。 */
 export const FORMAT_COMMAND_LABELS: Record<FormatCommandId, string> = {
   bold: "加粗",
   italic: "斜体",
+  strikethrough: "删除线",
   "bullet-list": "无序列表",
   "ordered-list": "有序列表",
   quote: "引用",

@@ -695,6 +695,51 @@ button {
   font-weight: 600;
 }
 
+/*
+  格式工具栏（编辑器专项优化 P1）：正文上方的一条固定带，与属性带同待遇——不随正文滚动。
+  放不下的按钮**换行**而不是横向滚动：这里再造一个滚动容器就会和 `.docpane__body` 嵌套
+  （DESIGN §2.7「每层一个滚动容器」），而换行只是让带子高一点，代价小得多。
+*/
+.editor-toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.editor-toolbar__sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: var(--line);
+  margin: 0 var(--sp-1);
+}
+
+/* 标题菜单的触发图标：与 `.iconbtn` 同框（24px），悬停反馈写在包裹它的按钮上（见下） */
+.editor-toolbar__menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-2);
+}
+
+/*
+  标题菜单触发按钮的悬停反馈。`DropdownMenu` 的触发按钮不吃 className，
+  只能从工具栏的**直接子级**（它自己的定位容器）往下点——范围收得很窄，不会碰到别的按钮。
+*/
+.editor-toolbar > div > button {
+  border-radius: var(--radius-sm);
+}
+
+.editor-toolbar > div > button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
 .docpane__body {
   flex: 1;
   min-height: 0;

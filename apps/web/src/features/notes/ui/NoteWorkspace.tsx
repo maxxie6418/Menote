@@ -22,6 +22,7 @@ import { TitleInput } from "./TitleInput";
 import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
 import { useTableDoc } from "../../tables/useTableDoc";
 import { renderTableDocument } from "@menote/mdcore";
+import { EditorToolbar } from "../../../app/editor/EditorToolbar";
 import type { EditorHandle } from "../../../app/editor/Editor";
 
 const Editor = lazy(async () => {
@@ -460,6 +461,19 @@ export function NoteWorkspace({
           onForeignAdd={propsApi.onForeignAdd}
           onError={onPropsError}
         />
+      ) : null}
+
+      {/*
+        格式工具栏（编辑器专项优化 P1，设计见 docs/modules/Menote-编辑器专项优化-设计-v1.md §五）：
+        与属性带同待遇——正文**上方**的一条带，不随正文滚动。
+
+        只在 Markdown 条目的「仅编辑 / 即时渲染」两档出现：「仅预览」没有光标与选区，
+        格式命令无从谈起；表格条目有自己的工具条；正文锁定时编辑器根本没挂（下面是锁定占位），
+        工具栏跟着不出现——没有"看得见但点不了"的控件（DESIGN §6.1）。
+        命令只转发给编辑器句柄：工具栏不碰文档，句柄不在（还没挂上）时点了也无害。
+      */}
+      {!isTable && !bodyLocked && (shownMode === "edit" || shownMode === "live") ? (
+        <EditorToolbar onCommand={(command, arg) => editorHandle?.applyFormat(command, arg)} />
       ) : null}
 
       <div className="docpane__body">

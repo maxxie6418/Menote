@@ -24,9 +24,15 @@ import {
   rectangularSelection,
 } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
-import { type FormatCommandId } from "./format-commands";
+import {
+  applyFormatCommand,
+  minimalChange,
+  type FormatCommandArg,
+  type FormatCommandId,
+} from "./format-commands";
 import { frontmatterHide, frontmatterRange } from "./frontmatter-hide";
 import { livePreview } from "./live-preview";
+import { editorKeymap } from "./shortcuts";
 import { editorBaseTheme } from "./theme";
 import { applyFormatAt, triggerAt } from "./trigger";
 
@@ -39,8 +45,12 @@ export interface EditorHandle {
   /**
    * 在当前选区执行一条格式命令（`format-commands.ts` 是唯一的 Markdown 拼装处）。
    * 命令菜单选中之后由宿主调用——编辑器不认识菜单。
+   *
+   * `arg` 只在工具栏/键位需要时给（目前是标题级别）；不带参数走 `applyFormatAt`
+   * （它负责吃掉光标前的 `/` 触发段，`/` 菜单那条路要这个），带参数直接执行命令本身
+   * ——按钮点的是明确的动作，光标前碰巧有个 `/日期` 也不该被吃掉。
    */
-  applyFormat(command: FormatCommandId): void;
+  applyFormat(command: FormatCommandId, arg?: FormatCommandArg): void;
   /**
    * 把文档开头的 front matter 整段换成 `next`（含两侧 `---`）。
    *
@@ -268,10 +278,11 @@ export function Editor({
           */
           placeholderExt(placeholder ?? ""),
           /*
-            键位优先级：我们自己的 > 折叠 > 撤销重做 > 默认。
+            键位优先级：格式命令与行编辑（`shortcuts.ts`）> 折叠 > 撤销重做 > 默认。
             **刻意不加 `indentWithTab`**：那会让 Tab 插入缩进而不是移走焦点，
             与 DESIGN.md §6.2「焦点与键盘可达（底线）」冲突。外部项目加了，我们不跟。
           */
+          keymap.of([...editorKeymap]),
           keymap.of([...defaultKeymap, ...foldKeymap, ...historyKeymap]),
           EditorView.lineWrapping,
           /*
@@ -431,17 +442,25 @@ function makeHandle(view: EditorView): EditorHandle {
       view.dispatch({ changes: { from: range.from, to: range.to, insert: next } });
       return true;
     },
-    applyFormat: (command) => {
+    applyFormat: (command, arg) => {
+      if (view.state.readOnly) return;
       const text = view.state.doc.toString();
       const { from, to } = view.state.selection.main;
-      const result = applyFormatAt(text, { from, to }, command);
+      const result = arg
+        ? applyFormatCommand(text, { from, to }, command, arg)
+        : applyFormatAt(text, { from, to }, command);
+      if (result.text === text) return;
       /*
-        整篇换成新文本、并落回命令给出的选区。`onChange` 由同一条 `updateListener` 抛出去，
-        这里**不自己调回调**——两条路同时改文档，宿主读到的会是旧值。
+        按**最小变更区间**落盘（编辑器专项优化 P1）：撤销的粒度是真正变了的那一小段，
+        不再是整篇替换。选区用命令结果在**新文本**里的绝对坐标，语义与整篇替换时一致。
+        `onChange` 由同一条 `updateListener` 抛出去，这里**不自己调回调**
+        ——两条路同时改文档，宿主读到的会是旧值。
       */
       view.dispatch({
-        changes: { from: 0, to: text.length, insert: result.text },
+        changes: minimalChange(text, result.text),
         selection: { anchor: result.selection.from, head: result.selection.to },
+        scrollIntoView: true,
+        userEvent: "input.format",
       });
     },
   };

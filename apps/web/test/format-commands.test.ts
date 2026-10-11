@@ -16,6 +16,7 @@ import {
   FORMAT_COMMANDS,
   QUICK_FORMAT_COMMANDS,
   applyFormatCommand,
+  minimalChange,
   quickFormatCommandsFor,
 } from "../src/app/editor/format-commands";
 
@@ -184,6 +185,7 @@ describe("注册表与守卫", () => {
     expect([...FORMAT_COMMANDS]).toEqual([
       "bold",
       "italic",
+      "strikethrough",
       "bullet-list",
       "ordered-list",
       "quote",
@@ -231,5 +233,96 @@ describe("注册表与守卫", () => {
     expect(quickFormatCommandsFor("note")).toEqual([...QUICK_FORMAT_COMMANDS]);
     // 追加的那条与正文同名命令是同一个 id：语义、名称、图标都只有一份
     expect(applyFormatCommand("", { from: 0, to: 0 }, "task-list").text).toBe("- [ ] ");
+  });
+});
+
+/*
+  以下三组是编辑器专项优化 P1（docs/modules/Menote-编辑器专项优化-设计-v1.md §二）的新增面：
+  删除线（GFM 标准语法，预览本就支持）、标题级别参数（工具栏的「标题 ▾」菜单）、
+  minimalChange（命令落盘从"整篇替换"改"最小变更区间"）。
+*/
+describe("删除线", () => {
+  it("包裹选区，用 GFM 的双波浪线", () => {
+    expect(applyFormatCommand("作废内容", { from: 0, to: 4 }, "strikethrough")).toEqual({
+      text: "~~作废内容~~",
+      selection: { from: 2, to: 6 },
+    });
+  });
+
+  it("标记在选区外两侧 → 去掉（与加粗同一 toggle 语义）", () => {
+    expect(applyFormatCommand("~~作废~~", { from: 2, to: 4 }, "strikethrough").text).toBe("作废");
+  });
+
+  it("快捷输入基础集不含它：v3 §三-2 的边界只给正文加，不改快捷输入", () => {
+    expect(QUICK_FORMAT_COMMANDS).not.toContain("strikethrough");
+  });
+});
+
+describe("标题级别（工具栏的「标题 ▾」）", () => {
+  it("不带参数仍是 ##：/ 菜单与既有行为不变", () => {
+    expect(applyFormatCommand("标题", { from: 0, to: 2 }, "heading").text).toBe("## 标题");
+  });
+
+  it("指定级别：全部行设成这一级，已有的别的级别一起改掉", () => {
+    expect(applyFormatCommand("# 旧标题\n正文", { from: 0, to: 7 }, "heading", { headingLevel: 3 }).text).toBe(
+      "### 旧标题\n### 正文",
+    );
+  });
+
+  it("覆盖行全部是这一级 → 统一降回普通行", () => {
+    expect(applyFormatCommand("## 甲\n## 乙", { from: 0, to: 8 }, "heading", { headingLevel: 2 }).text).toBe(
+      "甲\n乙",
+    );
+    // 混着别的级别不算"都是这一级"：设成这一级
+    expect(applyFormatCommand("## 甲\n# 乙", { from: 0, to: 7 }, "heading", { headingLevel: 2 }).text).toBe(
+      "## 甲\n## 乙",
+    );
+  });
+
+  it("级别 0（「正文」）：把覆盖行上的标题标记去掉；没有标题时原样返回", () => {
+    expect(applyFormatCommand("## 甲\n乙", { from: 0, to: 5 }, "heading", { headingLevel: 0 }).text).toBe(
+      "甲\n乙",
+    );
+    const untouched = applyFormatCommand("没有标题", { from: 0, to: 4 }, "heading", { headingLevel: 0 });
+    expect(untouched.text).toBe("没有标题");
+    expect(untouched.selection).toEqual({ from: 0, to: 4 });
+  });
+
+  it("空文档：直接给出这一级的前缀", () => {
+    expect(applyFormatCommand("", { from: 0, to: 0 }, "heading", { headingLevel: 1 }).text).toBe("# ");
+    expect(applyFormatCommand("", { from: 0, to: 0 }, "heading", { headingLevel: 0 }).text).toBe("");
+  });
+});
+
+describe("minimalChange：两段文本的最小变更区间", () => {
+  it("中间插入：只报插入的那一小段", () => {
+    expect(minimalChange("abef", "abXYZef")).toEqual({ from: 2, to: 2, insert: "XYZ" });
+    // 一段被替换：替换也是单区间（"cd" 换成 "XYZ"，不是"插入 XYZ"）
+    expect(minimalChange("abcdef", "abXYZef")).toEqual({ from: 2, to: 4, insert: "XYZ" });
+  });
+
+  /*
+    成对标记两侧各插一段，**一个连续区间**盖不住"中间不动、两头插"——它的最小单区间表示
+    就是从选区头到选区尾整段换掉。比整篇替换好已经足够：撤销粒度与重映射范围都缩到选区附近。
+  */
+  it("两侧各插入时，单区间覆盖选区整段", () => {
+    expect(minimalChange("今天开会", "今天**开会**")).toEqual({ from: 2, to: 4, insert: "**开会**" });
+  });
+
+  it("中间删除与替换", () => {
+    expect(minimalChange("abcdef", "abd")).toEqual({ from: 2, to: 6, insert: "d" });
+    expect(minimalChange("abcdef", "abZef")).toEqual({ from: 2, to: 4, insert: "Z" });
+  });
+
+  it("完全相同 → 空区间（调用方可据此跳过派发，不产生空撤销步）", () => {
+    expect(minimalChange("一样", "一样")).toEqual({ from: 0, to: 0, insert: "" });
+  });
+
+  it("套回命令上：落盘的变更区间拼回去就是命令结果", () => {
+    const before = "第一行\n第二行";
+    const { text } = applyFormatCommand(before, { from: 0, to: 3 }, "bullet-list");
+    const change = minimalChange(before, text);
+    const rebuilt = before.slice(0, change.from) + change.insert + before.slice(change.to);
+    expect(rebuilt).toBe(text);
   });
 });
