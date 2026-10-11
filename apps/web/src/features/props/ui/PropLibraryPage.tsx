@@ -262,7 +262,8 @@ export function PropLibraryPage({
               <div className="proplib__cell proplib__usage" data-label="用到">
                 {usageText(entry.key)}
               </div>
-              <div className="proplib__cell" />
+              {/* 内置行没有可删的东西：给一个破折号，免得那一格看着像"漏了按钮" */}
+              <div className="proplib__cell proplib__fixed">—</div>
             </li>
           ))}
 
@@ -288,7 +289,7 @@ export function PropLibraryPage({
                   className="field__input"
                   aria-label={`${entry.key} 的显示名`}
                   defaultValue={labels[entry.key] ?? ""}
-                  placeholder={`未设显示名（界面直接显示 ${entry.key}）`}
+                  placeholder="未设显示名"
                   onBlur={(event) => setLabel(entry.key, event.target.value)}
                 />
               </div>

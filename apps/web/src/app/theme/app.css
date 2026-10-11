@@ -1470,9 +1470,20 @@ button {
 */
 .proplib__row {
   display: grid;
-  grid-template-columns: 8.5rem minmax(6.5rem, 1fr) 8rem minmax(7rem, 1.3fr) 3.5rem 3.5rem;
+  grid-template-columns: 7.5rem minmax(0, 1fr) 7.5rem minmax(0, 1.3fr) 4.5rem 3.5rem;
   column-gap: var(--sp-2);
   align-items: center;
+}
+/*
+  控件必须"填满自己那一格"——`.field__input` 本身**不设宽度**（它靠外面给宽），
+  所以放进 grid 里就是它的固有宽度（`<input>` 约 153px、`<select>` 随最长选项），
+  格宽一窄过它就压到隔壁列上：表头那些字还在格线上，控件却越过去了——
+  2026-10-11 用户看到的"设置页乱飞"就是这么来的。`min-width: 0` 是配套的那一半：
+  没有它，input 的 `min-width: auto` 会顶住 flex/grid 不让格再收窄。
+*/
+.proplib__row .field__input {
+  width: 100%;
+  min-width: 0;
 }
 .proplib__row--head {
   color: var(--muted);
@@ -1514,11 +1525,18 @@ button {
 .proplib__usage {
   color: var(--muted);
   font-size: var(--fs-micro);
+  /* 是陈述不是控件：一个字也不能折行（"还没被用到"折成两行会把这一行撑高、与邻列错位） */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 只读格（内置行的"候选取值"）：是陈述不是控件，压到与"用到"同档 */
 .proplib__fixed {
   color: var(--muted);
   font-size: var(--fs-micro);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .proplib__empty {
   color: var(--muted);
@@ -1531,8 +1549,15 @@ button {
   font-size: var(--fs-micro);
   line-height: 1.6;
 }
-/* 窄屏（含移动端）：六列收成一列，表头隐藏，每格用自带的 `data-label` 当前缀 */
-@media (max-width: 900px) {
+/*
+  窄屏：六列收成一列，表头隐藏，每格用自带的 `data-label` 当前缀。
+  断点 940px 是算出来的，不是拍的：六列的"能看"下限 ≈ 键名 120 + 显示名 120 + 类型 120
+  + 候选取值 140 + 用到 72 + 操作 56 + 五个列间距 40 ≈ 670px 的格宽，反推卡片 702px、
+  设置页正文 750px、窗口 ≈ 934px（设置页左边还常年占着 184px 导航，`--settings-nav-w`）。
+  比这窄就该换形状，而不是把六列硬挤——挤出来的每一格都装不下自己的占位文字。
+  （2026-10-11 修正：此前判据用的是 900px，没把导航那 184px 与卡片 790px 上限算进去。）
+*/
+@media (max-width: 940px) {
   .proplib__row--head {
     display: none;
   }

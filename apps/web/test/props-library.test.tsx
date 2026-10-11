@@ -157,10 +157,11 @@ describe("显示名（翻译层：只改界面叫法，不动 md）", () => {
   it("库里没设时是空框 + 源名当占位；设了就把值填上", () => {
     renderPage([entry("url")], vi.fn(), { url: "链接" });
     expect((screen.getByLabelText("url 的显示名") as HTMLInputElement).value).toBe("链接");
-    // 没设过的自建键：空框，占位提示「界面直接显示源名」
+    // 没设过的自建键：空框，占位只说「未设显示名」（v0.8.33 缩短：这一格窄，
+    // 原先那句「未设显示名（界面直接显示 other）」会被截掉一半、又没有省略号）
     renderPage([entry("other")]);
     expect((screen.getByLabelText("other 的显示名") as HTMLInputElement).value).toBe("");
-    expect((screen.getByLabelText("other 的显示名") as HTMLInputElement).placeholder).toMatch(/直接显示 other/);
+    expect((screen.getByLabelText("other 的显示名") as HTMLInputElement).placeholder).toBe("未设显示名");
   });
 
   it("改显示名 → onLabelsChange 收到新表（清空 = 删掉这个显示名）", async () => {
