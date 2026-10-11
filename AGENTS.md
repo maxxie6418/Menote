@@ -7,7 +7,7 @@
 
 - 名称：`MeNote`；一句话：面向个人与家人的轻量多端笔记应用（浏览器 PWA + Cloudflare 自托管），支持 Markdown 笔记、表格、Memo、待办、版本历史与隐私锁。
 - 仓库形态：单仓多包（pnpm workspace）——`apps/web`（PWA 客户端）、`apps/worker`（Cloudflare Worker，唯一入口 `src/index.ts` 只装配）、`packages/shared`（两端共享类型与纯函数）、`packages/mdcore`（Markdown 核心）。备份导出的格式契约不建独立包，它属纯数据 schema 而不是运行时模块，落在 `packages/shared/src/backup.ts`（M5 设计 §七定论）。**`packages/crypto-format` 早已作废、该目录从不存在，别按早期描述新建。**
-- 当前版本：以根 `package.json` 的 `version` 为唯一来源（现 v0.8.28），别在本文件里另抄一份。
+- 当前版本：以根 `package.json` 的 `version` 为唯一来源（现 v0.8.29），别在本文件里另抄一份。
 - 技术栈：前端 React PWA（Vite + CodeMirror 6）｜后端 Cloudflare Workers（Hono）｜数据 D1 + R2 + Static Assets（外部备份 WebDAV / S3 / Git，**定时备份首期只做了 WebDAV + S3**）｜部署 GitHub 一键部署到 Workers Builds（架构 §15.5）。首个请求触发运行时自愈建表；机密在 Dashboard 里加（`AUTH_PEPPER`），不要用 wrangler.jsonc 的 secrets.required。
 - 界面：`DESIGN.md` 结构章与视觉章（§3）均已定稿，实现界面时按 §3.1 从 `prototype/menote-prototype.html`（高保真原型）取值并标注临时值；`prototype/menote-framework.html` 是线框评审页。
 - 怎么跑：`pnpm install` → `pnpm dev`（前端 + Worker + 本地 D1 一体）；常用命令与部署流程见 `wiki/guides/local-dev.md`；本地数据在 `apps/web/.wrangler/state`（删掉即可重置）。
