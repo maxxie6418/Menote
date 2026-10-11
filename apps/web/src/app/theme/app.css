@@ -791,8 +791,15 @@ button {
   此前只有即时渲染档收窄、仅编辑档满幅铺开：切档时整块正文横向跳一次，而且满幅那档
   本来就没守住 740px 这条定稿。宽度挂在 `.cm-scroller` 上（不是 `.cm-content`），
   行号槽才会跟着正文一起居中，不会脱在左边留一道空档。
+
+  **`width: 100%` 不能省**：`.cm-scroller` 在 CodeMirror 的 flex 布局里宽度是
+  shrink-to-fit——正文多宽它就多宽。只写 `max-width: 740px` 时它拿不到 740 这个上限，
+  而 `margin: 0 auto` 会把这条「只有正文那么宽」的窄列推到宿主正中央：文字与光标于是
+  从面板中线附近开始（短正文尤其明显），看着像「输入内容从正中间往两侧挤」。
+  先撑满宿主、再由 `max-width` 收到 740，两档才对得上 §2.3。
 */
 [data-editor] .cm-scroller {
+  width: 100%;
   max-width: 740px;
   margin: 0 auto;
   padding: var(--sp-5) var(--sp-6) 80px;

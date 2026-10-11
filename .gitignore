@@ -9,6 +9,8 @@
 deliverables/
 /test/
 .zcodeignore
+# 诊断与真浏览器实测的临时产物（截图、复现页等），不入库
+.tmp/
 
 # 依赖与构建产物
 node_modules/

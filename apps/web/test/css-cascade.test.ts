@@ -78,15 +78,22 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
    *
    * 此前 740px 只挂在 `[data-editor="live"] .cm-scroller` 上，仅编辑档满幅铺开——切档时
    * 整块正文横向跳一次，而且满幅那档本来就没守住 `DESIGN.md` §2.3 的 740px。现在由基础档
-   * （两档共有）给边界，live 档**只**覆盖字族与行高。后面三条空断言就是防着它哪天
+   * （两档共有）给边界，live 档**只**覆盖字族与行高。后面几条空断言就是防着它哪天
    * 又长出一条自己的宽度——那正是这一条最初要抓的漂移。
+   *
+   * 2026-10-11 补：`width: 100%` 是这条边界的**组成部分，不是装饰**。`.cm-scroller` 在
+   * CodeMirror 的 flex 布局里宽度 shrink-to-fit（正文多宽它就多宽），只给 `max-width`
+   * 时它永远到不了 740，而 `margin: 0 auto` 会把这条窄列推到面板正中央——正文与光标
+   * 从中间往两侧挤（用户反馈的现象）。先撑满宿主、再收上限，两档才落在 §2.3 上。
    */
   it("编辑器各档与仅预览共享同一内容边界", () => {
+    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "width")).toBe("100%");
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "max-width")).toBe("740px");
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "margin")).toBe("0 auto");
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "padding")).toBe(
       "var(--sp-5) var(--sp-6) 80px",
     );
+    expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "width")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "max-width")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "margin")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "padding")).toBe("");
