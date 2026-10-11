@@ -1337,6 +1337,24 @@ button {
 }
 
 /*
+  任务清单复选框（编辑器专项优化 P2-1）——**预览与即时渲染共用这一组**：
+  - 预览（`.markdown-body`）：markdown-it-task-lists 输出的 `.task-list-item-checkbox`（disabled）；
+  - 即时渲染（`.cm-task-checkbox`）：`TaskCheckboxWidget` 里的真复选框（可点、点了改文档）。
+  视觉必须一致（v2 设计需求 3「看起来要是一件东西」），所以写在一个块里；颜色走令牌，
+  对齐补丁与 `.cm-live-bullet` 同款（2px 右距）。
+*/
+.cm-task-checkbox,
+.markdown-body .task-list-item-checkbox {
+  vertical-align: -2px;
+}
+
+.cm-task-checkbox input,
+.markdown-body .task-list-item-checkbox {
+  accent-color: var(--primary-ink);
+  margin: 0 var(--sp-1) 0 0;
+}
+
+/*
   图片占位块（首期不做内联图片）：虚线框 + 次一级文字色。
   文案只带 alt（上传中的附件 alt 就是「上传中：文件名」），**不显示地址里的 sha256**。
 */

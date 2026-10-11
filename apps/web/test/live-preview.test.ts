@@ -289,3 +289,56 @@ describe("即时渲染：原子区间", () => {
     expect(built.atomic.size).toBe(0);
   });
 });
+
+/*
+  任务清单复选框（编辑器专项优化 P2-1，即时渲染设计 §七-6 销账）：
+  `TaskMarker` 换成真复选框 widget、任务项的列表符号让位、光标行保持源码。
+  点击改文档的逻辑在 widget 的事件回调里（要真视图），纯函数层只钉"装饰长什么样"。
+*/
+describe("即时渲染：任务清单复选框", () => {
+  it("TaskMarker 换成复选框 widget，勾选状态跟文档走", () => {
+    const doc = "- [ ] 待办：买牛奶\n- [x] 已办结";
+    const state = makeState(doc);
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+
+    const boxes = pieces(state, built.decorations).filter((piece) => piece.widget !== null && piece.from !== piece.to && doc.slice(piece.from, piece.to).startsWith("["));
+    expect(boxes).toHaveLength(2);
+    const widgets = boxes.map((piece) => piece.widget as unknown as { checked: boolean; lineNumber: number });
+    expect(widgets[0]).toMatchObject({ checked: false, lineNumber: 1 });
+    expect(widgets[1]).toMatchObject({ checked: true, lineNumber: 2 });
+  });
+
+  it("任务项的列表符号整个让位（不再渲染 •）", () => {
+    const doc = "- [ ] 待办：买牛奶\n- 普通项";
+    const state = makeState(doc);
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+
+    const hiddenText = pieces(state, built.decorations)
+      .filter((piece) => piece.widget === null && piece.className === null)
+      .map((piece) => doc.slice(piece.from, piece.to));
+    // 第一行的 `- `（符号 + 空格）藏掉；第二行是普通项，`-` 由 • widget 替换、不算"藏"
+    expect(hiddenText).toContain("- ");
+    expect(hiddenText).not.toContain("[ ]");
+  });
+
+  it("光标（活动行）落在任务行时保持源码", () => {
+    const doc = "- [ ] 待办：买牛奶";
+    const state = makeState(doc);
+    const built = buildLivePreviewDecorations({
+      state,
+      from: 0,
+      to: doc.length,
+      activeRange: { from: 0, to: doc.length },
+    });
+    expect(built.decorations.size).toBe(0);
+  });
+
+  it("复选框进原子区间（退格不许钻进去）", () => {
+    const doc = "- [ ] 待办";
+    const state = makeState(doc);
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+    const atomicText = pieces(state, built.atomic).map((piece) => doc.slice(piece.from, piece.to));
+    expect(atomicText).toContain("[ ]");
+    expect(atomicText).toContain("- ");
+  });
+});

@@ -152,4 +152,19 @@ describe("附件引用（M4-10；界面稿 §7.3 / §7.4）", () => {
     // 剥壳器对没闭合的围栏是降级而不是抛错；这里只钉住"不崩、文本还在"
     expect(doc.body.textContent).toContain("正文。");
   });
+
+  /*
+    任务清单（编辑器专项优化 P2-1）：预览把 `- [ ]` / `- [x]` 渲染成**禁用的**真复选框，
+    与即时渲染里可点的那一枚同一套视觉（`.task-list-item-checkbox` 与 `.cm-task-checkbox`
+    共用 CSS）。预览是只读展示，框必须 disabled——"看得见但点了没反应"在这里成立，
+    因为整档预览本来就不可编辑。
+  */
+  it("任务清单渲染成禁用的复选框，勾选状态跟文档走", () => {
+    const doc = parse(renderMarkdown("- [ ] 待办：买牛奶\n\n- [x] 已办结"));
+    const boxes = [...doc.querySelectorAll<HTMLInputElement>("input[type=checkbox]")];
+    expect(boxes).toHaveLength(2);
+    expect(boxes.every((box) => box.disabled)).toBe(true);
+    expect(boxes[0]?.checked).toBe(false);
+    expect(boxes[1]?.checked).toBe(true);
+  });
 });

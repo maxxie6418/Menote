@@ -124,6 +124,58 @@ class ImagePlaceholderWidget extends WidgetType {
   }
 }
 
+/**
+ * 任务清单的真复选框（编辑器专项优化 P2-1；即时渲染设计 §七-6 销账）。
+ *
+ * `TaskMarker`（`- [ ]` 里的 `[ ]` 三个字符）换成一枚真复选框，点击即改文档（`[ ]` ⇄ `[x]`）
+ * ——DESIGN.md 禁止"点了没反应"的控件，所以首期宁可保持源码也不放假框。
+ * 点击后走一次正常的文档变更：自动保存、撤销、同步整条链路照旧。
+ *
+ * 行号在**构建装饰时**记下，点击时按行号**重新定位**标记（期间文档可能已位移，
+ * 位置不可信；行内的任务标记正则只有一份，与命令层的 `task-list` 语义一致）。
+ */
+class TaskCheckboxWidget extends WidgetType {
+  constructor(
+    readonly checked: boolean,
+    readonly lineNumber: number,
+  ) {
+    super();
+  }
+
+  override eq(other: TaskCheckboxWidget): boolean {
+    return other.checked === this.checked && other.lineNumber === this.lineNumber;
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-task-checkbox";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = this.checked;
+    box.setAttribute("aria-label", this.checked ? "取消完成这条任务" : "勾选完成这条任务");
+    box.addEventListener("click", (event) => {
+      if (view.state.readOnly) {
+        event.preventDefault();
+        return;
+      }
+      // 原生勾选立即生效；90ms 后的重建会用文档里的真实状态重画这一枚
+      const line = view.state.doc.line(Math.min(this.lineNumber, view.state.doc.lines));
+      const match = TASK_MARKER_RE.exec(line.text);
+      if (!match) return;
+      const at = line.from + (match[1]?.length ?? 0);
+      view.dispatch({
+        changes: { from: at, to: at + 1, insert: match[2] === " " ? "x" : " " },
+        userEvent: "input",
+      });
+    });
+    wrap.append(box);
+    return wrap;
+  }
+}
+
+/** 行内任务标记的唯一正则（引用块与多级列表里的也算）；与命令层的语义一致 */
+const TASK_MARKER_RE = /^((?:[ \t]*>[ \t]?)*[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[)([ xX])(\])/;
+
 const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
 
 export interface LivePreviewInput {
@@ -267,12 +319,31 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
         }
         case "ListMark": {
           const text = doc.sliceString(node.from, node.to);
+          /*
+            任务清单项的符号整个让位给复选框（P2-1）：`• ☐ 待办` 会让人以为有**两级**列表，
+            Obsidian / Typora 都是"任务项只有复选框"。父级 `ListItem` 带 `Task` 子节点即任务项。
+          */
+          if (node.node.parent?.getChild("Task")) {
+            hideMarkWithSpace(node.from, node.to);
+            return;
+          }
           if (BULLET_MARKS.has(text)) {
             if (inActive(node.from, node.to)) return;
             const range = bulletWidget.range(node.from, node.to);
             ranges.push(range);
             atomicRanges.push(range);
           }
+          return;
+        }
+        case "TaskMarker": {
+          // 任务复选框（P2-1）：光标落在这一行时看源码，与其余替换同一口径
+          if (inActive(node.from, node.to)) return;
+          const marker = doc.sliceString(node.from, node.to);
+          const range = Decoration.replace({
+            widget: new TaskCheckboxWidget(/x/i.test(marker), doc.lineAt(node.from).number),
+          }).range(node.from, node.to);
+          ranges.push(range);
+          atomicRanges.push(range);
           return;
         }
         case "Link": {

@@ -14,6 +14,7 @@
  */
 import DOMPurify from "dompurify";
 import MarkdownIt from "markdown-it";
+import taskLists from "markdown-it-task-lists";
 import { stripFrontmatter } from "@menote/mdcore";
 
 const md = new MarkdownIt({
@@ -21,6 +22,15 @@ const md = new MarkdownIt({
   linkify: true,
   breaks: false,
 });
+
+/*
+ * 任务清单（编辑器专项优化 P2-1）：`- [ ]` 渲染成**真复选框**，与即时渲染里的那一枚
+ * 同一个交互语义（预览是只读展示，所以渲染成 `disabled`——能看、点了没反应的框
+ * 在预览档无害，因为整档都不可编辑）。样式与 `.cm-task-checkbox` 共用一组 CSS。
+ * `enabled: false` = 输出 disabled；`label: true` = 文字包进 `<label>`，点文字也能勾（只读下无意义），
+ * 关掉保持 DOM 干净。
+ */
+md.use(taskLists, { enabled: false, label: false });
 
 const defaultLinkOpen = md.renderer.rules.link_open;
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
