@@ -4,7 +4,7 @@
  *
  * ## 让位规则（用户 2026-10-11 拍板）
  *
- * - 两侧同时展开要**够宽**：正文区 ≥ 1244px（= 240 + 12 两侧各一份 + 740 的纸面上限）；
+ * - 两侧同时展开要**够宽**：正文区 ≥ 1304px（= 240 + 12 两侧各一份 + 800 的纸面上限）；
  * - 不够宽时**同时只展开一侧**，另一侧自动收成把手——宁可纸面变窄，也不要面板压住正文；
  * - 让位时收起的是「**不是你刚点的那一侧**」；跟着窗口变窄时保留**最后动过的那一侧**。
  *
@@ -31,10 +31,11 @@ export const RAIL_OPEN_WIDTH = 240;
 export const RAIL_GAP = 12;
 /** 一侧展开实占的宽度 */
 export const RAIL_SLOT = RAIL_OPEN_WIDTH + RAIL_GAP;
-/** 纸面宽度上限（`DESIGN.md` §2.3，`app.css` 的 `.cm-scroller { max-width: 740px }`） */
-export const DOC_PAPER_MAX = 740;
+/** 纸面宽度（`DESIGN.md` §2.8，`app.css` 的 `.cm-scroller { max-width: 800px }`）。
+ *  注意 §2.3 的 740px 是**文字列**上限，纸面两侧各有 48px 内边距，所以文字列是 704px。 */
+export const DOC_PAPER_MAX = 800;
 
-/** 两侧同时展开所需的最小正文区宽度：252 + 740 + 252 = **1244px** */
+/** 两侧同时展开所需的最小正文区宽度：252 + 800 + 252 = **1304px** */
 export const BOTH_RAILS_MIN_PANE = 2 * RAIL_SLOT + DOC_PAPER_MAX;
 
 export interface RailOpenState {

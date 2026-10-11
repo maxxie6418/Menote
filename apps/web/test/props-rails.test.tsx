@@ -4,7 +4,7 @@
  *
  * 这一批测的是**不该靠肉眼验的东西**：
  * · 本机偏好的读写与**旧 key 的反向迁移**（升级后不能把用户特意收起的那一侧弹开）；
- * · 让位规则（正文区不够宽时同时只开一侧）——它是算出来的 1244px，不是断点表；
+ * · 让位规则（正文区不够宽时同时只开一侧）——它是算出来的 1304px，不是断点表；
  * · 大纲的取词与"当前节"（两档算法不同：编辑档走字符偏移、仅预览档走 DOM）；
  * · 两个组件在收起/展开两态下**只存在一份**可访问名（不然读屏与测试都会撞重名）。
  */
@@ -76,14 +76,14 @@ describe("让位规则（railOpenState）：不够宽时同时只开一侧", () 
     expect(railOpenState(both, 0)).toEqual({ props: true, outline: true });
   });
 
-  it("正好到 1244px（= 252 + 740 + 252）→ 两侧都能开，纸面仍是 740", () => {
-    expect(BOTH_RAILS_MIN_PANE).toBe(1244);
+  it("正好到 1304px（= 252 + 800 + 252）→ 两侧都能开，纸面仍是 800", () => {
+    expect(BOTH_RAILS_MIN_PANE).toBe(1304);
     expect(railOpenState(both, BOTH_RAILS_MIN_PANE)).toEqual({ props: true, outline: true });
   });
 
-  it("差一点（1243）且两侧都想开 → 只留「最后动过的那一侧」", () => {
-    expect(railOpenState(both, 1243)).toEqual({ props: true, outline: false });
-    expect(railOpenState({ ...both, last: "outline" }, 1243)).toEqual({
+  it("差一点（1303）且两侧都想开 → 只留「最后动过的那一侧」", () => {
+    expect(railOpenState(both, 1303)).toEqual({ props: true, outline: false });
+    expect(railOpenState({ ...both, last: "outline" }, 1303)).toEqual({
       props: false,
       outline: true,
     });

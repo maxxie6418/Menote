@@ -759,9 +759,14 @@ button {
     `--line` 描边 + `--radius-lg` 圆角。
 
   两个令牌在两个主题下都天然成立（浅色：白纸 / 灰桌；深色：抬起的纸 / 更暗的桌），
-  所以**不新增令牌、不写主题特例**。高度取 A4 比例（宽 740px ÷ 210 × 297 ≈ 1047px，
-  740px 是 `DESIGN.md` §2.3 的正文宽度上限）：内容短时是一张 A4 纸，写长了 `min-height`
-  不再起作用，纸面**无缝往下延伸**——没有分页，也没有第二个滚动容器（§2.7）。
+  所以**不新增令牌、不写主题特例**。高度取 A4 比例（宽 800px ÷ 210 × 297 ≈ 1131px）：
+  内容短时是一张 A4 纸，写长了 `min-height` 不再起作用，纸面**无缝往下延伸**——没有分页，
+  也没有第二个滚动容器（§2.7）。
+
+  【2026-10-11 用户第二轮反馈】纸面从 740 加宽到 800、内边距从 `--sp-6`（24px）加到 48px：
+  块往两侧各延伸 30px，文字两侧各多 24px 留白（文字列因此是 704px，仍在 `DESIGN.md` §2.3
+  的 740 上限内）。**加宽与留白必须一起改**：只加宽不留白等于把文字拉长，只留白不加宽等于
+  把文字挤窄。§2.8、格式工具栏那条共享列宽、`useRails.ts` 的 `DOC_PAPER_MAX` 一起改。
 */
 .docpane__body {
   flex: 1;
@@ -772,7 +777,7 @@ button {
   /*
     两侧贴边面板的三个尺寸（`useRails.ts` 里同名常量是"该不该让位"的算法依据）：
     面板宽 240 / 把手宽 28 / 面板与正文之间的 12。**三处必须一起改**，否则算出来的
-    1244px 门槛与眼里看到的宽度对不上。
+    1304px 门槛与眼里看到的宽度对不上（= 252 + 纸面 800 + 252）。
   */
   --doc-rail-w: 240px;
   --doc-rail-tab: 28px;
@@ -819,27 +824,27 @@ button {
 }
 
 /*
-  阅读列**两档同宽**（`DESIGN.md` §2.3 已定：Markdown 正文上限 740px）。
-  此前只有即时渲染档收窄、仅编辑档满幅铺开：切档时整块正文横向跳一次，而且满幅那档
-  本来就没守住 740px 这条定稿。宽度挂在 `.cm-scroller` 上（不是 `.cm-content`），
-  行号槽才会跟着正文一起居中，不会脱在左边留一道空档。
+  阅读列**两档同宽**（`DESIGN.md` §2.3：Markdown 正文上限 740px；纸面宽度与两侧留白见 §2.8，
+  2026-10-11 起纸面 800px、内边距 48px、文字列 704px）。此前只有即时渲染档收窄、仅编辑档
+  满幅铺开：切档时整块正文横向跳一次，而且满幅那档本来就没守住这条定稿。宽度挂在
+  `.cm-scroller` 上（不是 `.cm-content`），行号槽才会跟着正文一起居中，不会脱在左边留一道空档。
 
   **`width: 100%` 不能省**：`.cm-scroller` 在 CodeMirror 的 flex 布局里宽度是
-  shrink-to-fit——正文多宽它就多宽。只写 `max-width: 740px` 时它拿不到 740 这个上限，
+  shrink-to-fit——正文多宽它就多宽。只写 `max-width: 800px` 时它拿不到 800 这个上限，
   而 `margin: 0 auto` 会把这条「只有正文那么宽」的窄列推到宿主正中央：文字与光标于是
   从面板中线附近开始（短正文尤其明显），看着像「输入内容从正中间往两侧挤」。
-  先撑满宿主、再由 `max-width` 收到 740，两档才对得上 §2.3。
+  先撑满宿主、再由 `max-width` 收到 800，两档才对得上 §2.8。
 */
 [data-editor] .cm-scroller {
   width: 100%;
-  max-width: 740px;
+  max-width: 800px;
   margin: var(--sp-5) auto;
-  padding: var(--sp-5) var(--sp-6) 80px;
+  padding: var(--sp-5) 48px 80px;
   font-family: var(--mono);
   font-size: var(--fs-body);
   line-height: 1.7;
-  /* 纸面（见 `.docpane__body` 那处注释）：A4 比例 = 740 : 297/210 */
-  min-height: calc(740px * 297 / 210);
+  /* 纸面（见 `.docpane__body` 那处注释）：A4 比例 = 800 : 297/210 */
+  min-height: calc(800px * 297 / 210);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -1171,6 +1176,9 @@ button {
 
   这条列宽仍是**正文区各带的共享口径**，但只剩格式工具栏（`.editor-toolbar__inner`）用了：
   卡片已经不在正文区里。改这一条等于改工具栏的左边界。
+
+  数值必须与纸面同步（`.cm-scroller` / `.docpane__body .markdown-body` 的 800px + 48px）：
+  工具栏居中时与纸面同轴，左边界才对得上正文左边界。2026-10-11 纸面 740 → 800 时一起改。
 */
 .itemprops {
   flex: none;
@@ -1180,9 +1188,9 @@ button {
 }
 .itemprops__inner,
 .editor-toolbar__inner {
-  max-width: 740px;
+  max-width: 800px;
   margin: 0 auto;
-  padding: 0 var(--sp-6);
+  padding: 0 48px;
 }
 .itemprops--card {
   border-bottom: none;
@@ -1445,23 +1453,30 @@ button {
   display: block;
   width: var(--doc-rail-tab);
   margin-top: var(--sp-4);
-  padding: var(--sp-2) 0;
+  /* 加长（2026-10-11 用户反馈「折叠后的按钮可以加长一点，现在不太明显」）：8px → 20px，
+     把手从约 44px 长到约 68px，命中区与存在感一起上去 */
+  padding: var(--sp-4) 0;
   writing-mode: vertical-rl;
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--muted);
   font: inherit;
-  font-size: var(--fs-micro);
+  font-size: var(--fs-small);
   letter-spacing: .06em;
   cursor: pointer;
 }
+/*
+  把手贴的是**外侧**（左轨贴左、右轨贴右），所以平边朝外、圆角朝正文。
+  2026-10-11 用户反馈「你 ui 的方向也反了」——这一对装饰从前刚好写反了
+  （左轨圆角朝外、右轨平边朝外），看着像把手挂在正文那一侧上。
+*/
 .doc-rail--left .doc-rail__tab {
   border-left: none;
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 .doc-rail--right .doc-rail__tab {
   border-right: none;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 .doc-rail__tab:hover {
   color: var(--text);
@@ -1477,10 +1492,15 @@ button {
   width: var(--doc-rail-w);
   max-height: calc(100vh - 170px);
   margin-top: var(--sp-4);
-  background: var(--panel);
+  /*
+    轻量（2026-10-11 用户反馈「两侧浮动工具的窗口 UI 可以轻量一点，不要与主内容区抢视觉」）：
+    从前它跟纸面同色（`--panel`）+ `--shadow-1` + `--radius-lg`，看上去是**第二张纸**，
+    与正文抢视线。现在跟桌面同色（`--bg-soft`，靠 1px 描边立住）、去掉阴影、圆角收一档：
+    它是旁注区，不是内容块。**别再给它加回阴影或纸面底色。**
+  */
+  background: var(--bg-soft);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 .doc-rail--left .doc-rail__card {
@@ -1513,7 +1533,8 @@ button {
   border: none;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-2);
+  /* 卡片头是旁注的标题，不是内容标题：用 `--muted` 收着（2026-10-11 轻量化） */
+  color: var(--muted);
   font: inherit;
   font-size: var(--fs-micro);
   font-weight: 500;
@@ -2152,12 +2173,13 @@ button {
   line-height: 1.75;
 }
 
-/* 正文阅读区的宽度与内边距（DESIGN.md §2.3：Markdown 正文宽度上限 740px）+ 同一张纸面 */
+/* 正文阅读区的宽度与内边距（`DESIGN.md` §2.8：纸面 800px、两侧各 48px；文字列 704px，
+  仍在 §2.3 的 740 上限内）+ 同一张纸面 */
 .docpane__body .markdown-body {
-  max-width: 740px;
+  max-width: 800px;
   margin: var(--sp-5) auto;
-  padding: var(--sp-5) var(--sp-6) 80px;
-  min-height: calc(740px * 297 / 210);
+  padding: var(--sp-5) 48px 80px;
+  min-height: calc(800px * 297 / 210);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
