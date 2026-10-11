@@ -29,6 +29,7 @@ import {
   type MemoContent,
 } from "../../data/db";
 import { useNoteEditingSession } from "../../app/shortcuts/useNoteEditingSession";
+import { loadFirstScreen, reapBlankSeedOnLeave } from "./blankSeeds";
 import { createNoteEditor, type NoteEditorController, type NoteEditorSnapshot } from "./model";
 import { writeItemTitle } from "./actions";
 import { itemsApi } from "../../data/api/endpoints";
@@ -314,12 +315,6 @@ export function useNotesWorkspace(
     onLocalWriteRef.current?.();
   }, []);
 
-  /** 选中项：state 与 ref 同步写（state 供渲染，ref 供回调，避免回调身份随之变化） */
-  const applySelectedId = useCallback((id: string | null) => {
-    selectedIdRef.current = id;
-    setSelectedId(id);
-  }, []);
-
   /** 打开这一篇时的正文本基（跨标签页提示比对用） */
   const applyInitialBody = useCallback((body: string) => {
     initialBodyRef.current = body;
@@ -381,12 +376,29 @@ export function useNotesWorkspace(
     await syncConflictState(current);
   }, [syncConflictState]);
 
+  /**
+   * 选中项：state 与 ref 同步写（state 供渲染，ref 供回调，避免回调身份随之变化）。
+   *
+   * 换掉的那一篇如果是"空白种子"，就在这一刻回收（判据与回收见 `data/db/seed`，
+   * 回收成功才刷新列表）。放在这里而不是 `open` 的收尾：它是"选中项真的换了"的
+   * 唯一落点，`open` 被更晚的点击取代时不会误回收仍然显示着的那一篇。
+   */
+  const applySelectedId = useCallback((id: string | null) => {
+    reapBlankSeedOnLeave(selectedIdRef.current, id, () => void refresh());
+    selectedIdRef.current = id;
+    setSelectedId(id);
+  }, [refresh]);
+
   // 首次加载：setState 放在 then 回调里，不在 effect 体内同步触发（react-hooks/set-state-in-effect）
   useEffect(() => {
     let alive = true;
-    // "本地有正文"的键集合与首屏列表一起装（v0.8.25）：第一次切换就不该闪占位——
-    // 不能等下一轮 refresh（引擎同步完才跑），那之前集合是空的
-    void Promise.all([listLocalItems(), listLocalBodyIds()]).then(([rows, bodyIds]) => {
+    /*
+      启动兜底：先清掉上次"建完直接关标签页"残留的本机空白种子（服务端从没收到过它，
+      判据见 `data/db/seed`），再读首屏列表——这样列表里不会先闪一条幽灵条目。
+      "本地有正文"的键集合与首屏列表一起装（v0.8.25）：第一次切换就不该闪占位——
+      不能等下一轮 refresh（引擎同步完才跑），那之前集合是空的。
+    */
+    void loadFirstScreen().then(([rows, bodyIds]) => {
       if (!alive) return;
       localBodyIdsRef.current = bodyIds;
       setAllItems(rows);

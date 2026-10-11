@@ -18,6 +18,7 @@ import {
 } from "@menote/shared";
 import { parseMenoteMeta, stripFrontmatter } from "@menote/mdcore";
 import { db } from "./database";
+import { isBlankSeed, isBlankSeedItem } from "./seed";
 import {
   SYNC_STATE_KEY,
   type LocalFolder,
@@ -399,6 +400,12 @@ export async function listItemSummaries(): Promise<Record<string, string>> {
  * （正文/草稿的读写函数在 `./bodies`——v0.8.25 抽出，见该文件头）。
  */
 export interface NewLocalItemInput {
+  /**
+   * 空白期间先别上传（用户 2026-10-11 口径）：**内容全空就先不入队**，条目只活在本机，
+   * 离开这一篇时整条回收；写出可见文字或写了标题之后，入队口子会补上第一条 `create`。
+   * 判据与回收都在 `./seed`。不传 = 老行为（新建即上传）。
+   */
+  holdWhileBlank?: boolean;
   id: string;
   type: ItemType;
   title: string | null;
@@ -457,14 +464,21 @@ export async function createLocalItem(input: NewLocalItemInput, now: number): Pr
       cached_at: now,
     });
     await db.drafts.put({ item_id: input.id, body: input.body, updated_at: now });
-    await enqueue({
-      entity: "item",
-      entity_id: input.id,
-      op: "create",
-      base_rev: 0,
-      base_meta_rev: 0,
-      now,
-    });
+    /*
+      「空白种子」先不入队（判据见 `./seed`）：一直空白就永远不上传，离开这一篇时整条回收；
+      一旦有了内容，`enqueueBodySave` / `enqueueMetaPatch` 会补上第一条 `create`。
+      `pending` 仍写 "create"——它标记"从没上传过"，正是入队口子识别空白种子的依据。
+    */
+    if (!(input.holdWhileBlank === true && isBlankSeed(item, input.body))) {
+      await enqueue({
+        entity: "item",
+        entity_id: input.id,
+        op: "create",
+        base_rev: 0,
+        base_meta_rev: 0,
+        now,
+      });
+    }
   });
 
   return item;
@@ -528,12 +542,31 @@ export async function enqueue(input: EnqueueInput): Promise<void> {
 }
 
 /**
+ * 「空白种子」的入队口子判定（用户 2026-10-11 口径，判据与回收都在 `./seed`）。
+ *
+ * 新建的空白种子**故意没有队列项**，所以"从没上传过 + 队列为空"两条同时成立时：
+ * - 它已经写了内容（可见文字或标题）→ 补一条 `create`：服务端还没有这一条，
+ *   发 `save_body` / `patch_meta` 只会 404；
+ * - 它仍然全空（用户只改了属性）→ 什么都不发：这一篇按口径不保存。
+ *
+ * 返回 true = 调用方就此返回（不再排别的行）。
+ */
+async function holdBlankSeed(item: LocalItem, rows: readonly OutboxRow[], now: number): Promise<boolean> {
+  if (item.pending !== "create" || rows.length > 0) return false;
+  if (await isBlankSeedItem(item)) return true;
+  await enqueue({ entity: "item", entity_id: item.id, op: "create", base_rev: 0, base_meta_rev: 0, now });
+  return true;
+}
+
+/**
  * 正文保存入队（合并规则见架构 §6.3）：
  * - 该条目还没上传过（队列里有 `create`）→ 不再排新行，正文取自 `drafts`；
- * - 已有 `save_body` → 复用这一行，**保留最早的 `base_rev`**。
+ * - 已有 `save_body` → 复用这一行，**保留最早的 `base_rev`**；
+ * - **空白种子**（`./seed`）→ 有内容补 `create`，没内容什么都不发。
  */
 export async function enqueueBodySave(itemId: string, baseRev: number, now: number): Promise<void> {
-  await db.transaction("rw", db.outbox, db.items, async () => {
+  // drafts / bodies 进事务：空白判定要读这两张表（Dexie 只认事务里声明过的表）
+  await db.transaction("rw", db.outbox, db.items, db.drafts, db.bodies, async () => {
     const rows = await db
       .outbox
       .where("[entity+entity_id]")
@@ -544,6 +577,8 @@ export async function enqueueBodySave(itemId: string, baseRev: number, now: numb
       await db.items.update(itemId, { pending: "create" });
       return;
     }
+    const item = await db.items.get(itemId);
+    if (item && (await holdBlankSeed(item, rows, now))) return;
     if (rows.some((row) => row.op === "save_body")) {
       await db.items.update(itemId, { pending: "save_body" });
       return;
@@ -554,14 +589,17 @@ export async function enqueueBodySave(itemId: string, baseRev: number, now: numb
   });
 }
 
-/** 元数据补丁入队：同一条目只保留一行，保留最早的 `base_meta_rev` */
+/** 元数据补丁入队：同一条目只保留一行，保留最早的 `base_meta_rev`；空白种子见 `holdBlankSeed` */
 export async function enqueueMetaPatch(itemId: string, baseMetaRev: number, now: number): Promise<void> {
-  await db.transaction("rw", db.outbox, db.items, async () => {
+  await db.transaction("rw", db.outbox, db.items, db.drafts, db.bodies, async () => {
     const rows = await db
       .outbox
       .where("[entity+entity_id]")
       .equals(["item", itemId])
       .toArray();
+
+    const item = await db.items.get(itemId);
+    if (item && (await holdBlankSeed(item, rows, now))) return;
 
     if (!rows.some((row) => row.op === "patch_meta")) {
       await enqueue({ entity: "item", entity_id: itemId, op: "patch_meta", base_rev: 0, base_meta_rev: baseMetaRev, now });

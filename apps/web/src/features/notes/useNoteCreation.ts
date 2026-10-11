@@ -21,7 +21,7 @@
 import { useCallback, useMemo } from "react";
 import { newUlid } from "@menote/shared";
 import { renderTableDocument, type TableDoc } from "@menote/mdcore";
-import { createLocalFolder, createLocalItem } from "../../data/db";
+import { createLocalFolder, createLocalItem, DEFAULT_TABLE_TITLE } from "../../data/db";
 import type { LocalFolder } from "../../data/db";
 import { folderDepthFor, MAX_FOLDER_DEPTH } from "./folders";
 import { isInVault } from "../privacy/vault";
@@ -31,8 +31,8 @@ import type { NotesView } from "./views";
 /**
  * 新建表格的默认标题：表格界面不收标题，先给一个能认出来的，之后在标题栏改。
  * **只作 `items.title` 派生列的初值，不写进 md**（2026-10-11，设计 §9）。
+ * 值本身住在 `data/db/seed`——「空白种子」判据要认得出它（占位标题 = 没写过标题）。
  */
-const DEFAULT_TABLE_TITLE = "未命名表格";
 
 /** 条目的落点：当前选中的笔记本（没有笔记本上下文的视图 → 根目录）+ 是否在加密空间内 */
 export function resolveTarget(
@@ -99,6 +99,12 @@ export function useNoteCreation(input: UseNoteCreationInput) {
           */
           body: options?.body ?? "",
           inEncSpace: target.inVault,
+          /*
+            **空白就不上传**（2026-10-11 用户决定）：没有可见文字、也没写过标题的新条目
+            只活在本机，离开它时整条回收；写点东西之后入队口子会补上 `create`。
+            判据与回收都在 `data/db/seed`。
+          */
+          holdWhileBlank: true,
         },
         Date.now(),
       );
@@ -185,6 +191,8 @@ export function useNoteCreation(input: UseNoteCreationInput) {
           // 是 `undefined` 就不写这一行，所以新建的表格条目正文里没有 front matter
           body: renderTableDocument(doc),
           inEncSpace: target.inVault,
+          // 与笔记同一套口径；表格正文恒有表头行，所以它不会被判成空白种子（`data/db/seed`）
+          holdWhileBlank: true,
         },
         Date.now(),
       );

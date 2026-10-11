@@ -11,5 +11,6 @@ export * from "./privacy";
 export * from "./repository";
 export * from "./schema";
 export * from "./search";
+export * from "./seed";
 export * from "./settings";
 export * from "./trash";

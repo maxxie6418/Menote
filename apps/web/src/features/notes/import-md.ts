@@ -22,9 +22,13 @@
  */
 import { deriveTags, deriveTaskFields, deriveTitle, parseTableDocument } from "@menote/mdcore";
 import type { ItemType } from "@menote/shared";
+import { DEFAULT_NOTE_TITLE } from "../../data/db/seed";
 
-/** 标题退化时的兜底文案（与新建笔记的默认标题同一个来源） */
-export const DEFAULT_NOTE_TITLE = "未命名笔记";
+/**
+ * 标题退化时的兜底文案（与新建笔记的默认标题同一个来源）。
+ * 值住在 `data/db/seed`：「空白种子」判据要认得出它（占位标题 = 没写过标题），两份会漂。
+ */
+export { DEFAULT_NOTE_TITLE };
 
 /** 只收 `.md`（大小写不敏感）。系统对话框允许"所有文件"，所以这里必须自己再挡一道 */
 export function isMarkdownFileName(fileName: string): boolean {
