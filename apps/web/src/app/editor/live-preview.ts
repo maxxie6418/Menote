@@ -406,7 +406,7 @@ class LivePreviewPlugin {
     if (this.idleTimer) globalThis.clearTimeout(this.idleTimer);
     this.idleTimer = globalThis.setTimeout(() => {
       this.idleTimer = 0;
-      this.rebuild(view);
+      this.rebuild(view, true);
     }, REBUILD_IDLE_MS);
   }
 
@@ -415,14 +415,27 @@ class LivePreviewPlugin {
     if (this.frame) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
-      this.rebuild(view);
+      this.rebuild(view, true);
     });
   }
 
-  private rebuild(view: EditorView): void {
+  /**
+   * 重算装饰。`notify` 表示这次重算发生在**定时器回调里**（打字停手 90ms / 下一帧）：
+   *
+   * 插件字段是在 `update()` 之外改的，而 CodeMirror 只在**下一次 update** 时才重读
+   * `decorations`——不主动触发一次 update，重算结果就一直躺在字段里不被画出来。
+   * 打字场景每次按键都会带出一次 update，把上一次的重建"顺带"刷出去，所以平时看不出来；
+   * **粘贴**这类"编辑之后不再有任何输入"的场景就永远停在源码（v0.6.5 改重建时机时引入的
+   * 回归，2026-10-11 用真 CM6 + 探针实证：重建跑了、装饰算出来了、DOM 没变）。
+   *
+   * 空事务（`dispatch()` 无参）只走一遍 update 循环、不改文档与选区，代价可忽略；
+   * update 里没有任何分支会再排期，不会成环。
+   */
+  private rebuild(view: EditorView, notify = false): void {
     const built = buildFor(view);
     this.decorations = built.decorations;
     this.atomic = built.atomic;
+    if (notify) view.dispatch();
   }
 
   destroy(): void {
