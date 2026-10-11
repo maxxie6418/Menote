@@ -20,6 +20,8 @@
  *    能在**原文**上直接 `slice` 的下标。
  */
 
+import { frontmatterRange } from "./frontmatter";
+
 export interface SectionRange {
   /** 在**原文**里的起始字符下标（含标题行本身） */
   start: number;
@@ -32,21 +34,13 @@ export interface SectionRange {
 }
 
 /** 剥掉 YAML front matter，返回剩余正文与它的起始偏移 */
-function stripFrontmatter(
-  markdown: string,
-): { body: string; offset: number } {
-  // 只认文件最开头紧挨着的 `---`（BOM / 前导空行都不接受，减少意外）
-  if (!markdown.startsWith("---")) return { body: markdown, offset: 0 };
-  const lines = markdown.split("\n");
-  if (lines[0]?.trim() !== "---") return { body: markdown, offset: 0 };
-  for (let i = 1; i < lines.length; i += 1) {
-    if (lines[i]?.trim() === "---") {
-      const body = lines.slice(i + 1).join("\n");
-      return { body, offset: markdown.length - body.length };
-    }
-  }
-  // 没有闭合的 `---`：当作没有 front matter（用户还没写完），别把整篇当正文剥掉
-  return { body: markdown, offset: 0 };
+function stripFrontmatter(markdown: string): { body: string; offset: number } {
+  // 判据只此一份：`frontmatter.ts` 的 `frontmatterRange`（认 BOM、认前导空行、必须闭合）。
+  // 以前这里另写了一份严格版，2026-10-11 因此漏认「开头多一个空行」的 front matter——
+  // 表现是 MCP 的 `section` 偏移落在 front matter 里，比编辑器露 YAML 更难察觉。
+  const range = frontmatterRange(markdown);
+  if (!range) return { body: markdown, offset: 0 };
+  return { body: markdown.slice(range.to), offset: range.to };
 }
 
 interface HeadingHit {

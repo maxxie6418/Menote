@@ -60,6 +60,14 @@ describe("findSectionRange", () => {
     expect(md.slice(range!.start, range!.end).startsWith("## 甲")).toBe(true);
   });
 
+  it("front matter 前面多一个空行时偏移仍对（2026-10-11 放宽判据：认 BOM、也认前导空行）", () => {
+    const md = ["", "---", "menote:", "  tags: [a]", "---", "", "## 甲", "", "x"].join("\n");
+    const range = findSectionRange(md, "甲");
+    expect(range).not.toBeNull();
+    expect(md.slice(range!.start, range!.end).startsWith("## 甲")).toBe(true);
+    expect(md.slice(range!.start, range!.end)).not.toContain("menote:");
+  });
+
   it("CRLF 下偏移不偏一格", () => {
     const md = ["# T", "", "## 甲", "", "x", "", "## 乙", "", "y"].join("\r\n");
     const range = findSectionRange(md, "甲");

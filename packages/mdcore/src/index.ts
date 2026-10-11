@@ -13,6 +13,7 @@ export {
   MENOTE_KEY,
   buildDocument,
   deriveTitle,
+  frontmatterRange,
   frontmatterText,
   parseMenoteMeta,
   readForeignKeys,

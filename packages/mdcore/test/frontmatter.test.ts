@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocument,
   deriveTitle,
+  frontmatterRange,
   frontmatterText,
   parseMenoteMeta,
   readForeignKeys,
@@ -83,6 +84,32 @@ describe("front matter 解析", () => {  it("取出 type / tags / task 与正文
   it("task 键存在但字段为空也算清单条目（有无键就是清单标记本身）", () => {
     const parsed = parseMenoteMeta("---\nmenote:\n  task:\n---\n\n正文");
     expect(parsed.meta.task).toEqual({ status: null, due: null, priority: null });
+  });
+
+  it("开头多一个空行：照样认（剪藏 / 导出工具的常见多余换行，2026-10-11）", () => {
+    const parsed = parseMenoteMeta("\n---\ntitle: 标题\nstatus: todo\n---\n\n正文");
+    expect(parsed.meta.title).toBe("标题");
+    expect(parsed.meta.task?.status).toBe("todo");
+    expect(parsed.body).toBe("正文");
+  });
+
+  it("BOM + 空行 + 只含空白的行混着来，也照样认", () => {
+    const parsed = parseMenoteMeta("\uFEFF   \n\n---\ntags: [a]\n---\n\n正文");
+    expect(parsed.meta.tags).toEqual(["a"]);
+    expect(parsed.body).toBe("正文");
+  });
+
+  it("前导空行那几格算进 frontmatterText / frontmatterRange（第一次写回时一并替换掉）", () => {
+    const text = "\n---\ntitle: x\n---\n\n正文";
+    expect(frontmatterText(text)).toBe("\n---\ntitle: x\n---\n");
+    expect(frontmatterRange(text)).toEqual({ from: 0, to: "\n---\ntitle: x\n---\n".length });
+  });
+
+  it("开场带空格仍不认（别把缩进的 `---` 误判成围栏）", () => {
+    const text = "  ---\ntitle: x\n---\n";
+    expect(frontmatterText(text)).toBeNull();
+    expect(frontmatterRange(text)).toBeNull();
+    expect(parseMenoteMeta(text).body).toBe(text);
   });
 
   it("stripFrontmatter 只回正文", () => {

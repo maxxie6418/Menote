@@ -105,22 +105,50 @@ export interface ParsedDocument {
 function emptyMeta(): MenoteMeta {
   return { type: null, tags: [], task: null, preservedLines: [], foreignLines: [] };
 }
-/** 拆出围栏内的原始文本；没有合法 front matter 时返回 null（此时整篇都是正文） */
-function splitFences(markdown: string): { raw: string; body: string } | null {
-  const text = markdown.startsWith("\uFEFF") ? markdown.slice(1) : markdown;
-  if (!text.startsWith(`${FRONTMATTER_FENCE}\n`) && text.trimEnd() !== FRONTMATTER_FENCE) {
-    if (!text.startsWith(FRONTMATTER_FENCE)) return null;
+/**
+ * 拆出围栏内的原始文本；没有合法 front matter 时返回 null（此时整篇都是正文）。
+ *
+ * `stop` = 收尾围栏那一行**之后**的下标（含它自己的换行；文档正好结束在围栏上时就是文末）。
+ * `frontmatterText` / `frontmatterRange` 都建立在它之上，别再各算一遍偏移。
+ */
+function splitFences(markdown: string): { raw: string; body: string; stop: number } | null {
+  let text = markdown;
+  let offset = 0;
+  if (text.startsWith("\uFEFF")) {
+    text = text.slice(1);
+    offset = 1;
   }
 
   const lines = text.split("\n");
-  if (lines[0]?.trim() !== FRONTMATTER_FENCE) return null;
 
-  const end = lines.findIndex((line, index) => index > 0 && line.trim() === FRONTMATTER_FENCE);
+  /*
+    跳过开头的空白行（2026-10-11，用户报的第二种「yaml 没被识别到」）：剪藏 / 导出工具常在
+    最前面多写一个空行，严格判据（front matter 必须紧贴文件开头）会因此**整段不认**——
+    属性卡片读不到、编辑器也不藏。允许它被若干空行顶下去。这些空行会在下一次写回时被顺手去掉
+    （`frontmatterRange` 的起点仍在文件开头），是单向归一，不会来回抖。
+  */
+  let start = 0;
+  while (start < lines.length && (lines[start] ?? "").trim() === "") {
+    offset += (lines[start] ?? "").length + 1;
+    start += 1;
+  }
+
+  // 与从前同一条判据：开场必须是**裸的** `---`（前导空格不接受），只是现在前面允许有空行
+  const fence = lines[start];
+  if (!fence?.startsWith(FRONTMATTER_FENCE) || fence.trim() !== FRONTMATTER_FENCE) return null;
+
+  const end = lines.findIndex((line, index) => index > start && line.trim() === FRONTMATTER_FENCE);
   if (end === -1) return null; // 没闭合 → 降级为普通正文
 
+  let stop = offset;
+  for (let index = start; index <= end; index += 1) stop += (lines[index] ?? "").length + 1;
+  // 文档正好结束在收尾围栏上时没有末尾那个换行，上面逐行 +1 会多算一格
+  if (stop > markdown.length) stop = markdown.length;
+
   return {
-    raw: lines.slice(1, end).join("\n"),
+    raw: lines.slice(start + 1, end).join("\n"),
     body: lines.slice(end + 1).join("\n").replace(/^\n/, ""),
+    stop,
   };
 }
 
@@ -537,11 +565,27 @@ export function removeForeignKey(markdown: string, key: string): string {
  */
 export function frontmatterText(markdown: string): string | null {
   const split = splitFences(markdown);
+  // 起点取 0 而不是围栏处：开头的 BOM 与前导空行也归这一段（写回时会被一并去掉，见 `splitFences`）
+  return split ? markdown.slice(0, split.stop) : null;
+}
+
+/**
+ * front matter 整段在原文里的区间：`from` = 文件开头（BOM 那一格除外），`to` = `splitFences`
+ * 的 `stop`（收尾围栏那一行之后）。没有合法 front matter（含"没闭合"）返回 null。
+ *
+ * **它是这个判据的唯一实现**：编辑器拿它做整段零宽替换
+ * （`apps/web/src/app/editor/frontmatter-hide.ts`），`section.ts` 拿它算正文偏移。
+ * 从前两边各写一份，2026-10-11 一天里就踩了两次不一致（先漏 BOM、后漏前导空行），
+ * 症状都是「属性卡片读得到、编辑器却把 YAML 露在正文里」。
+ *
+ * `from` 取文件开头（而不是围栏处）是**有意的**：前导空行因此一起被替换掉——第一次改动属性时
+ * 这份文件就自己恢复成「front matter 紧贴开头」，外部工具（Obsidian 等）也就能认了。
+ * BOM 那一格留着：它是零宽字符，藏不藏都看不见，没必要替用户改文件编码。
+ */
+export function frontmatterRange(markdown: string): { from: number; to: number } | null {
+  const split = splitFences(markdown);
   if (!split) return null;
-  // `---\n` + raw + `\n` + `---`，再带上收尾换行（文档恰好结束在围栏上时没有）
-  const fenceEnd = 4 + split.raw.length + 1 + FRONTMATTER_FENCE.length;
-  const end = markdown[fenceEnd] === "\n" ? fenceEnd + 1 : fenceEnd;
-  return markdown.slice(0, end);
+  return { from: markdown.startsWith("\uFEFF") ? 1 : 0, to: split.stop };
 }
 
 /** 只取正文（去掉 front matter） */

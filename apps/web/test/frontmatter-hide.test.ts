@@ -126,12 +126,17 @@ describe("装饰：整段零宽藏起来，不留任何可点元素（设计 §7
 });
 
 /*
-  判据对齐（2026-10-11 补）：同一个文件被两处判两次——这里判「编辑器藏不藏」，mdcore 的
-  `splitFences` 判「属性卡片读得到读不到」。两处不一致时会出现「只有一边知道」的怪状：
-  用户报的「yaml 没被识别到」就是**开头带 BOM** 的文件——卡片照读（mdcore 摘 BOM），
-  编辑器却把整段 YAML 露在正文里（这里此前要求 `---\n` 精确开头）。
+  判据只有一份（2026-10-11 收口）：`frontmatterRange` 已搬进 mdcore，编辑器与属性卡片用的是
+  同一个函数。这之前两边各写一份，**同一天踩了两次**：
+
+  1. 开头带 **BOM** 的文件——卡片照读（mdcore 摘 BOM），编辑器却把整段 YAML 露在正文里；
+  2. 开头多一个**空行**（剪藏 / 导出工具的常见多余换行）——同一症状：这里从前要求 `---\n`
+     精确开头，mdcore 要求首行 trim 后是 `---`，于是两边一起拒。
+
+  所以下面这些用例钉的不再是「两份判据互相对齐」，而是**放宽后的那一条判据本身**：
+  先摘 BOM → 允许若干空白行 → 首个非空行必须是裸的 `---` → 必须闭合。
 */
-describe("判据与 mdcore 的 splitFences 逐条对齐", () => {
+describe("判据：先摘 BOM、允许前导空行、必须闭合", () => {
   it("开头带 BOM 的文件照藏（藏掉的是 BOM 之后的 front matter，BOM 那一格留着）", () => {
     const text = `\uFEFF${OB}`;
     const range = frontmatterRange(text);
@@ -148,13 +153,25 @@ describe("判据与 mdcore 的 splitFences 逐条对齐", () => {
     expect(text.slice(range?.from, range?.to)).toBe("---\r\ntitle: x\r\n---\r\n");
   });
 
-  it("前导空行：两边都不认（front matter 必须紧贴文件开头）", () => {
-    expect(frontmatterRange("\n---\ntitle: x\n---\n\n正文。")).toBeNull();
+  it("前导空行：照样认（剪藏 / 导出工具常多写一个空行），且空行也在隐藏区里", () => {
+    const text = "\n---\ntitle: x\n---\n\n正文。";
+    const range = frontmatterRange(text);
+    expect(range).not.toBeNull();
+    // 起点仍在文件开头：那个空行会被一并替换掉，所以这篇文件在第一次改动属性时自己恢复正常
+    expect(range?.from).toBe(0);
+    expect(text.slice(range?.from, range?.to)).toBe("\n---\ntitle: x\n---\n");
+  });
+
+  it("只含空白的行也照样认（整段藏掉，包括那几格空白）", () => {
+    const text = "   \n---\ntitle: x\n---\n";
+    const range = frontmatterRange(text);
+    expect(range).not.toBeNull();
+    expect(text.slice(range?.from, range?.to)).toBe(text);
   });
 
   /*
-    不变式用例：**藏 = 认**。这条能一次钉住整类偏差（BOM 那次就是被它之外的用例放过去的），
-    所以样本要成对地覆盖「认」与「不认」两侧。
+    不变式用例：**编辑器藏 = 解析认**。装饰集是否为空的充要条件就是「这篇有没有可认的 front matter」。
+    这条能一次钉住整类偏差（BOM 那次正是被它之外的用例放过去的），所以样本要成对地覆盖「认」与「不认」两侧。
   */
   it("不变式：编辑器藏不藏，与 mdcore 认不认这段 front matter 同进同出", () => {
     const samples = [
@@ -165,10 +182,15 @@ describe("判据与 mdcore 的 splitFences 逐条对齐", () => {
       "---",
       "---\n",
       "---\ntitle: x\n---\n",
+      "---\ntitle: x\n---",
       `\uFEFF${OB}`,
       "\uFEFF---\ntitle: x\n---\n\n正文。",
       "---\r\ntitle: x\r\n---\r\n\r\n正文。",
       "\n---\ntitle: x\n---\n\n正文。",
+      "\n\n---\ntitle: x\n---\n\n正文。",
+      "   \n---\ntitle: x\n---\n",
+      "\uFEFF\n---\ntitle: x\n---\n",
+      "\n\n正文。",
       "  ---\ntitle: x\n---\n",
       "---\ntitle: 写了一半\n\n正文。",
       "正文\n---\n分隔线\n",
@@ -178,7 +200,8 @@ describe("判据与 mdcore 的 splitFences 逐条对齐", () => {
     for (const one of samples) {
       // mdcore 不认这段 front matter 时，body 就是原文一字不动
       const recognised = parseMenoteMeta(one).body !== one;
-      expect(frontmatterRange(one) !== null, JSON.stringify(one)).toBe(recognised);
+      const hidden = buildFrontmatterDecorations(one).size > 0;
+      expect(hidden, JSON.stringify(one)).toBe(recognised);
     }
   });
 });

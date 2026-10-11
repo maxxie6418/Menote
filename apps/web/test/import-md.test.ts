@@ -161,6 +161,11 @@ tags: [claude]
     expect(titleForImport("读书笔记.md", '---\ntitle: ""\n---\n\n正文')).toBe("读书笔记");
   });
 
+  it("front matter 前面多一个空行也认（剪藏工具常多写一个空行，2026-10-11）", () => {
+    expect(titleForImport("x.md", "\n---\ntitle: 真标题\n---\n\n正文")).toBe("真标题");
+    expect(titleForImport("x.md", "\uFEFF\n---\ntitle: 真标题\n---\n\n正文")).toBe("真标题");
+  });
+
   it("一个文件建失败不中断整批：其余照常建，失败项带原因", async () => {
     const create = vi.fn<(draft: ImportedNoteDraft) => Promise<void>>(async (draft) => {
       if (draft.title === "坏的") throw new Error("库写入失败");

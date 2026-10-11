@@ -167,13 +167,22 @@ function unrecognizedTaskValues(
 }
 
 /**
- * 卡片该不该出现。
+ * 卡片该不该出现：只有「确定是没闭合的 front matter」才不显示。
  *
- * - **正文以 `---` 开头但没闭合** → 用户正在写第一行，此时任何改写都不可靠 → 不显示；
+ * - **首个非空行是 `---`、但整段没闭合** → 用户正在写第一行（或外部文件被截断），此时任何改写都不可靠 → 不显示；
  * - 其余（含**完全没有** front matter）→ 显示，让用户能加第一个标签。
+ *
+ * 三处细节：
+ * 1. 判据取「首个非空行」而不是「第一行」：开头可能有 BOM 或剪藏工具多写的空行
+ *    （2026-10-11 同一天第二次因两边判据不一致而踩坑）；
+ * 2. 这一句**逐字**比 `---`，不吃 CRLF、也不吃缩进——比 `frontmatterText` 更严的方向是安全的：
+ *    宁可显示卡片，也别把唯一的属性入口藏掉；
+ * 3. 真要判「有没有 front matter」时一律以 `frontmatterText` 为准（它才是唯一的解析判据）。
  */
 export function shouldShowItemProps(body: string): boolean {
-  if (!body.startsWith("---\n")) return true;
+  const content = body.startsWith("\uFEFF") ? body.slice(1) : body;
+  const first = content.split("\n").find((line) => line.trim() !== "");
+  if (first !== "---") return true;
   return frontmatterText(body) !== null;
 }
 
