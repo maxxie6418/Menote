@@ -98,7 +98,9 @@ describe("create_item（批 3）", () => {
 
     expect(body).toContain("title: 读书笔记");
     expect(body).toContain("tags: [科幻]");
-    expect(body).toContain("  task:\n    status: todo");
+    // 2026-10-11 起清单三字段平铺为顶层键（与 Obsidian 口径一致），不再嵌套在 menote.task 下
+    expect(body).toContain("tags: [科幻]\nstatus: todo");
+    expect(body).not.toContain("task:");
     // md 带得动，列也得对（两边不一致 = 下次同步把值弹回去）
     const row = await env.DB.prepare("SELECT title, tags, is_task FROM items WHERE id = ? AND user_id = ?")
       .bind(id, userId)

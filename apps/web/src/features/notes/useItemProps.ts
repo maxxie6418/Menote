@@ -15,6 +15,8 @@
  *
  * 「完全没有 front matter」也走同一条路：此时 `expected` 是空串，
  * `replaceFrontmatter("", 新的)` 就是在文档开头插入——省掉一条分支。
+ * 反向同理：**新的属性段为空串时就是「整段删掉」**（用户 2026-10-11 要求：不设置属性
+ * 就不该有 front matter），所以这里不能把 `frontmatterText` 的 null 当成失败。
  */
 import { useCallback } from "react";
 import {
@@ -26,7 +28,7 @@ import {
 import type { EditorHandle } from "../../app/editor/Editor";
 import { patchItemTags, patchItemTaskFields } from "./actions";
 
-/** 清掉清单标记 = 三个字段都空（`tasks.ts`：有无 `menote.task` 键就是标记本身） */
+/** 清掉清单标记 = 三个字段都空（`tasks.ts`：顶层三键任一存在就是清单条目） */
 export type TaskPatch = { status: string | null; due: string | null; priority: string | null } | null;
 
 export interface UseItemPropsInput {
@@ -55,11 +57,8 @@ export function useItemProps(input: UseItemPropsInput) {
    */
   const applyMd = useCallback(
     (nextBody: string): boolean => {
-      const next = frontmatterText(nextBody);
-      if (next === null) {
-        onError?.("算不出新的属性段，请重新打开这一篇再试。");
-        return false;
-      }
+      // 算出来没有 front matter（最后一个属性被清掉）= 空串 = 让编辑器整段删掉，不是失败
+      const next = frontmatterText(nextBody) ?? "";
       if (!handle) {
         onError?.("切到「仅编辑」才能改属性");
         return false;

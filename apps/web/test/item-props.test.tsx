@@ -92,22 +92,35 @@ describe("readItemProps：卡片显示的值必须都能被它改掉", () => {
     expect(deriveTags(body)).toEqual(["claude", "临时"]);
   });
 
-  it("清单字段只在有 menote.task 键时才算清单条目", () => {
-    expect(readItemProps(OB).task).toBeNull();
+  it("清单字段看顶层三键在不在（2026-10-11 平铺后的口径）", () => {
+    // OB 顶层有 `status: unread`——**键在**就是清单条目（判据是键，不是值认不认识）；
+    // 值不是 MeNote 的状态，所以归一化后为空，并在 `unrecognized` 里留痕给一行提示
+    expect(readItemProps(OB).task).toEqual({ status: null, due: null, priority: null });
+    expect(readItemProps(OB).unrecognized).toEqual(["status: unread"]);
+
+    // 三个键一个都没有 → 不是清单条目
+    expect(readItemProps("---\ntitle: T\n---\n\n正文").task).toBeNull();
+
     const withTask = updateMenoteKeys(OB, { task: { status: "todo", due: "2026-10-08", priority: "high" } });
     expect(readItemProps(withTask).task).toEqual({
       status: "todo",
       due: "2026-10-08",
       priority: "high",
     });
+    // 写出来是顶层三行，不再缩进在 `menote:` 下的 `task:` 里
+    expect(withTask).toContain("\nstatus: todo\n");
+    expect(withTask).not.toContain("task:");
+    // 值认识了，提示就没有了
+    expect(readItemProps(withTask).unrecognized).toEqual([]);
   });
 
-  it("外来键原样列出，MeNote 自己的三个键不在其中", () => {
+  it("外来键原样列出；MeNote 自己的键（含清单三键）不在其中", () => {
     const keys = readItemProps(OB).foreign.map((one) => one.key);
-    expect(keys).toEqual(["url", "author", "status"]);
-    expect(keys).not.toContain("title");
-    expect(keys).not.toContain("tags");
-    expect(keys).not.toContain("menote");
+    // `status: unread` 被接管成了清单字段，所以不在外来键里
+    expect(keys).toEqual(["url", "author"]);
+    for (const key of ["title", "tags", "menote", "status", "due", "priority"]) {
+      expect(keys).not.toContain(key);
+    }
   });
 });
 
@@ -174,9 +187,75 @@ describe("卡片渲染", () => {
     expect(screen.queryByLabelText("删除属性 url")).toBeNull();
   });
 
-  it("没有外来键时不显示「其他属性」那一段", () => {
+  it("没有外来键时「+ 添加属性」仍在（空白笔记的唯一新增入口，设计 §6.4）", () => {
     render(<ItemProps body="---\ntitle: T\ntags: [a]\n---\n\n正文" editable {...noop} />);
+    // 段头只在真有外来键时渲染——空着也不留一行「其他属性」噪声
     expect(screen.queryByText(/其他属性/)).toBeNull();
+    expect(screen.getByText("+ 添加属性")).toBeTruthy();
+  });
+
+  it("完全没有 front matter 的笔记也有新增入口（从前这里什么都没有）", () => {
+    render(<ItemProps body="正文" editable {...noop} />);
+    expect(screen.getByText("+ 添加属性")).toBeTruthy();
+  });
+
+  it("只读（预览）时不给新增入口", () => {
+    render(<ItemProps body="---\ntitle: T\n---\n\n正文" editable={false} {...noop} />);
+    expect(screen.queryByText("+ 添加属性")).toBeNull();
+  });
+
+  it("被接管但值不认识的键有一行可见提示（设计 §4：不能默默覆盖掉）", () => {
+    render(<ItemProps body={OB} editable {...noop} />);
+    expect(screen.getByText(/status: unread 不是 MeNote 认识的值/)).toBeTruthy();
+  });
+
+  it("状态那一行没有「未设为清单」这一项（用户 2026-10-11 更正）", () => {
+    render(<ItemProps body={OB} editable {...noop} />);
+    const select = screen.getByLabelText("状态") as HTMLSelectElement;
+    const labels = [...select.options].map((one) => one.text);
+    // 当前状态就是空 → 多一个只在此时出现的占位项
+    expect(labels).toEqual(["未设置", "待办", "进行中", "已完成"]);
+    expect(labels).not.toContain("未设为清单");
+  });
+
+  it("点状态下拉里任何一个真实选项，都只写一个非空 status（卡片里没有「清掉三键」那条路）", () => {
+    const onTaskChange = vi.fn();
+    render(<ItemProps body={OB} editable {...noop} onTaskChange={onTaskChange} />);
+    const select = screen.getByLabelText("状态") as HTMLSelectElement;
+    const real = [...select.options].filter((one) => one.value !== "");
+    expect(real.map((one) => one.value)).toEqual(["todo", "doing", "done"]);
+    for (const option of real) fireEvent.change(select, { target: { value: option.value } });
+
+    expect(onTaskChange).toHaveBeenCalledTimes(3);
+    for (const [payload] of onTaskChange.mock.calls) {
+      expect(typeof payload.status).toBe("string");
+    }
+  });
+
+  it("「未设置」占位项只在当前就是空的时候在，不提供回到空的路径", () => {
+    const withStatus = updateMenoteKeys("正文", { task: { status: "todo", due: null, priority: null } });
+    const first = render(<ItemProps body={OB} editable {...noop} />);
+    expect((screen.getByLabelText("状态") as HTMLSelectElement).value).toBe("");
+    first.unmount();
+
+    render(<ItemProps body={withStatus} editable {...noop} />);
+    const select = screen.getByLabelText("状态") as HTMLSelectElement;
+    expect(select.value).toBe("todo");
+    expect([...select.options].map((one) => one.text)).not.toContain("未设置");
+  });
+
+  it("优先级有「未设置」，没设过的笔记不谎报成「中」", () => {
+    render(<ItemProps body="---\ntitle: T\n---\n\n正文" editable {...noop} />);
+    const select = screen.getByLabelText("优先级") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect([...select.options].map((one) => one.text)).toEqual(["未设置", "高", "中", "低"]);
+  });
+
+  it("改优先级不顺手补 status：普通笔记不会因此变成清单条目", () => {
+    const onTaskChange = vi.fn();
+    render(<ItemProps body="---\ntitle: T\n---\n\n正文" editable {...noop} onTaskChange={onTaskChange} />);
+    fireEvent.change(screen.getByLabelText("优先级"), { target: { value: "high" } });
+    expect(onTaskChange).toHaveBeenCalledWith({ status: null, due: null, priority: "high" });
   });
 
   it("校验没过时把理由报出来，不静默吞", () => {
@@ -184,6 +263,31 @@ describe("卡片渲染", () => {
     render(<ItemProps body={OB} editable {...noop} onError={onError} />);
     // 块序列的值里含非法缩进不该由组件产生，这里只验组件把错误转出去
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe("删外来键要二次确认（设计 §6.5：破坏性操作必须写明后果）", () => {
+  it("点 × 只弹确认、先不动 md；确认后才真的删", () => {
+    const onForeignRemove = vi.fn();
+    render(<ItemProps body={OB} editable {...noop} onForeignRemove={onForeignRemove} />);
+
+    fireEvent.click(screen.getByLabelText("删除属性 url"));
+    expect(onForeignRemove).not.toHaveBeenCalled();
+    expect(screen.getByText("删除属性 url？")).toBeTruthy();
+    // 后果要说到位：md 里没有了、Obsidian 那边也看不到
+    expect(screen.getByText(/这篇 md 的 front matter 里就没有这一行/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "删除属性" }));
+    expect(onForeignRemove).toHaveBeenCalledWith("url");
+  });
+
+  it("取消 → 一个键都不删（确认框是拦在删除之前的，不是删完再提示）", () => {
+    const onForeignRemove = vi.fn();
+    render(<ItemProps body={OB} editable {...noop} onForeignRemove={onForeignRemove} />);
+
+    fireEvent.click(screen.getByLabelText("删除属性 url"));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(onForeignRemove).not.toHaveBeenCalled();
   });
 });
 
@@ -235,7 +339,9 @@ describe("整条属性栏折叠 / 展开（用户 2026-10-04 要求）", () => {
     expect(screen.queryByText("claude")).toBeNull();
     // 但摘要说得清「有几项、是什么」——用户不会以为这里本来就没东西
     expect(screen.getByText(/1 个标签/)).toBeTruthy();
-    expect(screen.getByText(/3 项其他属性/)).toBeTruthy();
+    // `status: unread` 被接管成清单字段、值不认识 → 不能谎报成「待办」
+    expect(screen.getByText(/清单未设置/)).toBeTruthy();
+    expect(screen.getByText(/2 项其他属性/)).toBeTruthy();
   });
 
   it("再点一次展开回来", () => {
@@ -395,7 +501,12 @@ describe("useItemProps：改动必须经编辑器，不能自己存草稿", () =
       api!.onTaskChange({ status: "doing", due: "2026-10-08", priority: "high" });
     });
 
-    await waitFor(() => expect(state.text).toContain("    status: doing"));
+    await waitFor(() => expect(state.text).toContain("status: doing"));
+    // 平铺：顶层三行，不再缩进在 `menote:` 下的 `task:` 里
+    expect(state.text).toContain("due: 2026-10-08");
+    expect(state.text).toContain("priority: high");
+    expect(state.text).not.toContain("  status:");
+    expect(state.text).not.toContain("task:");
     await waitFor(async () => {
       const item = await getLocalItem("n1");
       expect(item?.is_task).toBe(1);
@@ -405,7 +516,7 @@ describe("useItemProps：改动必须经编辑器，不能自己存草稿", () =
     });
   });
 
-  it("去掉清单标记：task 块被删，三列清空（0002 的约束要求 is_task=0 时字段为空）", async () => {
+  it("去掉清单标记（清单侧动作仍走这条路）：顶层三键被删，三列清空（0002 的约束要求 is_task=0 时字段为空）", async () => {
     const withTask = updateMenoteKeys(OB, { task: { status: "todo", due: null, priority: null } });
     const { handle, state } = makeHandle(withTask);
     await act(async () => {
@@ -419,7 +530,10 @@ describe("useItemProps：改动必须经编辑器，不能自己存草稿", () =
       api!.onTaskChange(null);
     });
 
-    await waitFor(() => expect(state.text).not.toContain("task:"));
+    await waitFor(() => expect(state.text).not.toContain("status:"));
+    expect(state.text).not.toContain("due:");
+    expect(state.text).not.toContain("priority:");
+    expect(state.text).toContain("正文第一段。");
     await waitFor(async () => {
       const item = await getLocalItem("n1");
       expect(item?.is_task).toBe(0);

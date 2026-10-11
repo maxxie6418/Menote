@@ -192,9 +192,9 @@ status: unread
 `;
 
 describe("外来 front matter（Obsidian 等外部工具的平铺 YAML）", () => {
-  it("解析：外来键进 foreignLines，白名单键（title / tags）被取走", () => {
+  it("解析：外来键进 foreignLines，白名单键（title / tags / 清单三键）被取走", () => {
     const parsed = parseMenoteMeta(OB);
-    // 外来键一个不少、一个不少字；title / tags 不在其中（它们归 MeNote 管，否则重建会写两遍）
+    // 外来键一个不少、一个字不改；title / tags / 清单三键不在其中（它们归 MeNote 管，否则重建会写两遍）
     expect(parsed.meta.foreignLines).toEqual([
       'url: "https://x.com/akshay_pachaar/status/2035341800739877091"',
       "author:",
@@ -202,27 +202,39 @@ describe("外来 front matter（Obsidian 等外部工具的平铺 YAML）", () =
       "captured: 2026-03-25",
       "like: false",
       "comment: ",
-      "status: unread",
     ]);
     // 白名单键取到了
     expect(parsed.meta.title).toBe("Anatomy of the .claude/ folder");
     expect(parsed.meta.tags).toEqual([]);
+    /*
+      顶层 `status: unread` **被无条件接管**（2026-10-11 平铺，设计 §4）：Obsidian 那边的普通
+      属性 `status` 与 MeNote 的清单状态同名，用户明确选择让 MeNote 赢。值是原文，规范化
+      （`unread` 不认识 → 归零）发生在 `tasks.ts` 的 `deriveTaskFields`，不在这里。
+    */
+    expect(parsed.meta.task).toEqual({ status: "unread", due: null, priority: null });
     // 关键：preservedLines 只装 menote: 块内的行（这里没有 menote 块，所以是空）
     expect(parsed.meta.preservedLines).toEqual([]);
     expect(parsed.body).toBe("正文第一段。\n");
   });
 
-  it("改写 tags：落顶层，外来键原样在前，且不凭空造 menote 块", () => {
+  it("改写 tags：落顶层；外来键在前，自有键按 title → tags → 清单三键 收拢", () => {
     const updated = updateMenoteKeys(OB, { tags: ["claude"] });
 
     // tags 平铺到顶层
     expect(updated).toContain("\ntags: [claude]\n");
-    // 外来键逐字保留，含带缩进子行的 author 块
+    // 外来键逐字保留，含带缩进子行的 author 块与空值行
     expect(updated).toContain('url: "https://x.com/akshay_pachaar/status/2035341800739877091"');
     expect(updated).toContain('author:\n  - "Unknown"');
-    expect(updated).toContain("comment: \nstatus: unread"); // 空值行也不许被吃掉
+    expect(updated).toContain("captured: 2026-03-25");
+    expect(updated).toMatch(/^comment: *$/m); // 空值行也不许被吃掉
     // 外来 title 保留在顶层（没打 patch 就不动它）
     expect(updated).toContain('title: "Anatomy of the .claude/ folder"');
+    // 顶层 status 归 MeNote 管，值原样留着（没打 task patch 就不动它）
+    expect(updated).toContain("status: unread");
+    // 布局（设计 §2）：外来键 → title → tags → 清单三键
+    expect(updated.indexOf('url: "')).toBeLessThan(updated.indexOf('title: "'));
+    expect(updated.indexOf('title: "')).toBeLessThan(updated.indexOf("tags: [claude]"));
+    expect(updated.indexOf("tags: [claude]")).toBeLessThan(updated.indexOf("status: unread"));
     // 没有 menote 子键就不该出现 menote:（更不该出现不带冒号的裸 menote）
     expect(updated.split("\n")).not.toContain("menote");
     expect(updated).not.toContain("menote:");
@@ -235,14 +247,14 @@ describe("外来 front matter（Obsidian 等外部工具的平铺 YAML）", () =
     expect(reparsed.meta.tags).toEqual(["claude"]);
     expect(reparsed.meta.title).toBe("Anatomy of the .claude/ folder");
 
-    // 任务字段同理（features/tasks/actions.ts 的任务开关就走这条路径）
+    // 任务字段同理（features/tasks 的任务开关就走这条路径）：写顶层三键，不再有 menote.task
     const withTask = updateMenoteKeys(OB, { task: { status: "todo", due: null, priority: null } });
     const taskParsed = parseMenoteMeta(withTask);
     expect(taskParsed.meta.task).toEqual({ status: "todo", due: null, priority: null });
-    expect(withTask).toContain("menote:\n  task:\n    status: todo");
+    expect(withTask).toContain("\nstatus: todo\n");
+    expect(withTask).not.toContain("menote:");
+    expect(withTask).not.toContain("status: unread"); // 被接管并覆盖（设计 §4 明确接受的代价）
     expect(withTask).toContain('title: "Anatomy of the .claude/ folder"');
-    // menote: 必须在所有外来键之后，且带冒号
-    expect(withTask.indexOf("status: unread")).toBeLessThan(withTask.indexOf("menote:"));
   });
 
   it("外来键与 menote 块并存时，menote 块不被劈成两半", () => {
@@ -259,27 +271,39 @@ describe("外来 front matter（Obsidian 等外部工具的平铺 YAML）", () =
     expect(parsed.meta.title).toBe("外来标题");
   });
 
-  it("buildDocument 重建时把外来键顶在 menote 之前", () => {
+  it("buildDocument：外来键 → title → tags → 清单三键 → menote: 的布局", () => {
     // 表格的单元格编辑与"降级为笔记"都会整篇重建，走的就是这一条
     const built = buildDocument(
       {
         type: "note",
+        title: "T",
         tags: ["x"],
-        task: null,
+        task: { status: "todo", due: "2026-04-01", priority: "high" },
         preservedLines: [],
-        foreignLines: ["status: unread"],
+        foreignLines: ["url: u"],
       },
       "正文",
     );
-    expect(built).toBe("---\nstatus: unread\ntags: [x]\nmenote:\n  type: note\n---\n\n正文");
+    expect(built).toBe(
+      "---\nurl: u\ntitle: T\ntags: [x]\nstatus: todo\ndue: 2026-04-01\npriority: high\nmenote:\n  type: note\n---\n\n正文",
+    );
+  });
+
+  it("清单三字段全空时不写那三行（键不在 = 不是清单条目）", () => {
+    const built = buildDocument(
+      { type: null, tags: [], task: { status: null, due: null, priority: null }, preservedLines: [], foreignLines: [] },
+      "正文",
+    );
+    // `meta.task` 非 null 但一个值都没有：三行都不写，front matter 整段不存在
+    expect(built).toBe("正文");
   });
 
   it("只有外来键、没有 menote 子键时，不产出空的 menote: 映射", () => {
     const built = buildDocument(
-      { type: null, tags: [], task: null, preservedLines: [], foreignLines: ["status: unread"] },
+      { type: null, tags: [], task: null, preservedLines: [], foreignLines: ["url: u"] },
       "正文",
     );
-    expect(built).toBe("---\nstatus: unread\n---\n\n正文");
+    expect(built).toBe("---\nurl: u\n---\n\n正文");
   });
 });
 
@@ -413,20 +437,17 @@ describe("Memo 转笔记的关联键（Q10）", () => {
  * 都在盯两件事：**形状不变**（块仍是块、单行仍是单行）与**原位**（不挪到别处）。
  */
 describe("外来顶层键：读 / 写 / 删", () => {
-  it("列出外来键，MeNote 自己的三个键不在其中", () => {
+  it("列出外来键，MeNote 自己的键不在其中", () => {
     const keys = readForeignKeys(OB);
-    expect(keys.map((k) => k.key)).toEqual([
-      "url",
-      "author",
-      "captured",
-      "like",
-      "comment",
-      "status",
-    ]);
+    expect(keys.map((k) => k.key)).toEqual(["url", "author", "captured", "like", "comment"]);
     // title / tags 是 MeNote 的（各有专门的行），menote 是表格结构
     expect(keys.map((k) => k.key)).not.toContain("title");
     expect(keys.map((k) => k.key)).not.toContain("tags");
     expect(keys.map((k) => k.key)).not.toContain("menote");
+    // 清单三键 2026-10-11 起也是 MeNote 的（无条件接管，设计 §4）——OB 那篇的 `status: unread` 因此不再外来
+    for (const key of ["status", "due", "priority"]) {
+      expect(keys.map((k) => k.key)).not.toContain(key);
+    }
   });
 
   it("认出单行与块两种形状，值是原文不加工", () => {
@@ -450,14 +471,14 @@ describe("外来顶层键：读 / 写 / 删", () => {
   });
 
   it("单行键原位改写：形状不变，其它键与 menote 块一字不动", () => {
-    const next = writeForeignKey(OB, "status", { value: "read", block: false });
+    const next = writeForeignKey(OB, "captured", { value: "2026-04-01", block: false });
 
-    expect(next).toContain("status: read");
+    expect(next).toContain("captured: 2026-04-01");
     // 原位：url 仍在 author 之前
     expect(next.indexOf("url:")).toBeLessThan(next.indexOf("author:"));
     // 别人的值与块序列一字不改
     expect(next).toContain('author:\n  - "Unknown"');
-    expect(next).toContain("captured: 2026-03-25");
+    expect(next).toContain("status: unread");
     expect(next).toContain("正文第一段。");
   });
 
@@ -475,14 +496,23 @@ describe("外来顶层键：读 / 写 / 删", () => {
     expect(next).toContain("url: 'https://a.b/c?x=1'");
   });
 
-  it("键不存在时追加到外来段末尾，位置仍在 menote 块之前", () => {
-    // OB 那篇没有 menote 块，所以拿一篇有块的来验位置
+  it("键不存在时插在第一个自有键之前，位置仍在 menote 块之前", () => {
     const withBlock = '---\ntitle: T\nurl: u\nmenote:\n  type: note\n---\n\n正文';
     const next = writeForeignKey(withBlock, "rating", { value: "5", block: false });
 
     expect(next).toContain("rating: 5");
     expect(next.indexOf("rating:")).toBeLessThan(next.indexOf("menote:"));
+    // 布局（设计 §2）：外来键在最前，所以新键落在 `title:` 之前
+    expect(next.indexOf("rating:")).toBeLessThan(next.indexOf("title:"));
     expect(parseMenoteMeta(next).meta.type).toBe("note");
+  });
+
+  it("本来没有 front matter 的空白笔记，加外来键时**建出** front matter", () => {
+    const next = writeForeignKey("正文", "rating", { value: "5", block: false });
+    expect(next).toBe("---\nrating: 5\n---\n\n正文");
+    expect(readForeignKeys(next).map((k) => k.key)).toEqual(["rating"]);
+    // 正文一个字不动
+    expect(parseMenoteMeta(next).body).toBe("正文");
   });
 
   it("外来文件用 4 空格缩进时，读写往返不改缩进", () => {
@@ -518,9 +548,11 @@ describe("外来顶层键：读 / 写 / 删", () => {
   });
 
   it("撞上 MeNote 自己的键要拒绝，指向上面已有的行", () => {
-    expect(() => writeForeignKey(OB, "title", { value: "x", block: false })).toThrow(
-      /MeNote 自己的键/,
-    );
+    for (const key of ["title", "tags", "status", "due", "priority"]) {
+      expect(() => writeForeignKey(OB, key, { value: "x", block: false })).toThrow(
+        /MeNote 自己的键/,
+      );
+    }
   });
 
   it("单行值里含「: 」或「 #」要拒绝（写出去就是非法 YAML）", () => {
@@ -541,10 +573,13 @@ describe("外来顶层键：读 / 写 / 删", () => {
   });
 
   it("外来键的往返：读 → 改 → 读，形状与位置都稳", () => {
-    const edited = writeForeignKey(OB, "status", { value: "read", block: false });
+    const edited = writeForeignKey(OB, "like", { value: "true", block: false });
     const keys = readForeignKeys(edited);
-    expect(keys.find((k) => k.key === "status")?.value).toBe("read");
+    expect(keys.find((k) => k.key === "like")?.value).toBe("true");
     expect(keys.find((k) => k.key === "author")?.value).toBe('  - "Unknown"');
     expect(parseMenoteMeta(edited).body.trim()).toBe("正文第一段。");
   });
 });
+
+// 清单三字段平铺的用例在 `frontmatter-task.test.ts`（单文件 500 行上限）
+

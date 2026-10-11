@@ -1,7 +1,8 @@
 /**
  * 待办的数据层动作（features/tasks；直接用 `data/db`，由 `App` 组装到界面）。
  *
- * **规范数据在 Memo 的 YAML 里**（`menote.task`），条目的 `is_task` / `task_status` / `task_due` /
+ * **规范数据在条目的 YAML 里**（2026-10-11 起是**顶层** `status` / `due` / `priority` 三键，
+ * 旧写法 `menote.task:` 只读不写），条目的 `is_task` / `task_status` / `task_due` /
  * `task_priority` 只是服务端的冗余派生列（供 MCP 筛选）。所以每次改动都要**同时**：
  * 1. 改 md 的 front matter（用 mdcore 的行级改写，保留其它键）；
  * 2. 修条目行上的派生列并入队一条元数据补丁。
@@ -11,7 +12,7 @@
  * 去掉清单标记（Q23）= 把 `task` 字段整个删掉 + 清空三个派生列；**不能只置 is_task=0**——
  * 0002 的约束要求 is_task=0 时字段必须为空。
  */
-import { updateMenoteKeys, type TaskFields } from "@menote/mdcore";
+import { hasTaskValues, updateMenoteKeys, type TaskFields } from "@menote/mdcore";
 import {
   db,
   enqueueBodySave,
@@ -58,7 +59,8 @@ export async function writeTaskFields(
   await enqueueBodySave(itemId, item.rev, now);
 
   await db.items.update(itemId, {
-    is_task: next === null ? 0 : 1,
+    // 平铺后「有值才有键」：三值全空写不出清单条目，列也跟着回落 0（见 `hasTaskValues`）
+    is_task: hasTaskValues(next) ? 1 : 0,
     task_status: next?.status ?? null,
     task_due: next?.due ?? null,
     task_priority: next?.priority ?? null,

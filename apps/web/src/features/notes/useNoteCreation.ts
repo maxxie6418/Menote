@@ -20,7 +20,7 @@
  */
 import { useCallback, useMemo } from "react";
 import { newUlid } from "@menote/shared";
-import { renderTableDocument, updateMenoteKeys, type TableDoc } from "@menote/mdcore";
+import { renderTableDocument, type TableDoc } from "@menote/mdcore";
 import { createLocalFolder, createLocalItem } from "../../data/db";
 import type { LocalFolder } from "../../data/db";
 import { folderDepthFor, MAX_FOLDER_DEPTH } from "./folders";
@@ -28,7 +28,10 @@ import { isInVault } from "../privacy/vault";
 import { DEFAULT_NOTE_TITLE, importMarkdownFiles, type ImportNotesSummary } from "./import-md";
 import type { NotesView } from "./views";
 
-/** 新建表格的默认标题：表格界面不收标题，先给一个能认出来的，之后在标题栏改 */
+/**
+ * 新建表格的默认标题：表格界面不收标题，先给一个能认出来的，之后在标题栏改。
+ * **只作 `items.title` 派生列的初值，不写进 md**（2026-10-11，设计 §9）。
+ */
 const DEFAULT_TABLE_TITLE = "未命名表格";
 
 /** 条目的落点：当前选中的笔记本（没有笔记本上下文的视图 → 根目录）+ 是否在加密空间内 */
@@ -88,11 +91,13 @@ export function useNoteCreation(input: UseNoteCreationInput) {
           title,
           folder_id: target.folderId,
           /*
-            标题同时写进 md 的顶层 `title:`（2026-10-04，md 为准、列是派生列）。
-            用 `updateMenoteKeys` 而不是 `buildDocument`：`options.body` 可能已经是带
-            front matter 的完整文档（快速录入框带标签时会），`buildDocument` 会把它整块重建掉。
+            **标题不再写进 md**（2026-10-11 用户决定，设计 §9）：不设置属性就不该有 YAML，
+            而新建一篇必然带标题（`items.title NOT NULL`）。从前这里每次都写一行
+            `title: 未命名笔记`，于是新笔记的编辑器顶部立刻出现一段 front matter。
+            现在标题只存 `items.title` 派生列；`options.body` 若自带 front matter
+            （快速录入带标签时会）则原样带走，一个字都不动。
           */
-          body: updateMenoteKeys(options?.body ?? "", { title }),
+          body: options?.body ?? "",
           inEncSpace: target.inVault,
         },
         Date.now(),
@@ -176,8 +181,9 @@ export function useNoteCreation(input: UseNoteCreationInput) {
           type: "table",
           title: DEFAULT_TABLE_TITLE,
           folder_id: target.folderId,
-          // 标题也进 md 顶层（与笔记同一条口径）：`TableDoc.title` 缺省即不写这一行
-          body: renderTableDocument({ ...doc, title: DEFAULT_TABLE_TITLE }),
+          // 标题**不写进 md**（2026-10-11，与笔记同一条口径，设计 §9）：`TableDoc.title`
+          // 是 `undefined` 就不写这一行，所以新建的表格条目正文里没有 front matter
+          body: renderTableDocument(doc),
           inEncSpace: target.inVault,
         },
         Date.now(),

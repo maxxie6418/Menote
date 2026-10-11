@@ -326,6 +326,79 @@ describe("新建表格", () => {
   });
 });
 
+/** 取出一条的正文（新建路径落的是 `db.bodies`） */
+async function readBody(id: string): Promise<string> {
+  const row = await db.bodies.get(id);
+  return row?.body ?? "";
+}
+
+/** 跑一次新建并把建出来的那一行与正文读回来 */
+async function createAndReadFull(
+  options?: { title?: string; body?: string },
+): Promise<{ title: string | null; body: string }> {
+  const api: { current: CreationApi | null } = { current: null };
+  render(
+    <CreationHarness
+      folders={[PARENT]}
+      view={{ kind: "notebook", folderId: "f1" }}
+      capture={(next) => (api.current = next)}
+    />,
+  );
+  const handle = api.current;
+  if (!handle) throw new Error("新建动作还没接上");
+
+  let id: string | null = null;
+  await act(async () => {
+    id = await handle.createNote(options);
+  });
+  const item = await db.items.get(id ?? "");
+  if (!item) throw new Error("本地库里没有新建的条目");
+  return { title: item.title, body: await readBody(item.id) };
+}
+
+describe("新建的条目不带 front matter（2026-10-11 用户决定，设计 §9）", () => {
+  it("新建笔记：正文是空的，没有 title: 那一段", async () => {
+    const created = await createAndReadFull();
+
+    // 不设置任何属性 → 一个字都不该进正文。从前这里恒有 `---\ntitle: 未命名笔记\n---`，
+    // 于是新笔记的编辑器顶部立刻出现一段 front matter（用户反馈的那个现象）
+    expect(created.body).toBe("");
+    // 标题照旧有初值——它存在派生列里，不在 md 里
+    expect(created.title).toBe("未命名笔记");
+  });
+
+  it("快速录入带标签时，正文自带的 front matter 原样带走（不被重建）", async () => {
+    const source = "---\ntags: [速记]\n---\n\n正文。\n";
+    const created = await createAndReadFull({ title: "速记标题", body: source });
+
+    expect(created.body).toBe(source);
+    expect(created.body).not.toContain("title:");
+    expect(created.title).toBe("速记标题");
+  });
+
+  it("新建表格：正文里没有 title: 行，且能解析回同一张表", async () => {
+    const api: { current: CreationApi | null } = { current: null };
+    render(
+      <CreationHarness
+        folders={[PARENT]}
+        view={{ kind: "notebook", folderId: "f1" }}
+        capture={(next) => (api.current = next)}
+      />,
+    );
+    const handle = api.current;
+    if (!handle) throw new Error("新建动作还没接上");
+
+    let id: string | null = null;
+    await act(async () => {
+      id = await handle.createTable(tableDoc("事项"));
+    });
+
+    const body = await readBody(id ?? "");
+    expect(body).not.toContain("title:");
+    expect(parseTableDocument(body).ok).toBe(true);
+  });
+});
+
 /** 工作区外壳：只为拿派生值 `viewPath` */
 function WorkspaceHarness({ capture }: { capture: (value: NotesWorkspace) => void }) {
   const workspace = useNotesWorkspace({ gate: GATE });

@@ -3,6 +3,7 @@ import {
   TASK_PRIORITY_LABELS,
   TASK_STATUS_LABELS,
   deriveTaskFields,
+  hasTaskValues,
   parseTaskDue,
   parseTaskPriority,
   parseTaskStatus,
@@ -74,5 +75,26 @@ menote:
       due: null,
       priority: null,
     });
+  });
+});
+
+describe("hasTaskValues：写侧口径的清单标记（平铺后有值才有键）", () => {
+  it("null 与三值全空都写不出清单条目", () => {
+    expect(hasTaskValues(null)).toBe(false);
+    expect(hasTaskValues(undefined)).toBe(false);
+    expect(hasTaskValues({ status: null, due: null, priority: null })).toBe(false);
+  });
+
+  it("任一值有内容就算（与 renderTaskLines 的真值判断一致，空串不算）", () => {
+    expect(hasTaskValues({ status: "todo", due: null, priority: null })).toBe(true);
+    expect(hasTaskValues({ status: null, due: "2026-04-01", priority: null })).toBe(true);
+    expect(hasTaskValues({ status: null, due: null, priority: "low" })).toBe(true);
+    expect(hasTaskValues({ status: "", due: "", priority: "" })).toBe(false);
+  });
+
+  it("与读侧刻意不同：旧写法那种「键在但值全空」的条目，写侧表示不出来", () => {
+    const legacy = "---\nmenote:\n  task:\n---\n\n空清单";
+    expect(deriveTaskFields(legacy).isTask).toBe(true);
+    expect(hasTaskValues(deriveTaskFields(legacy))).toBe(false);
   });
 });

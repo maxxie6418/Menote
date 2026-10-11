@@ -149,7 +149,7 @@ export interface NotesWorkspace extends NoteCreationActions {
   memoContents: Record<string, MemoContent>;
   /**
    * 发布 Memo（乐观：先落本地并标"待上传"，出队由 outbox 后台上传；写入**永远免密**）。
-   * `asTask` = 用户在录入框确认了"设为清单？"或走的是待办档；正文会带上 `menote.task` 标记，
+   * `asTask` = 用户在录入框确认了"设为清单？"或走的是待办档；正文会带上顶层 `status` 标记，
    * 新建清单**默认状态"待办"**（M2-5）。
    */
   publishMemo: (
@@ -532,7 +532,8 @@ export function useNotesWorkspace(
   );
 
   /**
-   * 改标题（数据层动作见 `features/notes/actions.ts`：md 顶层 `title:` + 派生列一起写）。
+   * 改标题（数据层动作见 `features/notes/actions.ts`：**派生列必写**，md 里本来就有
+   * `title:` 时才回写那一行——2026-10-11 起新建笔记不写 `title:`，见设计 §9）。
    *
    * 2026-09-28 性能修复：此前这里每次都 `await refresh()`（6 张表 + 全量正文摘要 +
    * 搜索索引重扫），而输入框受控在 `allItems` 里那份标题上 —— 一次按键 = 一次全库扫描 +

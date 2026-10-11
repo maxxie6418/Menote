@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 /**
- * 改标题要**同时写 md 与派生列**（2026-10-04，标题入档）。
+ * 改标题与 md 的关系（2026-10-04 标题入档 → **2026-10-11 收窄**，设计 §9）。
  *
- * 背景：为了跟外部 Markdown 工具（Obsidian 等）互通、往返不丢标题，标题进了 md 的**顶层
- * `title:` 键**——`items.title` 从此只是派生列（与 `tags` / `task` 同一套哲学）。
- * 于是改标题不再是纯元数据操作：md 与列两边都得写。
+ * 背景：为了跟外部 Markdown 工具（Obsidian 等）互通、往返不丢标题，标题曾经统一进 md 的
+ * 顶层 `title:` 键——`items.title` 只是派生列。**新口径反过来了**：新建笔记不再写
+ * `title:`（不设置属性就不该有 YAML），标题的家是 `items.title` 列；但**外部导入的稿
+ * 自带 `title:` 时那个键要跟着改**，否则下次按 md 派生会把标题弹回去。
  *
- * 钉四件事：
- * 1. **md 顶层 `title:` 更新**，且本地列同步（两边不一致 = 下次同步会把标题弹回去）；
- * 2. **只改标题这一条**——外来 front matter、`menote:` 块、正文都不许被动；
- * 3. **Memo 不写 `title:`**（`assertItemShape` 要求 `items.title` 为 null，Memo 没有独立标题）；
- * 4. **没变化就不写**（防抖会重复提交同一个值，白写一次 outbox 是浪费）。
+ * 钉五件事：
+ * 1. **md 有 `title:` 时更新它**，且本地列同步（两边不一致 = 下次同步会把标题弹回去）；
+ * 2. **md 没有 `title:` 时一个字都不加**（只写列，连草稿都不落）；
+ * 3. **只改标题这一条**——外来 front matter、`menote:` 块、正文都不许被动；
+ * 4. **Memo 不写 `title:`**（`assertItemShape` 要求 `items.title` 为 null，Memo 没有独立标题）；
+ * 5. **没变化就不写**（防抖会重复提交同一个值，白写一次 outbox 是浪费）。
  */
 import "fake-indexeddb/auto";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
@@ -57,17 +59,26 @@ async function mountWorkspace(): Promise<() => NotesWorkspace> {
 }
 
 /** 打开一篇并改标题，然后读回草稿里的 md */
-async function renameTo(title: string): Promise<string> {
+async function renameTo(title: string, id = "n1"): Promise<string> {
   const current = await mountWorkspace();
   await act(async () => {
-    await current().open("n1");
+    await current().open(id);
   });
   await act(async () => {
     await current().changeTitle(title);
   });
-  const draft = await getDraft("n1");
+  const draft = await getDraft(id);
   return draft?.body ?? "";
 }
+
+/** 正文里**没有** `title:` 键的那种稿（新建笔记从出生起就是这样） */
+const NO_TITLE_KEY = `---
+url: "https://example.com/b"
+tags: [外部]
+---
+
+正文内容。
+`;
 
 beforeEach(async () => {
   await db.delete();
@@ -142,5 +153,51 @@ describe("改标题：md 为准，列是派生列", () => {
     expect(item?.title).toBeNull();
     const draft = await getDraft("n1");
     expect(draft?.body ?? "").not.toContain("不该写进去");
+  });
+});
+
+/* ———————————————— 新口径：md 里没有 title: 就不写 md（2026-10-11，设计 §9） ———————————————— */
+
+describe("md 里没有 title: → 改标题只写列，一个字都不进正文", () => {
+  beforeEach(async () => {
+    await createLocalItem(
+      { id: "n2", type: "note", title: "旧标题", folder_id: null, body: NO_TITLE_KEY },
+      NOW,
+    );
+  });
+
+  it("列更新了，正文与草稿一动不动", async () => {
+    const current = await mountWorkspace();
+    await act(async () => {
+      await current().open("n2");
+    });
+    // 打开这一篇时编辑器会把正文物化成草稿（既有行为），拿它当基线
+    const bodyBefore = (await getDraft("n2"))?.body;
+    expect(bodyBefore).toBe(NO_TITLE_KEY);
+
+    await act(async () => {
+      await current().changeTitle("新标题");
+    });
+
+    // 列照旧更新（列表 / 搜索读它），并入了 meta 补丁
+    expect((await getLocalItem("n2"))?.title).toBe("新标题");
+    const ops = (
+      await db.outbox.where("[entity+entity_id]").equals(["item", "n2"]).toArray()
+    ).map((row) => row.op);
+    expect(ops).toContain("patch_meta");
+    // 但没有正文入队、草稿内容也没被动过——这一次改标题根本没碰 md
+    expect(ops).not.toContain("save_body");
+    expect((await getDraft("n2"))?.body).toBe(bodyBefore);
+  });
+
+  it("反过来：md 里本来有 title: 时仍然跟着改（导入的稿）", async () => {
+    await createLocalItem(
+      { id: "n3", type: "note", title: "旧标题", folder_id: null, body: FOREIGN },
+      NOW,
+    );
+    const body = await renameTo("新标题", "n3");
+
+    expect(body).toContain("title: 新标题");
+    expect(body).toContain('url: "https://example.com/a"');
   });
 });

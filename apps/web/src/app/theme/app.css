@@ -1089,30 +1089,10 @@ button {
 }
 
 /*
-  编辑器里被藏起来的 front matter（2026-10-04，`app/editor/frontmatter-hide.ts`）。
-
-  形状取「和正文同一行的弱化标签」而不是一块带框的卡片：它是**元数据的位置指示**，
-  不是内容——给它描边会让人以为里面藏着一段可编辑的东西（DESIGN.md 少块/少框那条口径）。
-  底色用 `--bg-soft`（与代码块同一档），文字用 `--text-2`，与正文形成层级但不同色系。
+  编辑器里的 front matter（2026-10-04 首版、2026-10-11 改）：整段**零宽隐藏**，一个字都不显示，
+  也没有可点元素（设计 §7：YAML 不进正文编辑，属性只在正文区顶部的属性卡片里改）。
+  所以这里不再有 `.cm-fm-chip` 那一套样式——没有元素要用它。
 */
-.cm-fm-chip {
-  display: inline-block;
-  padding: 0 var(--sp-2);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--bg-soft);
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--fs-micro);
-  line-height: 1.7;
-  cursor: pointer;
-}
-
-/* 键盘聚焦必须看得见（DESIGN.md §6.2 焦点与键盘可达是底线，不以悬停为唯一入口） */
-.cm-fm-chip:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}
 
 /*
   应用级加载失败屏（2026-10-04，`app/ui/AppErrorBoundary.tsx`）。
@@ -1329,6 +1309,12 @@ button {
   padding: 5px 0;
 }
 .itemprops__foot {
+  padding: var(--sp-1) 0 0 84px;
+}
+/* 被接管但值不识别的顶层键：必须可见（静默覆盖等于数据消失），但不做成警告条那么重 */
+.itemprops__warn {
+  color: var(--amber);
+  font-size: var(--fs-micro);
   padding: var(--sp-1) 0 0 84px;
 }
 

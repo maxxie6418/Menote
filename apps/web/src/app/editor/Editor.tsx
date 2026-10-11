@@ -71,6 +71,7 @@ export interface EditorHandle {
    * 那是调用方该拦的）。
    *
    * 文档本来就没有 front matter 时在开头插入（给第一篇还没有属性的笔记加第一个标签）。
+   * 反过来，**传空串就是「把这一段整段删掉」**（属性全被清空时走这条路，2026-10-11）。
    */
   replaceFrontmatter(next: string): boolean;
 }

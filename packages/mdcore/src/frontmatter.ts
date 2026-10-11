@@ -5,6 +5,11 @@
  * （需求 §10.2 的表格示例即 `menote: { type: table, row_id_column, ... }`）。本模块只认这一层，
  * 不做通用 YAML。
  *
+ * **布局（2026-10-11 定）**：外来键（原样保留）→ `title` → `tags` → `status` → `due` →
+ * `priority` → `menote:`。清单三字段是**顶层平铺键**，与 Obsidian 等外部工具写法一致；
+ * 旧的 `menote.task:` **只读不写**——任何一次 `patch.task` 命中就把它整段搬到顶层（懒迁移，
+ * 设计《属性栏与清单字段平铺》§3 / §5）。
+ *
  * **为什么自己写解析而不引 YAML 库**：`packages/mdcore` 定位是零依赖纯函数包；而 md 是我们自己
  * 生成的，读入时只需要一个**有界子集**（一层映射 + 标量 + 内联/块序列 + 一层嵌套）。
  * 引库换来的通用性，代价是一个生产依赖 + 与"纯函数包"的定位冲突；将来真需要再换（接口不变）。
@@ -38,7 +43,17 @@ export interface MenoteMeta {
    * Memo 恒为 `undefined`——Memo 没有独立标题（`assertItemShape` 要求 `items.title` 为 null）。
    */
   title?: string | null;
-  /** `null` 表示**没有** `menote.task` 键——清单标记的有无就看它（M07-04） */
+  /**
+   * 清单三字段；`null` = **顶层三个键与旧 `menote.task` 一个都没有**——清单标记的有无就看它（M07-04）。
+   *
+   * **2026-10-11 平铺**（设计《属性栏与清单字段平铺》§3）：三个字段升为顶层键
+   * `status` / `due` / `priority`，与 `tags` / `title` 一样待在 `menote:` 块**之外**，写法与
+   * Obsidian 等外部工具一致。**字段名与类型都没变，只是键位改了**——所以本字段的判断
+   * 「顶层任意一个键在，就算清单条目」与旧口径（有没有 `menote.task` 键）是同一个意思。
+   *
+   * 旧写法 `menote.task:` 里的值仍**读**得出来（懒迁移，见 `parseMenoteMeta`），但任何一次
+   * `patch.task` 写入都会把它整段搬到顶层。
+   */
   task: TaskFields | null;
   /**
    * Memo 转笔记后的**新笔记 id**（Q10：原 Memo 保留并显示"已转为笔记"的链接）。
@@ -58,8 +73,8 @@ export interface MenoteMeta {
   /**
    * `menote:` 块**之前**的顶层行 —— 外来 front matter（如 Obsidian 的 `url` / `author` / `status`）。
    *
-   * **一律原样保留，MeNote 不解释**。顶层只有白名单里的键（`tags`，以及 `title`）会被取走，
-   * 它们**不在这个字段里**——否则重建文档时会被写两遍。
+   * **一律原样保留，MeNote 不解释**。顶层只有白名单里的键（`tags`、`title`，以及清单三键
+   * `status` / `due` / `priority`）会被取走，它们**不在这个字段里**——否则重建文档时会被写两遍。
    *
    * **为什么挂在 `MenoteMeta` 上、而不是解析结果的旁挂字段**：整篇重建的入口只有
    * `buildDocument` 一处，而表格的单元格编辑（`renderTableDocument`）与降级为笔记
@@ -210,7 +225,12 @@ function tagsOf(segment: Segment): string[] {
   return out;
 }
 
-/** 取 `task` 段（一层嵌套） */
+/**
+ * 取**旧写法** `menote.task:` 段（一层嵌套）。
+ *
+ * 2026-10-11 起清单三字段的家是顶层（`TASK_KEYS`），这里只服务**存量笔记**的读路径；
+ * 写完一次就搬走了，不必再往这里加东西。
+ */
 function taskOf(segment: Segment): TaskFields {
   const task: TaskFields = { status: null, due: null, priority: null };
   for (const line of segment.lines.slice(1)) {
@@ -223,37 +243,73 @@ function taskOf(segment: Segment): TaskFields {
   return task;
 }
 
-/** 顶层键白名单：只有这些会被 MeNote 取走，其余顶层行一律原样保留（见文件头「两层各管各的」） */
-const TOP_LEVEL_KEYS = ["tags", "title"] as const;
+/**
+ * 清单三字段的**顶层键**，数组顺序就是写入顺序（`status` → `due` → `priority`）。
+ *
+ * 2026-10-11 从 `menote.task:` 里平铺上来（设计《属性栏与清单字段平铺》§3）。放进白名单的
+ * 直接后果是：这三个键会被 MeNote **无条件接管**，外部文档里同名的普通属性会被吞掉并在
+ * 下一次写入时被覆盖——这是用户明确接受的代价（同设计 §4），换的是与 Obsidian 一致的写法。
+ */
+const TASK_KEYS = ["status", "due", "priority"] as const;
+
+/**
+ * 顶层键白名单：只有这些会被 MeNote 取走，其余顶层行一律原样保留（见文件头「两层各管各的」）。
+ *
+ * **数组顺序就是写入顺序**：`title` → `tags` → 清单三键（设计 §2 的布局）。
+ * `updateMenoteKeys` 拿它当排序键，所以这里改顺序就等于改产出文件的键序。
+ */
+const TOP_LEVEL_KEYS = ["title", "tags", ...TASK_KEYS] as const;
+
+/**
+ * 顶层清单键的取值。
+ *
+ * 空写法（空串 / `null` / `~`）一律当**没有值**（`null`），与 `taskOf` 对旧块的处理同一口径——
+ * 于是 `status:`（键在、值为空）算**清单条目但状态没设**，「键存在即清单条目」因此得以成立。
+ */
+function taskScalarOf(segment: Segment): string | null {
+  const value = scalarOf(segment);
+  return value === "" || value === "null" || value === "~" ? null : value;
+}
 
 /**
  * 拆顶层行：白名单里的键取出来交给 `meta`，其余**原样**留在 `foreignLines`。
  *
  * 顶层键取走而不留在 `foreignLines`，是为了让 `buildDocument` 重建时不会写两遍
- * （外来键 + `meta` 各写一次）。`tags` 走这个出口，也就是它在 MeNote 里的家是**顶层**。
+ * （外来键 + `meta` 各写一次）。`tags` 与清单三键走这个出口，也就是它们在 MeNote 里的家是**顶层**。
+ *
+ * 同名的重复键**首次优先**（与 `tags` / `title` 既有口径一致）；清单三键是**逐键**判断的，
+ * 只要有一个在就返回非 null 的 `TaskFields`，缺的那些留 `null`。
  */
 function takeTopLevelKeys(outerLines: readonly string[]): {
   foreignLines: string[];
   /** `undefined` = 顶层**没有** `title:` 键（md 不接管）；`null` = 有键但取不到值 */
   title: string | null | undefined;
   tags: string[] | null;
+  /** `null` = 顶层**三个键一个都没有**（与「键在但值为空」不同，后者是非 null 的 `TaskFields`） */
+  task: TaskFields | null;
 } {
   const { segments } = splitSegments(outerLines);
   const foreignLines: string[] = [];
   let title: string | null | undefined;
   let tags: string[] | null = null;
+  let task: TaskFields | null = null;
 
   for (const segment of segments) {
     const owned = (TOP_LEVEL_KEYS as readonly string[]).includes(segment.key);
     if (owned) {
       if (segment.key === "tags" && tags === null) tags = tagsOf(segment);
       if (segment.key === "title" && title === undefined) title = scalarOf(segment) || null;
+      if ((TASK_KEYS as readonly string[]).includes(segment.key)) {
+        if (task === null) task = { status: null, due: null, priority: null };
+        const key = segment.key as (typeof TASK_KEYS)[number];
+        if (task[key] === null) task[key] = taskScalarOf(segment);
+      }
       continue;
     }
     foreignLines.push(...segment.lines);
   }
 
-  return { foreignLines, title, tags };
+  return { foreignLines, title, tags, task };
 }
 
 /** 解析条目 md：拿到结构化 meta、正文，以及原始 front matter 文本 */
@@ -283,6 +339,20 @@ export function parseMenoteMeta(markdown: string): ParsedDocument {
     }
   }
   if (top.tags !== null) meta.tags = top.tags;
+
+  /*
+    清单三字段**双读**（懒迁移，设计 §5）：顶层优先，顶层缺哪个字段就回落到旧 `menote.task`
+    的同名字段。只要有一处出现就算清单条目——「键存在即清单条目」的判据因此对两种写法都成立。
+    顶层一个键都没有（`top.task === null`）时保持上面从旧块读到的结果。
+  */
+  const legacyTask = meta.task;
+  if (top.task) {
+    meta.task = {
+      status: top.task.status ?? legacyTask?.status ?? null,
+      due: top.task.due ?? legacyTask?.due ?? null,
+      priority: top.task.priority ?? legacyTask?.priority ?? null,
+    };
+  }
 
   return { meta, body: split.body, raw: split.raw };
 }
@@ -402,8 +472,11 @@ function compose(markdown: string, foreign: readonly string[], inner: readonly s
  * - 原来是块序列（带缩进子行）→ 传 `block: true`，仍是块序列；
  * - 原来是一行 → 传 `block: false`，仍是一行。
  *
- * 键不存在则追加到外来段末尾。没有 front matter 的文档**不在这里建**（那属于
- * `updateMenoteKeys` 的活）——本函数只改已有 front matter 里的外来键。
+ * 键不存在则插在**第一个自有键之前**（设计 §2 的布局：外来键在最前，自有键区
+ * `title` / `tags` / 清单三键在它之后）；一个自有键都没有时追加到外来段末尾。
+ *
+ * **没有 front matter 的文档就在这一步建出来**（2026-10-11）：卡片在空白笔记上点
+ * 「+ 添加属性」是常规入口，从前这里直接抛错，等于要求用户先用别的办法造一个 front matter。
  */
 export function writeForeignKey(
   markdown: string,
@@ -413,22 +486,27 @@ export function writeForeignKey(
   assertForeignKey(key);
   assertForeignValue(input.value, input.block);
 
-  const blocks = splitBlocks(markdown);
-  if (!blocks) throw foreignKeyError("这一篇还没有属性（front matter），先在正文里用标题或标签建一个。");
+  const blocks = splitBlocks(markdown) ?? { foreign: [], inner: [] };
 
   const { segments } = splitSegments(blocks.foreign);
   const out: string[] = [];
   let replaced = false;
+  let inserted = false;
 
   for (const segment of segments) {
     if (segment.key === key && !replaced) {
       out.push(...renderForeignSegment(key, input.value, input.block));
       replaced = true;
+      inserted = true;
       continue;
+    }
+    if (!inserted && RESERVED_KEYS.has(segment.key)) {
+      out.push(...renderForeignSegment(key, input.value, input.block));
+      inserted = true;
     }
     out.push(...segment.lines);
   }
-  if (!replaced) out.push(...renderForeignSegment(key, input.value, input.block));
+  if (!inserted) out.push(...renderForeignSegment(key, input.value, input.block));
 
   return compose(markdown, out, blocks.inner);
 }
@@ -482,12 +560,15 @@ export interface DerivedTitle {
 /**
  * 从条目 md 派生标题。
  *
- * **md 为准，`items.title` 只是派生列**——与 `tags` / `task` 同一套哲学。
+ * **2026-10-11 收窄**（《属性栏与清单字段平铺》§9）：MeNote 自己**不再往 md 写 `title:`**，
+ * 标题的家是 `items.title` 派生列（不设置属性就不该有 YAML）。所以两边的关系是
+ * 「**md 里没有这个键 → 列说了算；有这个键（外部导入的稿）→ md 说了算，改标题要跟着改**」。
+ * 从前那句「md 为准，`items.title` 只是派生列」只对后者成立。
  *
  * 三态是这套口径的全部关键，调用方**必须**区分 `present`：
  * - `present: false`（md 里没有 `title:` 键）→ **不接管**，沿用 `items.title` 列。
- *   存量笔记全属这类，所以本函数上线对它们**行为完全不变**；等哪次保存写进了 `title:`，
- *   该条目的标题才改由 md 承载（懒迁移，不需要迁移脚本）。
+ *   存量笔记与新建笔记全属这类，所以本函数对它们**行为完全不变**；只有外部导入、
+ *   或历史上写过 `title:` 的稿才由 md 承载（`writeItemTitle` 按 `present` 决定要不要回写）。
  * - `present: true` + 字符串 → md 权威。
  * - `present: true` + `null`（`title:` 空着）→ 视为没有，回落调用方的兜底。
  *
@@ -508,8 +589,8 @@ export function deriveTitle(markdown: string): DerivedTitle {
  * `menote.tags` 是 v0.2.4 实现时自选的嵌套，**定稿从未要求**；读仍兼容（存量笔记），
  * 写一律落顶层——改一次即完成懒迁移，不需要迁移脚本。
  */
-function renderTagsLine(tags: readonly string[], indent = "  "): string | null {
-  return tags.length > 0 ? `${indent}tags: ${renderInlineArray(tags)}` : null;
+function renderTagsLine(tags: readonly string[]): string | null {
+  return tags.length > 0 ? `tags: ${renderInlineArray(tags)}` : null;
 }
 
 /** 标题行：含分隔符 / 引号 / 首尾空白时加引号（与标签同一套 `needsQuote` 口径） */
@@ -517,20 +598,35 @@ function renderTitleLine(title: string): string {
   return needsQuote(title) ? `title: "${title.replace(/"/g, '\\"')}"` : `title: ${title}`;
 }
 
+/**
+ * 清单三字段的行——**顶层平铺、无缩进**（2026-10-11，设计《属性栏与清单字段平铺》§3）。
+ *
+ * 顺序固定为 `status` → `due` → `priority`（= `TASK_KEYS` 的数组顺序），空值不写行；
+ * 三值全空时返回空数组，调用方据此整段不写。
+ *
+ * **一处已知取舍**：`task` 非 null 但三个值都空（只可能来自手写的 `status:` 空值或旧写法里
+ * 光秃秃的 `menote.task:`）在平铺形状里**没有对应的写法**——没有「有键但没值」的顶层表示法。
+ * 所以整篇重建时这种条目会**退回"不是清单条目"**。属性卡片不会产生这种状态（每次写入至少
+ * 带一个值），故不为它单开一种写法。
+ *
+ * 从前这里是 `  task:` + `    status: …` 三层写法，`menote:` 块的子键。平铺之后块里不再有
+ * 它，`type` / `converted_to` 不受影响。
+ */
 function renderTaskLines(task: TaskFields | null): string[] {
   if (!task) return [];
-  const inner: string[] = [];
-  if (task.status) inner.push(`    status: ${task.status}`);
-  if (task.due) inner.push(`    due: ${task.due}`);
-  if (task.priority) inner.push(`    priority: ${task.priority}`);
-  return ["  task:", ...inner];
+  const lines: string[] = [];
+  if (task.status) lines.push(`status: ${task.status}`);
+  if (task.due) lines.push(`due: ${task.due}`);
+  if (task.priority) lines.push(`priority: ${task.priority}`);
+  return lines;
 }
 
 /**
  * 从结构化 meta 生成完整文档（用于新建；已有的文档请用 `updateMenoteKeys` 保内容）。
  *
- * **顶层写 `title` 与 `tags`，`menote:` 块只放 MeNote 私有的键**（表格键 / task / converted_to）——
- * 见文件头「两层各管各的」。外来键（`meta.foreignLines`）原样顶在最前。
+ * **布局（2026-10-11）**：外来键顶在最前，然后是自有顶层键 `title` / `tags` / 清单三键，
+ * 最后才是 `menote:` 块——块里只放 MeNote 私有且**不是顶层键**的东西（`type` /
+ * `converted_to` / 表格键），见文件头「两层各管各的」。
  *
  * 这是整篇重建的**唯一咽喉**：表格的单元格编辑与"降级为普通笔记"都走这里，
  * 靠它保住外来属性不丢。`menote:` 只在真的有子键时才写，免得产出 `menote: null` 空映射。
@@ -538,14 +634,14 @@ function renderTaskLines(task: TaskFields | null): string[] {
 export function buildDocument(meta: MenoteMeta, body: string): string {
   const inner: string[] = [];
   if (meta.type) inner.push(`  type: ${meta.type}`);
-  inner.push(...renderTaskLines(meta.task));
   if (meta.convertedTo) inner.push(`  converted_to: ${meta.convertedTo}`);
   inner.push(...meta.preservedLines);
 
   const head = [...meta.foreignLines];
   if (meta.title) head.push(renderTitleLine(meta.title));
-  const tagsLine = renderTagsLine(meta.tags, "");
+  const tagsLine = renderTagsLine(meta.tags);
   if (tagsLine) head.push(tagsLine);
+  head.push(...renderTaskLines(meta.task));
   if (inner.length > 0) head.push(`${MENOTE_KEY}:`, ...inner);
   if (head.length === 0) return body;
   return `${FRONTMATTER_FENCE}\n${head.join("\n")}\n${FRONTMATTER_FENCE}\n\n${body}`;
@@ -556,7 +652,7 @@ export interface MenotePatch {
   tags?: string[];
   /** 标题。`null` = 删掉 `title:` 键（此后回落 `items.title` 列）；`undefined` = 不动 */
   title?: string | null;
-  /** `null` 表示删除整个 task 块（= 去掉清单标记，M07-04） */
+  /** `null` = 删掉全部清单键（三个顶层键与旧 `menote.task:` 一起删）= 去掉清单标记（M07-04） */
   task?: TaskFields | null;
   /** `null` 表示删除该键 */
   convertedTo?: string | null;
@@ -566,8 +662,12 @@ export interface MenotePatch {
  * 只改写 patch 命中的键，**其它段原样保留**（含我们不解析的 columns / views，以及全部外来键）。
  * 这是保存路径唯一该用的写法：新建用 `buildDocument`，改写一律走这里。
  *
- * 布局：顶层写 `title` 与 `tags`，`menote:` 块只放私有的键（`type` / `task` / `converted_to`
- * / 表格键）。给 `tags` 打 patch 时会**顺手删掉旧的 `menote.tags`**——这就是懒迁移。
+ * **布局**（2026-10-11 平铺）：外来键 → `title` → `tags` → `status` / `due` / `priority` →
+ * `menote:`。被 patch 命中的自有键**丢弃原位置、按上面的顺序追加**，所以每次写入都朝布局收敛；
+ * 外来键之间的相对顺序原样不动。
+ *
+ * 给 `tags` 打 patch 会顺手删掉旧的 `menote.tags`，给 `task` 打 patch 会顺手删掉旧的
+ * `menote.task:`——**这就是懒迁移**（设计 §5），不需要迁移脚本。
  */
 export function updateMenoteKeys(markdown: string, patch: MenotePatch): string {
   const split = splitFences(markdown);
@@ -589,27 +689,58 @@ export function updateMenoteKeys(markdown: string, patch: MenotePatch): string {
   const outerLines = menoteIndex === -1 ? blockLines : blockLines.slice(0, menoteIndex);
   const inner = menoteIndex === -1 ? [] : blockLines.slice(menoteIndex + 1);
 
-  // —— 顶层：外来键原样留着，被 patch 命中的 `title` / `tags` 就地重写 ——
-  const { segments: topSegments } = splitSegments(outerLines);
-  const headSegments: Segment[] = [];
+  /*
+    —— 顶层：外来键原样留着，自有键按「外来 → title → tags → 清单三键」重排 ——
+
+    被 patch 命中的自有键先**丢弃**，再按固定顺序追加；没命中的自有键留在原地（位置可能因此
+    排在外来键后面，但那本来就是被 patch 的这一路顺带收敛，值一字不改）。
+    清单三键是**整体重写**：只要 patch 命中 `task`，三个键连同旧 `menote.task:` 一起作废。
+  */
+  const { header: topHeader, segments: topSegments } = splitSegments(outerLines);
+  const foreignLines: string[] = [];
+  const ownedSegments: Segment[] = [];
   for (const segment of topSegments) {
-    if (segment.key === "tags" && patch.tags !== undefined) continue; // 丢弃旧的，稍后统一重写
-    if (segment.key === "title" && patch.title !== undefined) continue;
-    headSegments.push(segment);
+    const owned = (TOP_LEVEL_KEYS as readonly string[]).includes(segment.key);
+    if (owned && segment.key === "tags" && patch.tags !== undefined) continue;
+    if (owned && segment.key === "title" && patch.title !== undefined) continue;
+    if (owned && (TASK_KEYS as readonly string[]).includes(segment.key) && patch.task !== undefined) {
+      continue;
+    }
+    if (owned) ownedSegments.push(segment);
+    else foreignLines.push(...segment.lines);
   }
   if (patch.title !== undefined && patch.title !== null) {
-    headSegments.push({ key: "title", lines: [renderTitleLine(patch.title)] });
+    ownedSegments.push({ key: "title", lines: [renderTitleLine(patch.title)] });
   }
-  const topTagsLine = renderTagsLine(patch.tags ?? [], "");
-  if (patch.tags !== undefined && topTagsLine) {
-    headSegments.push({ key: "tags", lines: [topTagsLine] });
+  if (patch.tags !== undefined) {
+    const tagsLine = renderTagsLine(patch.tags);
+    if (tagsLine) ownedSegments.push({ key: "tags", lines: [tagsLine] });
   }
+  if (patch.task !== undefined) {
+    const taskLines = renderTaskLines(patch.task);
+    // 段名借 `status` 用（三个键在 `TOP_LEVEL_KEYS` 里是连着的，取第一个的位次即可）
+    if (taskLines.length > 0) ownedSegments.push({ key: "status", lines: taskLines });
+  }
+  /*
+    自有键按 `TOP_LEVEL_KEYS` 的顺序排（**稳定排序**，同名的重复键保持原有先后）。
+    这样布局与 patch 打了哪些键无关：`title` → `tags` → `status` → `due` → `priority` 永远是这个序。
+  */
+  ownedSegments.sort(
+    (a, b) =>
+      (TOP_LEVEL_KEYS as readonly string[]).indexOf(a.key) -
+      (TOP_LEVEL_KEYS as readonly string[]).indexOf(b.key),
+  );
+  // 段头（front matter 顶部的空行 / 注释）也要留住——本函数只该改 patch 命中的键
+  const headLines = [
+    ...topHeader,
+    ...foreignLines,
+    ...ownedSegments.flatMap((segment) => segment.lines),
+  ];
 
   // —— `menote:` 块内：只认私有的键 ——
   const { segments } = splitSegments(inner);
   const untouched: Segment[] = [];
   let sawType = false;
-  let sawTask = false;
   let sawConverted = false;
 
   for (const segment of segments) {
@@ -623,10 +754,9 @@ export function updateMenoteKeys(markdown: string, patch: MenotePatch): string {
       if (patch.tags === undefined) untouched.push(segment);
       continue;
     }
-    if (segment.key === "task" && patch.task !== undefined) {
-      sawTask = true;
-      const lines = renderTaskLines(patch.task);
-      if (lines.length > 0) untouched.push({ key: "task", lines });
+    // 旧写法的清单块：patch 命中就整段丢掉（值已经搬到顶层），没命中就原样留着给人读
+    if (segment.key === "task") {
+      if (patch.task === undefined) untouched.push(segment);
       continue;
     }
     if (segment.key === "converted_to" && patch.convertedTo !== undefined) {
@@ -639,13 +769,10 @@ export function updateMenoteKeys(markdown: string, patch: MenotePatch): string {
     untouched.push(segment);
   }
 
-  // patch 里给了、原本没有的键：追加到 menote 映射末尾
+  // patch 里给了、原本没有的键：追加到 menote 映射末尾（清单三键不在这里，它在顶层）
   const appended: Segment[] = [];
   if (patch.type !== undefined && patch.type !== null && !sawType) {
     appended.push({ key: "type", lines: [`  type: ${patch.type}`] });
-  }
-  if (patch.task !== undefined && patch.task !== null && !sawTask) {
-    appended.push({ key: "task", lines: renderTaskLines(patch.task) });
   }
   if (patch.convertedTo !== undefined && patch.convertedTo !== null && !sawConverted) {
     appended.push({ key: "converted_to", lines: [`  converted_to: ${patch.convertedTo}`] });
@@ -664,9 +791,13 @@ export function updateMenoteKeys(markdown: string, patch: MenotePatch): string {
     判据应当是"有没有 menote 块"（menoteIndex），不是"第一行长什么样"。
 
     `menote:` 只在真的有子键时才写——否则产出 `menote: null` 这种空映射。
+
+    **一个键都不剩时整段不要**（2026-10-11 修）：从前 head 为空也照拼围栏，清掉最后一个属性
+    就留下 `---\n\n---`，用户看到的是"属性删不掉"，再打开还多一段空 front matter。
   */
-  const headLines = headSegments.flatMap((segment) => segment.lines);
   const bodyLines = [...untouched, ...appended].flatMap((segment) => segment.lines);
+  if (headLines.length === 0 && bodyLines.length === 0) return split.body;
+
   const rendered = bodyLines.length > 0 ? [...headLines, `${MENOTE_KEY}:`, ...bodyLines] : headLines;
 
   return `${FRONTMATTER_FENCE}\n${rendered.join("\n")}\n${FRONTMATTER_FENCE}\n\n${split.body}`;

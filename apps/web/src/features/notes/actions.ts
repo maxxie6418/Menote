@@ -1,23 +1,21 @@
 /**
  * 改标题的数据层动作（features/notes；直接用 `data/db`）。
  *
- * **为什么标题要同时改 md 和条目行**（2026-10-04）：为了跟外部 Markdown 工具
- * （Obsidian 等）互通、往返不丢标题，标题进了 md 的**顶层 `title:` 键**——
- * `items.title` 从此只是**派生列**（与 `tags` / `task` 同一套哲学：规范数据在 md，列供列表、
- * 搜索、MCP 筛选用）。所以改标题不再是纯元数据操作。
+ * **2026-10-11 起：标题的家是 `items.title` 派生列，不是 md**（设计 §9）。
+ * 新建笔记**不再**往 md 写 `title:`——不设置属性就不该有 YAML；而新建一篇必然带标题
+ * （`items.title NOT NULL`），所以从前每篇新笔记出生就带一段 front matter。
  *
- * 两边必须一致：只改 md 会让列表 / 搜索立刻显示旧标题；只改列会在下次同步被 md 覆盖回去
- * （客户端按 md 重新派生）。**写入顺序照 `features/tasks/actions.ts` 的 `writeTaskFields`**：
- * 先 `saveDraft` 落 md、入队 body，再更新派生列入队 meta——反过来会出现"列已新、正文未新"的
- * 中间态，那一下同步就会把标题弹回去。
+ * **但外部导入的稿自带 `title:` 时（Obsidian 习惯），那个键要跟着改**：md 有键的时候
+ * 它就是权威（`deriveTitle` 的 `present: true` 分支），只改列会在下次按 md 重新派生时
+ * 把标题弹回去。所以这里的规则是「md 有键才回写 md，没键一行都不加」。
  *
  * **存量笔记不受影响**：它们的 md 里没有 `title:` 键，`deriveTitle` 报 `present: false`，
- * 派生逻辑照旧沿用列——本模块不主动给它们补 `title:`，改标题时才是它们第一次接管。
+ * 派生逻辑照旧沿用列——本模块不主动给它们补 `title:`。
  *
  * **Memo 不适用**：`items.title` 对 Memo 必须为 null（`assertItemShape`），
  * 所以这里对 `type === "memo"` 直接不动。
  */
-import { updateMenoteKeys } from "@menote/mdcore";
+import { hasTaskValues, parseMenoteMeta, updateMenoteKeys } from "@menote/mdcore";
 import {
   db,
   enqueueBodySave,
@@ -37,7 +35,7 @@ async function readRawBody(itemId: string): Promise<string> {
 }
 
 /**
- * 写标题：md 顶层 `title:` + 派生列，一起。
+ * 写标题：**派生列是必写的那一份**，md 只有本来就有顶层 `title:` 时才回写（设计 §9）。
  *
  * 返回是否真的写了——`false` 表示条目不存在、是 Memo、或值没变（防抖会重复提交同一个值，
  * 白写一次 outbox 只是浪费）。调用方据此决定要不要刷新列表。
@@ -48,9 +46,16 @@ export async function writeItemTitle(itemId: string, title: string): Promise<boo
   if ((item.title ?? "") === title) return false;
 
   const now = Date.now();
-  const body = updateMenoteKeys(await readRawBody(itemId), { title });
-  await saveDraft(itemId, body, now);
-  await enqueueBodySave(itemId, item.rev, now);
+  const raw = await readRawBody(itemId);
+  /*
+    判据是「md 里有没有这个**键**」，不是「标题值像不像」：`meta.title === undefined`
+    就是没写过（新建的笔记全属这类），此时只改列、一个字都不加进正文。
+    有键的（外部导入）必须两个一起改，否则两边分叉，下次按 md 派生会把标题弹回去。
+  */
+  if (parseMenoteMeta(raw).meta.title !== undefined) {
+    await saveDraft(itemId, updateMenoteKeys(raw, { title }), now);
+    await enqueueBodySave(itemId, item.rev, now);
+  }
 
   await db.items.update(itemId, { title, updated_at: now });
   await enqueueMetaPatch(itemId, item.meta_rev, now);
@@ -95,7 +100,8 @@ export async function patchItemTaskFields(
   if (!item || item.type === "memo") return false;
   const now = Date.now();
   await db.items.update(itemId, {
-    is_task: next === null ? 0 : 1,
+    // 平铺后「有值才有键」：三值全空写不出清单条目，列也跟着回落 0（见 `hasTaskValues`）
+    is_task: hasTaskValues(next) ? 1 : 0,
     task_status: next?.status ?? null,
     task_due: next?.due ?? null,
     task_priority: next?.priority ?? null,

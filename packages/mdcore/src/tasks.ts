@@ -1,8 +1,9 @@
 /**
  * 任务字段（功能拆解 M07-03；需求 §9.3）。
  *
- * 规范数据是**条目 md 里的 YAML**（`menote.task`），服务端的 `task_status` / `task_due` /
- * `task_priority` 只是冗余派生列（仅用于 MCP 筛选），所以字面量的定义放这里、由两端共用。
+ * 规范数据是**条目 md 里的 YAML**（`status` / `due` / `priority` 三个**顶层键**，2026-10-11
+ * 从 `menote.task:` 平铺上来——设计《属性栏与清单字段平铺》§3），服务端的 `task_status` /
+ * `task_due` / `task_priority` 只是冗余派生列（仅用于 MCP 筛选），所以字面量的定义放这里、由两端共用。
  *
  * **字面量口径（M2-1 定）**：写入用英文 `todo / doing / done` 与 `high / medium / low`——
  * 与既有 YAML 约定一致（`type: table`、`row_id_column` 等都是英文键值），md 可移植、MCP 好筛。
@@ -117,8 +118,10 @@ export interface DerivedTask extends NormalizedTaskFields {
 /**
  * 从条目 md 派生清单字段（服务端写派生列、前端本地算显示，**同一份实现**）。
  *
- * 判定"是否清单"的依据是 **YAML 里有没有 `menote.task` 这个键**（M07-04：去掉清单标记时
- * 连 `task` 字段一起删除，于是"有无该键"就是标记本身）。键在但三个字段都为空也仍算清单条目。
+ * 判定"是否清单"的依据是 **YAML 里有没有清单键**（M07-04：去掉清单标记时连这些键一起删除，
+ * 于是"有无该键"就是标记本身）。2026-10-11 起键位是**顶层** `status` / `due` / `priority`，
+ * 旧写法 `menote.task:` 仍认（懒迁移）——`parseMenoteMeta` 已经把两种写法合成同一个 `meta.task`，
+ * 所以这里只需看它是否为 `null`。键在但三个字段都为空也仍算清单条目。
  */
 export function deriveTaskFields(markdown: string): DerivedTask {
   const { meta } = parseMenoteMeta(markdown);
@@ -129,11 +132,15 @@ export function deriveTaskFields(markdown: string): DerivedTask {
   return { isTask: true, ...normalized };
 }
 
-/** 把任务字段写成 YAML 片段（仅含非空项；由 frontmatter 的构建器使用） */
-export function taskToYamlLines(task: TaskFields): string[] {
-  const lines: string[] = [];
-  if (task.status) lines.push(`    status: ${task.status}`);
-  if (task.due) lines.push(`    due: ${task.due}`);
-  if (task.priority) lines.push(`    priority: ${task.priority}`);
-  return lines;
+/**
+ * **写侧**口径的「这是不是一个清单条目」：平铺之后**有值才有键**，三值全空写不出来。
+ *
+ * 与读侧（`deriveTaskFields` 看键在不在）刻意不同：读侧那种「键在但三个值都空」的条目
+ * 只有旧写法 `menote.task:` 表示得出来，新写法里没有对应的形状。所以前端写 `is_task`
+ * 派生列时要按这条判——否则 md 说"不是清单"、列说"是"，下次同步又把值弹回去。
+ *
+ * 判据与 `renderTaskLines` 逐行对齐（同样是真值判断，空串算没有）。
+ */
+export function hasTaskValues(fields: TaskFields | null | undefined): boolean {
+  return Boolean(fields && (fields.status || fields.due || fields.priority));
 }
