@@ -57,8 +57,10 @@ export { firstHeading, splitFirstLineAsTitle } from "./markdown";
 
 export {
   findSectionRange,
+  listHeadings,
   readSection,
   replaceSection,
+  type HeadingHit,
   type SectionRange,
 } from "./section";
 

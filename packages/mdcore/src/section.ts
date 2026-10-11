@@ -43,10 +43,14 @@ function stripFrontmatter(markdown: string): { body: string; offset: number } {
   return { body: markdown.slice(range.to), offset: range.to };
 }
 
-interface HeadingHit {
+export interface HeadingHit {
   level: number;
   heading: string;
-  /** 该标题**正文**里的起始下标 */
+  /**
+   * 起始下标。注意两种口径：
+   * - `scanHeadings` 返回的是**正文**（剥掉 front matter 后）里的下标；
+   * - `listHeadings` 返回的是**原文**里的下标（已换算），可以直接喂给编辑器定位。
+   */
   start: number;
 }
 
@@ -72,6 +76,24 @@ function scanHeadings(body: string): HeadingHit[] {
     lineStart += raw.length + 1; // +1 是换行本身
   }
   return hits;
+}
+
+/**
+ * 列出文中的标题（大纲用）。默认只取一到三级——正文区右侧的大纲面板只要这些；
+ * 要全部六级的调用方显式传 `maxLevel: 6`。
+ *
+ * 口径与 `findSectionRange` **完全同源**（同一个 `scanHeadings`）：先剥 front matter、
+ * 只认 ATX、井号后必须有空格或行尾、Setext 不认。**不要在前端另写一份标题正则**——
+ * 两份判据迟早会分叉（v0.8.31 的教训），而"大纲里的标题"和"能定位到的小节"不是同一批时，
+ * 表现是"点了大纲跳到了别处"，极难察觉。
+ *
+ * 返回的 `start` 已换算回**原文**偏移，可直接用它做编辑器定位。
+ */
+export function listHeadings(markdown: string, maxLevel: number = 3): HeadingHit[] {
+  const { body, offset } = stripFrontmatter(markdown);
+  return scanHeadings(body)
+    .filter((hit) => hit.level <= maxLevel)
+    .map((hit) => ({ ...hit, start: hit.start + offset }));
 }
 
 /**

@@ -17,7 +17,11 @@ import type { NoteEditorSnapshot } from "../model";
 import { DocStatusBar } from "./DocStatusBar";
 import { buildMoreMenuItems } from "./moreMenuItems";
 import { ItemProps, shouldShowItemProps } from "./ItemProps";
+import { DocRail } from "./DocRail";
+import { OutlinePanel } from "./OutlinePanel";
 import { useItemProps } from "../useItemProps";
+import { useOutline } from "../useOutline";
+import { useRails } from "../useRails";
 import type { PropLabels, PropLibraryEntry } from "../../props/model";
 import { TitleInput } from "./TitleInput";
 import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
@@ -281,6 +285,26 @@ export function NoteWorkspace({
     onError: onPropsError,
   });
 
+  /*
+    两侧贴边面板（重设计 v2，2026-10-11）：左边属性卡、右边大纲。
+
+    编排（开关谁、宽度不够让谁）在 `useRails` 里，这里只把量宽的元素与两个开关接上：
+    `rails.attachPane` 挂在 `.docpane__body` 上——它是「正文区」的宽度，面板该不该让位由它决定。
+    `bodyRef` 挂在真正滚动的 `.doc-split__pane` 上（编辑/预览两档共用同一个位置），
+    大纲靠它知道"现在滚到哪儿了"、以及仅预览时那些标题在哪。
+  */
+  const rails = useRails();
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  /** 大纲只在普通 Markdown 条目出现：表格档有自己的界面，Memo 没有独立正文 */
+  const outlineEnabled = item != null && item.type !== "memo" && !isTable;
+  const outline = useOutline({
+    source: previewSource,
+    enabled: outlineEnabled,
+    throughEditor: shownMode === "edit" || shownMode === "live",
+    container: bodyRef,
+    handle: bodyLocked ? null : editorHandle,
+  });
+
   if (!item) {
     return (
       <div className="docpane">
@@ -457,34 +481,8 @@ export function NoteWorkspace({
       </div>
 
       {/*
-        属性卡片：**`.docpane` 的第三个带**——标题带 / 属性带 / 正文滚动区（2026-10-04）。
-
-        早先把它放在 `.docpane__body` **里面**，那是错的：那个容器是 `display: flex`（row），
-        装着编辑器或预览、各占 `flex: 1`。卡片成了第三个 flex 项，于是**和正文并排成一条窄列**，
-        标签列被挤到截断——正是「属性区没在正文区顶部」这个现象。
-        放它进 `.docpane__body` 外面，它才是正文**上方**的一条带，而且**不随正文滚动**
-        （与标题带同一待遇：刚改完的标签一直在眼前）。
-      */}
-      {showProps ? (
-        <ItemProps
-          body={previewSource}
-          editable={propsApi.editable}
-          readOnlyReason={propsApi.readOnlyReason}
-          onTagsChange={propsApi.onTagsChange}
-          onTaskChange={propsApi.onTaskChange}
-          onForeignChange={propsApi.onForeignChange}
-          onForeignRemove={propsApi.onForeignRemove}
-          onForeignAdd={propsApi.onForeignAdd}
-          library={propLibrary}
-          onLibraryChange={onPropLibraryChange}
-          labels={propLabels}
-          onError={onPropsError}
-        />
-      ) : null}
-
-      {/*
         格式工具栏（编辑器专项优化 P1，设计见 docs/modules/Menote-编辑器专项优化-设计-v1.md §五）：
-        与属性带同待遇——正文**上方**的一条带，不随正文滚动。
+        正文**上方**的一条带，不随正文滚动。
 
         只在 Markdown 条目的「仅编辑 / 即时渲染」两档出现：「仅预览」没有光标与选区，
         格式命令无从谈起；表格条目有自己的工具条；正文锁定时编辑器根本没挂（下面是锁定占位），
@@ -498,7 +496,47 @@ export function NoteWorkspace({
         />
       ) : null}
 
-      <div className="docpane__body">
+      <div
+        className="docpane__body"
+        /*
+          量宽用 ref 回调。**不直接写 `ref={rails.attachPane}`**：那样 React 编译器会把
+          `rails` 当成一个"装着 ref 的对象"，于是这一帧里读它的任何字段都报
+          `Cannot access refs during render`。包一层箭头函数，ref 与状态就分得开了。
+        */
+        ref={(node) => rails.attachPane(node)}
+      >
+        {/*
+          属性卡从「正文上方的一条带」搬进**左侧贴边面板**（重设计 v2，2026-10-11）。
+
+          旧形状的两处问题：它是 `.docpane` 的一条带，于是正文永远从它下面开始——屏幕一窄，
+          四行属性就把正文挤到只剩一半；而它自己还是个折叠器（点一下折成一行摘要），
+          与"右侧要有大纲"的诉求各做各的折叠。现在两边统一成同一种东西：一条 28px 的把手，
+          展开就占宽、正文在剩下的地方居中，**不覆盖任何内容**。
+        */}
+        {showProps ? (
+          <DocRail
+            side="left"
+            label="属性"
+            open={rails.propsOpen}
+            onToggle={() => rails.toggle("props")}
+          >
+            <ItemProps
+              body={previewSource}
+              editable={propsApi.editable}
+              readOnlyReason={propsApi.readOnlyReason}
+              onTagsChange={propsApi.onTagsChange}
+              onTaskChange={propsApi.onTaskChange}
+              onForeignChange={propsApi.onForeignChange}
+              onForeignRemove={propsApi.onForeignRemove}
+              onForeignAdd={propsApi.onForeignAdd}
+              library={propLibrary}
+              onLibraryChange={onPropLibraryChange}
+              labels={propLabels}
+              onError={onPropsError}
+            />
+          </DocRail>
+        ) : null}
+
         {bodyLocked && encryption ? (
           <LockedDocPanel onUnlock={encryption.onUnlock} />
         ) : isTable && table.state.kind === "table" ? (
@@ -554,7 +592,7 @@ export function NoteWorkspace({
               切模式会让编辑器重新挂载，用快照初始化会把中间敲的内容显示回旧版本，
               用户再敲一个字就把旧内容写进草稿（M1-11 QA 实测）。
             */
-            <div className="doc-split__pane">
+            <div className="doc-split__pane" ref={bodyRef}>
               <Editor
                 key={item.id}
                 initialValue={previewSource}
@@ -566,13 +604,33 @@ export function NoteWorkspace({
               />
             </div>
           ) : (
-            <div className="doc-split__pane">
+            /* 仅预览也用同一个滚动容器：大纲的"当前节"两种档位算法不同，监听与参考线却共用它 */
+            <div className="doc-split__pane" ref={bodyRef}>
               <MarkdownPreview source={previewSource} attachments={attachmentsMeta} />
             </div>
           )}
           </Suspense>
           </>
         )}
+
+        {/*
+          大纲：与属性卡同一种面板，只是贴右边。表格档不给（那个界面有自己的结构），
+          Memo 也没有独立正文。`useOutline` 在标题不足时给空数组，面板自己渲染空态。
+        */}
+        {outlineEnabled ? (
+          <DocRail
+            side="right"
+            label="大纲"
+            open={rails.outlineOpen}
+            onToggle={() => rails.toggle("outline")}
+          >
+            <OutlinePanel
+              items={outline.items}
+              activeIndex={outline.activeIndex}
+              onJump={outline.jump}
+            />
+          </DocRail>
+        ) : null}
       </div>
 
       {/* 主动降级的确认框（界面稿 §2.10：三段必须写全，且**不承诺可转回**） */}

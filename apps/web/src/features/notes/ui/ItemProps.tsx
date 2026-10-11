@@ -1,13 +1,16 @@
 /**
- * 条目属性卡片（2026-10-04，《笔记属性卡片》设计稿 §2）。
+ * 条目属性卡片（2026-10-04，《笔记属性卡片》设计稿 §2；2026-10-11 重设计 v2）。
  *
- * **它在正文区顶部、标题之下**，显示与修改这一篇的属性：标签、清单字段、以及外部
- * Markdown 工具写进来的外来键。
+ * **它住在正文区左侧的贴边面板里**（`DocRail` 装的卡），不再是正文上方的一条带：
+ * 展开收起归那条轨道管，卡片自己既不折叠、也不知道自己有多宽。
+ * 显示与修改这一篇的属性：标签、清单字段、以及外部 Markdown 工具写进来的外来键。
  *
- * ## 三条它必须守住的口径
+ * ## 五条它必须守住的口径
  *
  * 1. **键名原样**（设计稿 §3）。`url` / `author` / `status` 这些是某个 Obsidian 插件写的，
  *    不是标准；贴上中文标签等于替用户猜它是什么意思，猜错比不猜更糟。所以键名就是键名。
+ *    （键名旁边可以显示用户自己在属性库里设的**显示名**——那只是界面叫法，写回 md、
+ *    导出、分享出去的一律还是源名。）
  *
  * 2. **值按原格式写回**（§4）。不把值解析成结构再拼回去——只把原文带着走。
  *    所以块序列给多行框、单行给单行框，引号与缩进都是用户说了算。
@@ -21,10 +24,9 @@
  *    库里没有的值照样写得进去（否则外部导入的笔记会被字典判成非法）。卡片只把"用户真的
  *    改过"的值上报给库（§6.4），渲染本身一个都不收录。
  *
- * ## 为什么形态是胶囊
- *
- * `DESIGN.md` §5.3 已定「条目属性（标签、截止、优先级、状态）→ 胶囊 `chip`」，所以复用
- * 现成的 `Chip`（`variant="tag"`），不新造控件。
+ * 5. **一副骨架、一种动作**（重设计 v2 §3）。每一行都是「名列 / 控件 / 24px 动作格」，
+ *    内置四行与外来键行长得一样；动作一律是 24px 方按钮（删除 ⓧ、收进库 □+、说明 ⓘ），
+ *    **不写字**——"未入库"那类话进 `title`，否则它又会变成第二套视觉。
  */
 import { useState } from "react";
 import {
@@ -53,7 +55,6 @@ import {
 } from "../../props/model";
 import { PropPicker } from "../../props/ui/PropPicker";
 import { PropValueField } from "../../props/ui/PropValueField";
-import { readPropsCollapsed, writePropsCollapsed } from "../props-collapse";
 
 export interface ItemPropsProps {
   /** 编辑器当前文本（含 front matter）。卡片是纯显示的，数据全从这里来 */
@@ -194,38 +195,15 @@ export function shouldShowItemProps(body: string): boolean {
   return frontmatterText(body) !== null;
 }
 
-/**
- * 折起来时那一行摘要。
- *
- * **不给「属性」两个字就完事**——用户会以为这里本来就没东西。折起时仍要看得见
- * 「有几项、是什么」，这是折叠该省的空间，不是该省的信息。口径都在既有数据上算，
- * 不额外派生：标签取卡片显示的那份（front matter 里的），状态取清单字段。
- */
-/** 摘要里一个值最多显示多少字（摘要本来就只有一行、还会被 CSS 省略号截，先自己收一下） */
-const SUMMARY_VALUE_MAX = 14;
+/*
+  ## 折叠（2026-10-11 改）
 
-/** 值的第一行（块序列取首行）、过长截断；空值说「空」而不是留一片白 */
-function summaryValue(value: string): string {
-  const first = (value.split("\n")[0] ?? "").trim();
-  if (first === "") return "空";
-  return first.length > SUMMARY_VALUE_MAX ? `${first.slice(0, SUMMARY_VALUE_MAX)}…` : first;
-}
-
-function collapsedSummary(props: ReturnType<typeof readItemProps>, labels?: PropLabels): string {
-  const parts: string[] = [];
-  if (props.tags.length > 0) parts.push(`${props.tags.length} 个标签`);
-  if (props.task) {
-    // 状态为空时不能回落「待办」——那是谎报，与卡片里的「未设置」占位项同一口径
-    parts.push(
-      props.task.status ? `${labelFor(labels, "status")} ${props.task.status}` : "清单未设置",
-    );
-  }
-  // 外来键逐条列「显示名 值」：折起来时最想知道的正是"这一篇都设了什么"（重设计 v1 §2.6）
-  for (const one of props.foreign) {
-    parts.push(`${labelFor(labels, one.key)} ${summaryValue(one.value)}`);
-  }
-  return parts.length > 0 ? `属性 · ${parts.join(" · ")}` : "属性 · 未设置";
-}
+  卡片自己**不再有折叠**：它现在整个住在一侧的贴边面板里（`DocRail`），
+  展开/收起由那条轨道管（本机偏好仍在 `../props-collapse`，键名换成了语义相反的
+  `menote:notes:props-open`）。从前这里有一行「chevron + 摘要」，折起来还逐条念
+  「有几个标签、状态是什么」——那套随"位置改由轨道承担"一起删掉了：收起态只剩一条
+  28px 的竖排把手，没有地方放摘要。
+*/
 
 export function ItemProps({
   body,
@@ -251,15 +229,6 @@ export function ItemProps({
 
   /** 待确认删除的外来键（设计 §6.5：破坏性操作二次确认）；`null` = 没在确认 */
   const [pendingRemove, setPendingRemove] = useState<string | null>(null);
-
-  // 折叠状态记在本机（`props-collapse.ts`）：设备级偏好，且切档很频繁，不该上行
-  const [collapsed, setCollapsed] = useState(readPropsCollapsed);
-  const toggle = (): void => {
-    setCollapsed((previous) => {
-      writePropsCollapsed(!previous);
-      return !previous;
-    });
-  };
 
   function guard(action: () => void): void {
     if (!editable) return;
@@ -347,40 +316,13 @@ export function ItemProps({
   }
 
   return (
-    <section className="itemprops" aria-label="属性">
+    <section className="itemprops itemprops--card" aria-label="属性">
       <div className="itemprops__inner">
       {/*
         只读原因从前只挂在每个控件的 `title` 上——不悬停就等于不存在。做成一行看得见的
         话（重设计 v1 §2.6），"为什么改不了"就不用用户去猜；能改的时候这一行不出现。
       */}
       {!editable && readOnlyReason ? <p className="itemprops__note">{readOnlyReason}</p> : null}
-      {collapsed ? (
-        // 折起来：只留一行摘要 + 展开按钮，属性本体不渲染（省地方，也省一次解析之外的绘制）
-        <button
-          type="button"
-          className="itemprops__toggle itemprops__toggle--collapsed"
-          aria-expanded={false}
-          onClick={toggle}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m9 18 6-6-6-6" />
-          </svg>
-          <span className="itemprops__summary">{collapsedSummary(props, labels)}</span>
-        </button>
-      ) : (
-        <>
-          <button
-            type="button"
-            className="itemprops__toggle"
-            aria-expanded
-            onClick={toggle}
-            title="折叠属性"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-            <span className="itemprops__summary">属性</span>
-          </button>
         <div className="itemprops__row">
           <span className="itemprops__label" id="itemprops-tags" title="tags">
             {labelFor(labels, "tags")}
@@ -412,6 +354,11 @@ export function ItemProps({
             {tags.length === 0 && !editable ? <span className="itemprops__none">没有标签</span> : null}
             </div>
           </div>
+          {/*
+            动作列**每一行都留出那一格**（哪怕是空的）：只给"有动作"的行留，
+            各行的值控件右边界就会一行一个样（用户 2026-10-11 说的"样式各不一致"）。
+          */}
+          <div className="itemprops__act" />
         </div>
 
         <div className="itemprops__row">
@@ -447,18 +394,18 @@ export function ItemProps({
                 </option>
               ))}
             </select>
-            {/*
-              路 A 的提示**就在它讲的那一行里**（重设计 v1 §2.3）：短句可见（警告不能藏），
-              完整解释收进 ⓘ——从前它是段级横条，位置在四行之下、讲的却是这一行。
-            */}
+          </div>
+          {/*
+            路 A 的提示**收进这一行的行尾 ⓘ**（重设计 v2 §3）：值本身已经写着
+            「unread（原样保留）」——"它没被改掉"这件事看得见，不必再占一行红黄字。
+            完整口径（改别的值才会覆盖、留着不影响别的）在 ⓘ 里。
+          */}
+          <div className="itemprops__act">
             {rawUnknown("status") ? (
-              <p className="itemprops__note itemprops__note--warn">
-                ⚠ {rawUnknown("status")} 不是 MeNote 的值 · 已原样保留
-                <InfoHint label="状态值的说明">
-                  它已经被认成这一篇的清单状态。选中别的值才会把它改成 MeNote 的写法；
-                  留着不影响其它内容，下次保存也原样写回去。
-                </InfoHint>
-              </p>
+              <InfoHint label="状态值的说明">
+                它已经被认成这一篇的清单状态。选中别的值才会把它改成 MeNote 的写法；
+                留着不影响其它内容，下次保存也原样写回去。
+              </InfoHint>
             ) : null}
           </div>
         </div>
@@ -489,14 +436,13 @@ export function ItemProps({
                 )
               }
             />
+          </div>
+          <div className="itemprops__act">
             {rawUnknown("due") ? (
-              <p className="itemprops__note itemprops__note--warn">
-                ⚠ {rawUnknown("due")} 不是 MeNote 的值 · 已原样保留
-                <InfoHint label="截止值的说明">
-                  MeNote 只认 `YYYY-MM-DD`。这个串不是那个形状，所以改用纯文本框原样摆着——
-                  交给日期控件的话，它会显示成空、一失焦就把这个值写没了。
-                </InfoHint>
-              </p>
+              <InfoHint label="截止值的说明">
+                MeNote 只认 `YYYY-MM-DD`。这个串不是那个形状，所以改用纯文本框原样摆着——
+                交给日期控件的话，它会显示成空、一失焦就把这个值写没了。
+              </InfoHint>
             ) : null}
           </div>
         </div>
@@ -535,13 +481,12 @@ export function ItemProps({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="itemprops__act">
             {rawUnknown("priority") ? (
-              <p className="itemprops__note itemprops__note--warn">
-                ⚠ {rawUnknown("priority")} 不是 MeNote 的值 · 已原样保留
-                <InfoHint label="优先级值的说明">
-                  选中别的值才会把它改成 MeNote 的写法；留着不影响其它内容。
-                </InfoHint>
-              </p>
+              <InfoHint label="优先级值的说明">
+                选中别的值才会把它改成 MeNote 的写法；留着不影响其它内容。
+              </InfoHint>
             ) : null}
           </div>
         </div>
@@ -553,13 +498,16 @@ export function ItemProps({
       */}
 
       {/*
-        「其他属性」**常显且无分区头**（重设计 v1 §2.1）：它们和内置四行是同一种东西——都是
-        这一篇的属性，名字和值长得一样，没有理由把一半关进"其他"里。从前它与段内的
-        「+ 添加属性」都只在有外来键时才渲染，等于空白笔记根本没有新增入口。
-        只读档（预览）没有新增入口，空段就纯是噪声，所以那种情况仍然只在真有外来键时渲染。
+        「其他属性」这一段只在真有外来键（或可编辑、需要一个新增入口）时出现。它的存在感靠
+        **一条细线 + 一行小字**（重设计 v2 §3）：不再有第二套分区标题样式，也不写
+        「· 键名原样保留」那种自我说明——键名原样是这个组件的既定口径，不必每屏念一次。
       */}
       {foreign.length > 0 || editable ? (
         <>
+          <div className="itemprops__sep" />
+          <div className="itemprops__row">
+            <div className="itemprops__group">其他属性</div>
+          </div>
           {foreign.map((one) => {
             /*
               未入库 = 属性库还不知道这个键。（内置键不可能出现在 `foreign` 里：`title` / `tags` /
@@ -582,27 +530,31 @@ export function ItemProps({
                     readOnlyReason={readOnlyReason}
                     onCommit={(value, block) => changeForeign(one.key, one.value, value, block)}
                   />
-                  {editable && !entry ? (
-                    <div className="itemprops__libline">
-                      <button
-                        type="button"
-                        className="itemprops__lib"
-                        title={`把「${one.key}」收进属性库——只是让以后新建它时能选中、按类型给控件，不改这一篇的内容`}
-                        onClick={() => adoptForeign(one.key, one.block)}
-                      >
-                        未入库
-                      </button>
-                      <span className="itemprops__note">
-                        收进属性库可改类型与候选值，改的只是"以后怎么填"，这一篇一个字不动
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
                 <div className="itemprops__act">
+                  {/*
+                    「未入库」从前是一枚虚线 chip 加一行 11px 说明，两行字挤在值控件下面，
+                    正是用户说的"属性录进来之后还与内置属性分成两套"。现在它和删除一样是
+                    24px 的方形图标按钮，说明进 `title`——**动作的形状统一，才谈得上整齐**。
+                  */}
+                  {editable && !entry ? (
+                    <button
+                      type="button"
+                      className="itemprops__icobtn"
+                      aria-label={`收进属性库 ${one.key}`}
+                      title={`把「${one.key}」收进属性库——只是让以后新建它时能选中、按类型给控件，不改这一篇的内容`}
+                      onClick={() => adoptForeign(one.key, one.block)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="16" rx="2" />
+                        <path d="M12 9v6M9 12h6" />
+                      </svg>
+                    </button>
+                  ) : null}
                   {editable ? (
                     <button
                       type="button"
-                      className="itemprops__x itemprops__x--row"
+                      className="itemprops__icobtn itemprops__icobtn--danger"
                       aria-label={`本篇不再用 ${one.key}`}
                       title={`本篇不再用 ${one.key}`}
                       /*
@@ -611,7 +563,7 @@ export function ItemProps({
                       */
                       onClick={() => setPendingRemove(one.key)}
                     >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                         <path d="M18 6 6 18M6 6l12 12" />
                       </svg>
                     </button>
@@ -650,8 +602,6 @@ export function ItemProps({
         }}
         onClose={() => setPendingRemove(null)}
       />
-        </>
-      )}
       </div>
     </section>
   );

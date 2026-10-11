@@ -61,6 +61,9 @@ function makeHandle(initial: string) {
     },
     applyFormat: () => undefined,
     openSearch: () => {},
+    // 替身不模拟滚动与视口：大纲那两个方法在本文件里用不到，给个不会崩的形状即可
+    scrollToOffset: () => {},
+    offsetAtViewportY: () => 0,
     replaceFrontmatter: (next) => {
       const range = frontmatterRange(state.text);
       if (range === null) {
@@ -187,10 +190,13 @@ describe("卡片渲染", () => {
     expect(screen.queryByLabelText("本篇不再用 url")).toBeNull();
   });
 
-  it("没有外来键时「+ 用一个属性」仍在（空白笔记的唯一新增入口，设计 §6.4）", () => {
+  it("没有外来键时也留着「其他属性」那一格与新增入口（空白笔记的唯一入口，设计 §6.4）", () => {
     render(<ItemProps body="---\ntitle: T\ntags: [a]\n---\n\n正文" editable {...noop} />);
-    // 段头只在真有外来键时渲染——空着也不留一行「其他属性」噪声
-    expect(screen.queryByText(/其他属性/)).toBeNull();
+    /*
+      重设计 v2 §3：分组头**常显**（一条细线 + 一行小字），因为「+ 用一个属性」是它这一格的
+      内容——从前它与段内的新增入口都只在有外来键时才渲染，等于空白笔记根本没有新增入口。
+    */
+    expect(screen.getByText("其他属性")).toBeTruthy();
     expect(screen.getByText("+ 用一个属性")).toBeTruthy();
   });
 
@@ -204,10 +210,16 @@ describe("卡片渲染", () => {
     expect(screen.queryByText("+ 用一个属性")).toBeNull();
   });
 
-  it("被接管但值不认识的键有一行可见提示（设计 §4：不能默默覆盖掉）", () => {
+  it("被接管但值不认识的键：解释在那一行的 ⓘ 里，不再有黄字横条（用户 2026-10-11）", () => {
     render(<ItemProps body={OB} editable {...noop} />);
-    // 重设计 v1 §2.3：提示收进那一行、紧跟值控件下面，只留一句结论 + ⓘ 里展开
-    expect(screen.getByText(/unread 不是 MeNote 的值 · 已原样保留/)).toBeTruthy();
+    /*
+      重设计 v2 §3：那条「⚠ unread 不是 MeNote 的值 · 已原样保留」的琥珀色小字整段删掉。
+      **信息没丢**——值本身仍然写着「unread（原样保留）」（见上面状态行的选项），
+      完整口径收进同一行的 ⓘ。用户看完第一版说"乱七八糟的提示""中间的黄字"。
+    */
+    expect(screen.queryByText(/不是 MeNote 的值/)).toBeNull();
+    expect(screen.getByLabelText("状态值的说明")).toBeTruthy();
+    expect(screen.getByText("unread（原样保留）")).toBeTruthy();
   });
 
   it("状态那一行没有「未设为清单」这一项（用户 2026-10-11 更正）", () => {
@@ -310,15 +322,18 @@ describe("删外来键要二次确认（设计 §6.5：破坏性操作必须写�
 
 describe("卡片在 DOM 里的位置", () => {
   /**
-   * 2026-10-04 修的一个真布局缺陷。
+   * 2026-10-04 修过一次真布局缺陷，2026-10-11 又改了一次形态——两次的形状都在这里钉住。
    *
-   * 卡片原先渲染在 `.docpane__body` **里面**，而那个容器是 `display: flex`（row）——
-   * 装着编辑器或预览、各占 `flex: 1`。卡片成了第三个 flex 项，于是**和正文并排成一条
-   * 窄列**，标签列被挤到截断，用户看到的是「属性区没在正文区顶部」。
+   * 第一次：卡片曾渲染在 `.docpane__body` **里面**，而那个容器是 `display: flex`（row）——
+   * 卡片成了第三个 flex 项，于是**和正文并排成一条窄列**，标签列被挤到截断。
+   *
+   * 第二次（重设计 v2）：卡片又回到 `.docpane__body` 里面，但这次它是**轨道里的一张卡**
+   * （`<DocRail>` 的第一个 flex 项），正文在剩下的宽度里居中——展开占宽、**不覆盖正文**，
+   * 所以第一次那个"并排成窄列"的问题不再成立：列的宽度是设计给的 240px，不是被挤压的结果。
    *
    * 这条断言直接查结构，不依赖像素。
    */
-  it("是 .docpane__body 的兄弟节点，不在它里面", () => {
+  it("是 .docpane__body 里的第一个 flex 项，包在左侧轨道的卡片里", () => {
     // 用 `import.meta.glob` 读源码而不是 `readFileSync(new URL(..., import.meta.url))`：
     // 本文件跑在 jsdom 环境下，`import.meta.url` 不是 file URL（`style-coverage` 那条
     // 走的是 node 环境，所以它能用）
@@ -328,62 +343,30 @@ describe("卡片在 DOM 里的位置", () => {
       eager: true,
     }) as Record<string, string>;
     const html = Object.values(sources)[0] ?? "";
-    const bodyStart = html.indexOf('<div className="docpane__body">');
+    const bodyStart = html.indexOf('className="docpane__body"');
+    // 左轨那一段不写死缩进（源码格式化会变），只认「展开属性时挂的是 side="left" 的轨道」
+    const railMatch = /showProps \? \(\s*<DocRail\s+side="left"/.exec(html);
+    const railStart = railMatch?.index ?? -1;
     const propsStart = html.indexOf("<ItemProps");
     expect(bodyStart).toBeGreaterThan(-1);
+    expect(railStart).toBeGreaterThan(-1);
     expect(propsStart).toBeGreaterThan(-1);
-    // 卡片在滚动容器**之前**（它是不随正文滚动的一条带）
-    expect(propsStart).toBeLessThan(bodyStart);
+    // 轨道与卡片都在滚动容器**里面**（它自己就是那个 flex 项），且轨道在卡片外面
+    expect(railStart).toBeGreaterThan(bodyStart);
+    expect(propsStart).toBeGreaterThan(railStart);
   });
 });
 
-describe("整条属性栏折叠 / 展开（用户 2026-10-04 要求）", () => {
-  beforeEach(() => {
+describe("整条属性栏折叠 / 展开已移交两侧轨道（用户 2026-10-11 重设计 v2）", () => {
+  it("卡片自己不再有折叠按钮，也没有摘要行（收起态是轨道那 28px 的把手）", () => {
     localStorage.clear();
-  });
-
-  it("默认展开：属性本体在", () => {
     render(<ItemProps body={OB} editable {...noop} />);
+    // 属性本体照常在（卡片不自己折叠）
     expect(screen.getByText("claude")).toBeTruthy();
-    expect(screen.getByRole("button", { expanded: true })).toBeTruthy();
-  });
-
-  it("折起来只留一行摘要——不是光秃秃一个「属性」", () => {
-    render(<ItemProps body={OB} editable {...noop} />);
-    fireEvent.click(screen.getByRole("button", { expanded: true }));
-
-    // 属性本体没了
-    expect(screen.queryByText("claude")).toBeNull();
-    // 但摘要说得清「有几项、是什么」——用户不会以为这里本来就没东西
-    expect(screen.getByText(/1 个标签/)).toBeTruthy();
-    // `status: unread` 被接管成清单字段、值不认识 → 不能谎报成「待办」
-    expect(screen.getByText(/清单未设置/)).toBeTruthy();
-    // 重设计 v1 §2.5：其他属性不再报个数，而是逐个说「名字 + 值」（显示名缺省就是源键名）
-    expect(screen.getByText(/url "https:\/\/x\.com/)).toBeTruthy();
-    expect(screen.getByText(/author - "Unknown"/)).toBeTruthy();
-  });
-
-  it("再点一次展开回来", () => {
-    render(<ItemProps body={OB} editable {...noop} />);
-    fireEvent.click(screen.getByRole("button", { expanded: true }));
-    fireEvent.click(screen.getByRole("button", { expanded: false }));
-    expect(screen.getByText("claude")).toBeTruthy();
-  });
-
-  it("折叠状态记在本机，重挂载后仍是折着的", () => {
-    const { unmount } = render(<ItemProps body={OB} editable {...noop} />);
-    fireEvent.click(screen.getByRole("button", { expanded: true }));
-    expect(localStorage.getItem("menote:notes:props-collapsed")).toBe("1");
-    unmount();
-
-    render(<ItemProps body={OB} editable {...noop} />);
-    expect(screen.queryByText("claude")).toBeNull();
-  });
-
-  it("本机记的值不认识时回落成展开（不因为坏值把属性藏起来）", () => {
-    localStorage.setItem("menote:notes:props-collapsed", "乱写的值");
-    render(<ItemProps body={OB} editable {...noop} />);
-    expect(screen.getByText("claude")).toBeTruthy();
+    // 旧形状的两样东西都不在了：卡头那枚整条折叠按钮、以及它下面那行摘要
+    expect(document.querySelector(".itemprops__toggle")).toBeNull();
+    expect(document.querySelector(".itemprops__summary")).toBeNull();
+    expect(screen.queryByText(/1 个标签/)).toBeNull();
   });
 });
 

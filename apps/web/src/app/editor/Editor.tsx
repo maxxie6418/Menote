@@ -74,6 +74,21 @@ export interface EditorHandle {
    * 反过来，**传空串就是「把这一段整段删掉」**（属性全被清空时走这条路，2026-10-11）。
    */
   replaceFrontmatter(next: string): boolean;
+  /**
+   * 把光标挪到正文的 `offset` 处并把它滚到视口顶部（右侧大纲面板点击条目走这里）。
+   *
+   * `offset` 是**字符偏移**（`mdcore` 的 `listHeadings` 给的就是原文偏移）；越界会被夹回文档内。
+   */
+  scrollToOffset(offset: number): void;
+  /**
+   * 视口坐标 `y` 那一处对应的正文偏移（大纲用它算"现在读到了哪一节"）。
+   *
+   * **为什么参考线由调用方给**：本项目真正滚动的是正文区的 `.doc-split__pane`，
+   * 而 `.cm-scroller` 不设高度、随内容一起长（纸面要"无缝下延"）——`scrollDOM.scrollTop`
+   * 恒为 0，拿它换算永远得到文档开头。持有滚动容器的宿主知道"可见区上沿在屏幕的哪个 y"，
+   * 编辑器只负责把那个位置翻译成字符偏移（`posAtCoords` 自己会处理折行、字体、行高）。
+   */
+  offsetAtViewportY(y: number): number;
 }
 
 /**
@@ -448,6 +463,26 @@ function makeHandle(view: EditorView): EditorHandle {
     openSearch: (mode) => {
       (mode === "replace" ? openReplacePanel : openFindPanel)(view);
       view.focus();
+    },
+    /*
+      大纲面板用的两件事：跳到某个标题、以及"现在滚到哪了"。
+
+      为什么不让面板自己去量 DOM：**偏移与视口的对应关系只有编辑器知道**。面板手里有的是
+      `listHeadings` 给的**字符偏移**，而"这个偏移在屏幕的哪一行"要看折行、字体、收起状态——
+      猜一次就会差一截，表现是"点了大纲跳偏了"或"当前节标记慢一节"。
+    */
+    scrollToOffset: (offset) => {
+      const position = Math.max(0, Math.min(offset, view.state.doc.length));
+      view.dispatch({
+        selection: { anchor: position },
+        effects: EditorView.scrollIntoView(position, { y: "start" }),
+      });
+      view.focus();
+    },
+    offsetAtViewportY: (y) => {
+      // x 取内容左边一点点：太靠左会落到行号槽那一带，那里 CodeMirror 不答行信息
+      const rect = view.dom.getBoundingClientRect();
+      return view.posAtCoords({ x: rect.left + 4, y }) ?? 0;
     },
     replaceFrontmatter: (next) => {
       const doc = view.state.doc.toString();

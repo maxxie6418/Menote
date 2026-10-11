@@ -56,6 +56,9 @@ vi.mock("../src/app/editor/Editor", async (importOriginal) => {
         read: () => valueRef.current,
         insert: (text) => apply(valueRef.current + text),
         replace: (marker, text) => apply(valueRef.current.replace(marker, text)),
+        // 大纲要用到的两个方法：替身不模拟滚动，给不会崩的形状
+        scrollToOffset: () => {},
+        offsetAtViewportY: () => 0,
         replaceFrontmatter: (next) => {
           // 区间从**替身自己的文本**算，不收 expected（与真 Editor 同口径）
           const at = valueRef.current.indexOf("---", 3);

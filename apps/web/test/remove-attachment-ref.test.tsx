@@ -119,6 +119,9 @@ function menuItem(menu: HTMLElement, name: string): HTMLButtonElement {
 function fakeHandle(doc: { text: string }, onChange: (text: string) => void): EditorHandle {
   return {
     read: () => doc.text,
+    // 大纲要用到的两个方法：替身不模拟滚动，给不会崩的形状
+    scrollToOffset: () => {},
+    offsetAtViewportY: () => 0,
     insert: (text: string) => {
       doc.text += text;
       onChange(doc.text);

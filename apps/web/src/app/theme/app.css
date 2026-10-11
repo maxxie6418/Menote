@@ -769,6 +769,14 @@ button {
   overflow-y: auto;
   display: flex;
   background: var(--bg-soft);
+  /*
+    两侧贴边面板的三个尺寸（`useRails.ts` 里同名常量是"该不该让位"的算法依据）：
+    面板宽 240 / 把手宽 28 / 面板与正文之间的 12。**三处必须一起改**，否则算出来的
+    1244px 门槛与眼里看到的宽度对不上。
+  */
+  --doc-rail-w: 240px;
+  --doc-rail-tab: 28px;
+  --doc-rail-gap: var(--sp-3);
 }
 
 .docpane__center {
@@ -1148,20 +1156,21 @@ button {
 }
 
 /*
-  条目属性卡片（2026-10-04，`features/notes/ui/ItemProps.tsx`）。
+  条目属性卡片（2026-10-04；2026-10-11 重设计 v2 改为「贴边面板里的一张卡」）。
 
-  它是 `.docpane` 的**第三个带**：标题带 / 属性带 / 正文滚动区。**不能放进
-  `.docpane__body` 里面**——那个容器是 `display: flex`（row），装着编辑器或预览、各占
-  `flex: 1`，卡片进去就成了第三个 flex 项、与正文并排成一条窄列（标签列被挤到截断）。
+  它从前是 `.docpane` 的**第三个带**（标题带 / 属性带 / 正文滚动区）。那条带的问题很实在：
+  正文永远从它下面开始，屏幕一窄四行属性就把正文挤掉一半；而它自己还带一个折叠按钮，
+  折起来只剩一行摘要——与"右侧要有大纲"的诉求各折各的。
 
-  `flex: none`：不随正文滚动（刚改完的标签一直在眼前）。
+  现在它住进 `.doc-rail__card`（正文区左侧的贴边面板），于是：
+  · `.itemprops--card` 把自己那套"整条带"的边框、内边距、居中宽度全部让掉，
+    宽度由面板决定、上下留白由面板的内边距给；
+  · **一行不再是"名列 | 值列 | 动作"横排**，而是"名字在上、控件在下、24px 动作格在右"
+    （面板只有 240px，横排会被挤成三截）。一副骨架管到底——内置四行与外来键行长得一样，
+    这正是用户说的"样式各不一致"要消掉的东西。
 
-  **宽度与左右留白照抄正文阅读区**（`max-width: 740px` + 居中 + `--sp-6`，DESIGN.md §2.3
-  那一组）：顶满整个正文区的话，属性栏的标签列和文章左边界对不齐，看着像浮在外面。
-  分隔线留在整条带上，所以内层才是那个收窄的盒子。
-
-  这条列宽是**正文区各带的共享口径**：属性带与格式工具栏（`.editor-toolbar__inner`）都用它，
-  两条带的标签 / 按钮列才会和正文同一个左边界。改这里等于同时改两处。
+  这条列宽仍是**正文区各带的共享口径**，但只剩格式工具栏（`.editor-toolbar__inner`）用了：
+  卡片已经不在正文区里。改这一条等于改工具栏的左边界。
 */
 .itemprops {
   flex: none;
@@ -1175,61 +1184,67 @@ button {
   margin: 0 auto;
   padding: 0 var(--sp-6);
 }
+.itemprops--card {
+  border-bottom: none;
+  padding: 0;
+  font-size: var(--fs-small);
+}
+.itemprops--card .itemprops__inner {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
 /*
-  一行 = 名字 / 值 / 行尾动作三列（重设计 v1 §2.2）。名字列定宽 88px：里面有「优先级」这样的
-  中文，也有 `captured` 这样的英文键名，取一个放得下常见长名的宽度，比让两列各分一半整齐。
-  行尾那 24px 始终留着——没有动作的行也留白，各行的值控件才会落在同一条右边界上。
+  一行的骨架（重设计 v2 §3）：名字占满整行（第一行），控件与动作分列第二行。
+  动作格**每一行都留出**——只给有动作的行留，各行的控件右边界就会一行一个样。
+  `row-gap: 3px` 是名字与控件之间那口气；`padding: 5px 0` 是行与行之间的呼吸。
 */
 .itemprops__row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 24px;
-  gap: var(--sp-3);
+  grid-template-columns: minmax(0, 1fr) 24px;
+  column-gap: var(--sp-1);
+  row-gap: 3px;
   align-items: start;
   padding: 5px 0;
 }
-/* 折叠 / 展开：整条属性栏一个按钮，不给每行各配一个 */
-.itemprops__toggle {
+.itemprops--card .itemprops__row {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  column-gap: var(--sp-1);
+}
+/* 分组只用一条细线 + 一行小字；不再有第二套"分区标题"（那是"分成两套样式"的来源） */
+.itemprops__sep {
+  border-top: 1px solid var(--line);
+  margin: var(--sp-2) 0 0;
+}
+.itemprops__group {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 5px;
-  width: 100%;
-  border: none;
-  background: none;
+  min-height: 24px;
   color: var(--muted);
-  font: inherit;
   font-size: var(--fs-micro);
-  padding: 0;
-  margin-bottom: 2px;
-  cursor: pointer;
-  text-align: left;
 }
-.itemprops__toggle:hover {
-  color: var(--text-2);
-}
-.itemprops__toggle:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-.itemprops__summary {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 折起时那一行就是全部：不用虚线等「这里可以展开」的暗示，可点性由 hover / focus 反馈给出 */
-.itemprops__toggle--collapsed {
-  color: var(--text-2);
-  margin-bottom: 0;
+.itemprops--card .itemprops__group {
+  grid-column: 1 / -1;
 }
 /*
   名字列：显示名（源名在 `title` 里）。从前外来键这里是等宽字体的源键名——那是"文件里的键"，
   不是界面文案；现在整片都按界面文案排版，源名靠悬停。
+
+  **卡片里它占满整行、待在控件上方**（重设计 v2 §3）：240px 宽的面板横排三列会把名字挤成
+  「优先级」这种词也换行。`grid-column/row` 显式钉住，免得将来改列数时又滑回横排。
 */
 .itemprops__label {
   color: var(--muted);
   font-size: var(--fs-small);
   padding-top: 5px;
   word-break: break-word;
+}
+.itemprops--card .itemprops__label {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding-top: 0;
+  font-size: var(--fs-micro);
 }
 /*
   值列：控件 + 跟在它下面的说明。**提示必须落在它讲的那一行里**——从前那段"原值不认识"的
@@ -1240,6 +1255,10 @@ button {
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+}
+.itemprops--card .itemprops__ctl {
+  grid-column: 1;
+  grid-row: 2;
 }
 .itemprops__chips {
   display: flex;
@@ -1279,28 +1298,60 @@ button {
   color: var(--muted);
   cursor: not-allowed;
 }
-/* 值控件下方的说明：只读原因 / 未入库 / 原值不认识，都走这一档 */
+/* 值控件下方的说明：只读原因走这一档（"原值不认识"的琥珀横条已在重设计 v2 删掉——进 ⓘ） */
 .itemprops__note {
   color: var(--muted);
   font-size: var(--fs-micro);
   line-height: 1.5;
 }
-/* 原值会被原样保留——要看见（静默改写等于数据消失），但不是错误，所以是琥珀不是红 */
-.itemprops__note--warn {
-  color: var(--amber);
-}
-/* 「未入库」chip + 它的说明排在同一行，说明跟着 chip 走，不单独占一行 */
-.itemprops__libline {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2);
-}
-/* 行尾动作列：右对齐、与值控件的第一行对齐 */
+/*
+  行尾动作格：**每行都在**，24px 见方。
+  卡片里它竖排（可能同时有"收进属性库"和"本篇不再用"两枚），所以是 column。
+*/
 .itemprops__act {
   display: flex;
   justify-content: flex-end;
   padding-top: 5px;
+}
+.itemprops--card .itemprops__act {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 0;
+}
+/*
+  动作一律是 24px 的方图标按钮（重设计 v2 §3）：删除 ⓧ、收进库 □+、说明 ⓘ。
+  **不写字**——"未入库"那类话进 `title`；一旦写成文字，它立刻又变成第二套视觉。
+  默认只有 `--muted`，悬停才分主色/危险色，所以一整片看过去是安静的。
+*/
+.itemprops__icobtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.itemprops__icobtn:hover {
+  color: var(--primary-ink);
+  background: var(--primary-soft);
+}
+.itemprops__icobtn--danger:hover {
+  color: var(--red);
+  background: var(--red-soft);
+}
+.itemprops__icobtn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 .itemprops__add {
   border: 1px dashed var(--line-2);
@@ -1331,19 +1382,6 @@ button {
 }
 .itemprops__x:hover {
   opacity: 1;
-}
-/* 行尾的删除是独立按钮（不在 chip 里），给足命中区；悬停走危险色（破坏性操作） */
-.itemprops__x--row {
-  flex: none;
-  margin-left: 0;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  opacity: 1;
-}
-.itemprops__x--row:hover {
-  color: var(--red);
-  background: var(--red-soft);
 }
 .itemprops__x:focus-visible,
 .itemprops__add:focus-visible,
@@ -1376,29 +1414,177 @@ button {
   border-color: var(--primary-line);
   background: var(--primary-soft);
 }
+
 /*
- * 「未入库」标记（属性库 v2.1 §6.1）：点它只是把键收进库（以后新建时能选中、按类型给控件），
- * 不改这一篇的内容——所以它是**提示性**的虚线 chip，不是危险动作，也不做成主按钮。
+ * 正文区两侧的贴边面板（重设计 v2，2026-10-11；`features/notes/ui/DocRail.tsx`）。
+ *
+ * 形状是**占位**而不是覆盖：`.doc-rail` 与正文同为 `.docpane__body` 的 flex 项，
+ * 展开时它真的占掉 240px，正文在剩下的宽度里居中——所以「展开一侧」的代价是正文变窄，
+ * 而不是被盖住一半（v1 那版覆盖式浮层的形状已被用户否掉）。
+ *
+ * `position: sticky; top: 0`：正文滚动时面板留在原处。`.docpane__body` 本身就是滚动容器
+ * （`overflow-y: auto`），sticky 因此钉的是它的顶边——两种档（编辑档由 `.doc-split__pane`
+ * 滚、表格档由 `.docpane__body` 滚）都能得到"钉在正文区顶部"这个结果。
+ *
+ * 收起态就是那枚 **28px 的把手**（`writing-mode: vertical-rl` 让「属性」「大纲」竖排）；
+ * 展开态把手不渲染（`DocRail` 是条件渲染，不是 CSS 藏），卡片头上有收起按钮。
+ * 宽度那三件套是 `useRails` 的常量算式的 CSS 对应物（240 + 12 = 252），改一处要改两处。
  */
-.itemprops__lib {
+.doc-rail {
+  position: sticky;
+  top: 0;
   flex: none;
-  border: 1px dashed var(--line-2);
-  border-radius: var(--radius-pill);
-  background: none;
+  align-self: flex-start;
+  width: var(--doc-rail-tab);
+  z-index: 10;
+}
+.doc-rail[data-open="true"] {
+  width: calc(var(--doc-rail-w) + var(--doc-rail-gap));
+}
+.doc-rail__tab {
+  display: block;
+  width: var(--doc-rail-tab);
+  margin-top: var(--sp-4);
+  padding: var(--sp-2) 0;
+  writing-mode: vertical-rl;
+  border: 1px solid var(--line);
+  background: var(--panel);
   color: var(--muted);
   font: inherit;
   font-size: var(--fs-micro);
-  padding: 1px 7px;
+  letter-spacing: .06em;
   cursor: pointer;
 }
-.itemprops__lib:hover {
-  color: var(--primary-ink);
-  border-color: var(--primary-line);
-  background: var(--primary-soft);
+.doc-rail--left .doc-rail__tab {
+  border-left: none;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
-.itemprops__lib:focus-visible {
+.doc-rail--right .doc-rail__tab {
+  border-right: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.doc-rail__tab:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.doc-rail__tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.doc-rail__card {
+  display: none;
+  flex-direction: column;
+  width: var(--doc-rail-w);
+  max-height: calc(100vh - 170px);
+  margin-top: var(--sp-4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.doc-rail--left .doc-rail__card {
+  margin-left: var(--doc-rail-gap);
+}
+.doc-rail--right .doc-rail__card {
+  margin-right: var(--doc-rail-gap);
+}
+.doc-rail[data-open="true"] .doc-rail__card {
+  display: flex;
+}
+/*
+ * 卡片头 / 卡体是**两侧面板共用**的骨架（`DocRail.tsx` 渲染，属性卡与大纲都套在里面）。
+ * 卡体允许自己滚——这是 `DESIGN.md` §2.7「每层一个滚动容器」里唯一那条例外：
+ * 面板高度封顶（`max-height`），内容多过封顶时**只有面板里滚**，正文那一层不动。
+ */
+.floatcard__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  padding: 8px var(--sp-2) 8px var(--sp-1);
+  border-bottom: 1px solid var(--line);
+}
+.floatcard__toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  cursor: pointer;
+}
+.floatcard__toggle:hover {
+  color: var(--text);
+}
+.floatcard__toggle:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
+}
+.floatcard__body {
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+
+/*
+ * 大纲（`features/notes/ui/OutlinePanel.tsx`）：一行一个标题，缩进表示级别。
+ * 「当前节」的标识只能是**一条主色竖线 + 主色文字**，不做整块填充——面板很窄，
+ * 填充色块会让"现在在哪"变成整片的背景噪声。
+ */
+.outline {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.outline__item {
+  display: block;
+  width: 100%;
+  padding: 4px var(--sp-2);
+  border: none;
+  border-left: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline__item:hover {
+  color: var(--text);
+  background: var(--bg-soft);
+}
+.outline__item--h1 {
+  color: var(--text-2);
+}
+.outline__item--h2 {
+  padding-left: calc(var(--sp-2) + 12px);
+}
+.outline__item--h3 {
+  padding-left: calc(var(--sp-2) + 24px);
+  font-size: var(--fs-micro);
+}
+.outline__item--current {
+  color: var(--primary-ink);
+  border-left-color: var(--primary);
+  background: var(--primary-soft);
+}
+.outline__item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.outline__none {
+  padding: var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-micro);
 }
 
 /*
