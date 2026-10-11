@@ -341,4 +341,26 @@ describe("即时渲染：任务清单复选框", () => {
     expect(atomicText).toContain("[ ]");
     expect(atomicText).toContain("- ");
   });
+
+  /*
+    代码块高亮区间（编辑器专项优化 P2-2）：纯函数只负责把插件层算好的 token 区间
+    拼成 mark 装饰——上色不藏内容、**不进原子区间**（光标停在 token 上是合法的）。
+  */
+  it("codeTokenMarks 拼成上色 mark，不进原子区间", () => {
+    const doc = "```js\nconst x = 1;\n```";
+    const state = makeState(doc);
+    const built = buildLivePreviewDecorations({
+      state,
+      from: 0,
+      to: doc.length,
+      activeRange: null,
+      codeTokenMarks: [{ from: 6, to: 11, className: "tok-keyword" }],
+    });
+    const marks = pieces(state, built.decorations).filter(
+      (piece) => piece.className !== null && piece.from !== piece.to,
+    );
+    expect(marks.some((piece) => piece.className === "tok-keyword" && piece.text === "const")).toBe(true);
+    const atomicText = pieces(state, built.atomic).map((piece) => doc.slice(piece.from, piece.to));
+    expect(atomicText).not.toContain("const");
+  });
 });

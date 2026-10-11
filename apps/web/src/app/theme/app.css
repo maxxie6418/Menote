@@ -1337,6 +1337,52 @@ button {
 }
 
 /*
+  代码语法高亮（编辑器专项优化 P2-2）——**预览的 `<code>` 与即时渲染的 mark 共用这组类**：
+  类名由 `code-highlight.ts` 发出（`tok-<prism类型>`），配色只在这里写一份，全部走现有令牌
+  （零新色值）：关键字紫、字符串绿、注释灰、数字红、函数/标题橙墨；操作符与标点**不上色**
+  （less is more：满屏彩色不是"高亮"，是圣诞树）。
+*/
+.tok-keyword,
+.tok-tag,
+.tok-important,
+.tok-atrule {
+  color: var(--purple);
+}
+
+.tok-string,
+.tok-char,
+.tok-attr-value,
+.tok-regex,
+.tok-inserted {
+  color: var(--green);
+}
+
+.tok-comment,
+.tok-prolog,
+.tok-doctype,
+.tok-cdata {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tok-number,
+.tok-boolean,
+.tok-constant,
+.tok-builtin,
+.tok-deleted {
+  color: var(--red);
+}
+
+.tok-function,
+.tok-class-name,
+.tok-title,
+.tok-selector,
+.tok-attr-name,
+.tok-property {
+  color: var(--primary-ink);
+}
+
+/*
   任务清单复选框（编辑器专项优化 P2-1）——**预览与即时渲染共用这一组**：
   - 预览（`.markdown-body`）：markdown-it-task-lists 输出的 `.task-list-item-checkbox`（disabled）；
   - 即时渲染（`.cm-task-checkbox`）：`TaskCheckboxWidget` 里的真复选框（可点、点了改文档）。

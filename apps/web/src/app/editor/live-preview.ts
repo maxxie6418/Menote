@@ -30,6 +30,7 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
+import { highlightSpans, type TokenSpan } from "./code-highlight";
 
 /** 补解析的时间预算（超出就先用部分树；与 CM6 自带高亮器同一量级） */
 const PARSE_BUDGET_MS = 50;
@@ -188,6 +189,12 @@ export interface LivePreviewInput {
    * 单光标就是它所在的那一行；跨行选区是整个跨度（这样复制出来的仍是带标记的 md）。
    */
   activeRange: { from: number; to: number } | null;
+  /**
+   * 代码块的语法高亮区间（P2-2，**绝对坐标**）：由插件层异步算好（`code-highlight.ts`）
+   * 传进来，纯函数只负责拼装成 mark 装饰。不进 `atomicRanges`——它们只是上色，
+   * 光标停进去是合法的。语言不支持 / 还没加载完时调用方不传，代码保持纯文本。
+   */
+  codeTokenMarks?: ReadonlyArray<{ from: number; to: number; className: string }>;
 }
 
 export interface LivePreviewDecorations {
@@ -205,7 +212,7 @@ export interface LivePreviewDecorations {
  * 装饰构建只依赖 state 与语法树，不需要视图，所以能在 jsdom 里逐条断言。
  */
 export function buildLivePreviewDecorations(input: LivePreviewInput): LivePreviewDecorations {
-  const { state, from, to, activeRange } = input;
+  const { state, from, to, activeRange, codeTokenMarks } = input;
   const tree = ensureSyntaxTree(state, to, PARSE_BUDGET_MS) ?? syntaxTree(state);
   const doc = state.doc;
   const ranges: Range<Decoration>[] = [];
@@ -378,6 +385,18 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
     },
   });
 
+  /*
+    代码块高亮区间（P2-2）最后拼进去：它们是纯上色的 mark，不隐藏内容、不进 atomicRanges。
+    坐标由插件层换算好（绝对坐标），这里不认识"第几个围栏"。
+  */
+  if (codeTokenMarks) {
+    for (const mark of codeTokenMarks) {
+      if (mark.to > mark.from && mark.to <= doc.length) {
+        ranges.push(Decoration.mark({ class: mark.className }).range(mark.from, mark.to));
+      }
+    }
+  }
+
   return {
     decorations: Decoration.set(ranges, true),
     atomic: Decoration.set(atomicRanges, true),
@@ -402,6 +421,46 @@ function childrenOf(node: {
     child = child.nextSibling as typeof child;
   }
   return out;
+}
+
+/**
+ * 视口里的一个代码块：语言、代码文本与**内容区**的文档起点。
+ * token 区间是相对代码文本的，落盘时要加上 `contentFrom`。
+ */
+interface FenceSpan {
+  lang: string;
+  code: string;
+  contentFrom: number;
+}
+
+const FENCE_INFO_RE = /^[ \t]*(?:`{3,}|~{3,})\s*([A-Za-z0-9_+#-]*)/;
+const FENCE_MARK_RE = /^[ \t]*(?:`{3,}|~{3,})/;
+
+/** 收集视口内的代码块（P2-2）；活动行里的围栏跳过——那一片按源码显示 */
+function fenceSpansIn(state: EditorState, from: number, to: number): FenceSpan[] {
+  const doc = state.doc;
+  const tree = ensureSyntaxTree(state, to, PARSE_BUDGET_MS) ?? syntaxTree(state);
+  const spans: FenceSpan[] = [];
+  tree.iterate({
+    from,
+    to,
+    enter: (node) => {
+      if (node.name !== "FencedCode") return;
+      const text = doc.sliceString(node.from, node.to);
+      const firstBreak = text.indexOf("\n");
+      if (firstBreak < 0) return;
+      const lang = FENCE_INFO_RE.exec(text.slice(0, firstBreak))?.[1] ?? "";
+      if (lang === "") return;
+      const lastBreak = text.lastIndexOf("\n");
+      if (lastBreak <= firstBreak) return;
+      // 末行必须是收尾围栏（没闭合的块不做高亮——内容还长着）；内容不含它前头那个换行
+      if (!FENCE_MARK_RE.test(text.slice(lastBreak + 1))) return;
+      const code = text.slice(firstBreak + 1, lastBreak);
+      if (code.trim() === "") return;
+      spans.push({ lang, code, contentFrom: node.from + firstBreak + 1 });
+    },
+  });
+  return spans;
 }
 
 /** 光标（或选区）覆盖的行区间；单光标就是它所在那一行 */
@@ -448,9 +507,17 @@ class LivePreviewPlugin {
   private idleTimer = 0;
   /** 帧合并的句柄（0 = 当前没有排期） */
   private frame = 0;
+  /**
+   * 代码高亮的**内容级缓存**（P2-2）：键是 `语言\0代码文本`，值是**相对代码文本**的
+   * token 区间——所以文档怎么编辑、位置怎么变都不失效，只有内容本身变了才重算。
+   * 上限 40 块：一篇里几十个代码块是极端，滚回去重新请求一次也就一个 promise。
+   */
+  private codeSpans = new Map<string, TokenSpan[]>();
+  /** 已经发出去还没回来的高亮请求（防止同一块重复请求） */
+  private pendingHighlights = new Set<string>();
 
   constructor(view: EditorView) {
-    const built = buildFor(view);
+    const built = buildFor(view, this.collectCodeMarks(view));
     this.decorations = built.decorations;
     this.atomic = built.atomic;
   }
@@ -503,7 +570,7 @@ class LivePreviewPlugin {
    * update 里没有任何分支会再排期，不会成环。
    */
   private rebuild(view: EditorView, notify = false): void {
-    const built = buildFor(view);
+    const built = buildFor(view, this.collectCodeMarks(view));
     this.decorations = built.decorations;
     this.atomic = built.atomic;
     if (notify) view.dispatch();
@@ -513,9 +580,53 @@ class LivePreviewPlugin {
     if (this.idleTimer) globalThis.clearTimeout(this.idleTimer);
     if (this.frame) cancelAnimationFrame(this.frame);
   }
+
+  /**
+   * 视口内代码块的高亮区间（P2-2）。缓存命中的立即换算成绝对坐标；
+   * 没命中的发一次异步请求，回来后**重建一次**把颜色画上去（内容级缓存，
+   * 文档编辑不失效——键是代码文本本身）。
+   *
+   * 空语言 / 不支持的语言 / Prism 加载失败都返回空，代码保持纯文本。
+   */
+  private collectCodeMarks(view: EditorView): Array<{ from: number; to: number; className: string }> {
+    const marks: Array<{ from: number; to: number; className: string }> = [];
+    const active = view.hasFocus ? activeRangeOf(view.state) : null;
+    for (const fence of fenceSpansIn(view.state, view.viewport.from, view.viewport.to)) {
+      if (active !== null && active.from <= fence.contentFrom && active.to >= fence.contentFrom) continue;
+      const key = `${fence.lang}\u0000${fence.code}`;
+      const cached = this.codeSpans.get(key);
+      if (cached) {
+        for (const span of cached) {
+          marks.push({
+            from: fence.contentFrom + span.start,
+            to: fence.contentFrom + span.end,
+            className: span.cls,
+          });
+        }
+        continue;
+      }
+      if (this.pendingHighlights.has(key)) continue;
+      this.pendingHighlights.add(key);
+      void highlightSpans(fence.code, fence.lang).then((result) => {
+        this.pendingHighlights.delete(key);
+        if (!result || result.length === 0) return;
+        if (this.codeSpans.size >= 40) {
+          const oldest = this.codeSpans.keys().next().value;
+          if (oldest !== undefined) this.codeSpans.delete(oldest);
+        }
+        this.codeSpans.set(key, result);
+        // 异步回来时文档可能已经又变了：重建用当时的文档现算，键按内容命中，位置不会错
+        this.rebuild(view, true);
+      });
+    }
+    return marks;
+  }
 }
 
-function buildFor(view: EditorView): LivePreviewDecorations {
+function buildFor(
+  view: EditorView,
+  codeTokenMarks: ReadonlyArray<{ from: number; to: number; className: string }> = [],
+): LivePreviewDecorations {
   const { from, to } = view.viewport;
   return buildLivePreviewDecorations({
     state: view.state,
@@ -527,6 +638,7 @@ function buildFor(view: EditorView): LivePreviewDecorations {
       看着像"没渲染"。失焦状态下整篇按渲染呈现，点进哪一行哪一行才回到源码。
     */
     activeRange: view.hasFocus ? activeRangeOf(view.state) : null,
+    codeTokenMarks,
   });
 }
 
