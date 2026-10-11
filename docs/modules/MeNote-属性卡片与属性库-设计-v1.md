@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 文档版本 | v1.2 |
+| 文档版本 | v1.3 |
 | 文档状态 | **生效**（用户 2026-10-11 批准：按此稿实现，并授权改 `DESIGN.md` §5.3 / §5.6 与 `packages/shared` 的 `prop_labels`） |
-| 目的和适用范围 | 重画正文区顶部的**属性卡片**与设置 › **属性库**两屏，并新增一条**显示名**（界面叫法）规则。适用于 `apps/web` 的属性卡片、设置 › 属性库、导入录入步，以及 `user_settings` 契约 |
+| 目的和适用范围 | 重画正文区顶部的**属性卡片**与设置 › **属性库**两屏，并新增一条**显示名**（界面叫法）规则。适用于 `apps/web` 的属性卡片、设置 › 属性库、导入录入步，以及 `user_settings` 契约（**卡片的位置与折叠方式 v1.3 起归 `docs/modules/MeNote-属性卡与大纲悬浮-设计-v1.md`**） |
 | 权威级别 | 模块规则（不覆盖 `wiki/`；`DESIGN.md` 与 `packages/shared` 的改动已获用户授权，见 §7） |
 | 最后更新日期 | 2026-10-11 |
 
@@ -15,6 +15,7 @@
 | v1 | v0.8.31 | 2026-10-11 | 首稿：起因与现状盘点、「属性卡片合成一张两列表」「行内提示」「属性库页表格化 + 内置键开放显示名与候选取值」「显示名（`prop_labels`）」 | deepseek-v4.1-flash |
 | v1.1 | v0.8.32 | 2026-10-11 | 转「生效」并落实现：订正 §3.2 两处（**自建行键名仍可改**——保留既有的改名能力；**内置行候选取值只读展示**——它们不在 `prop_library` 里，扩展值域是 §8 的路 B）；§4.4 补「设置页与卡片同源」；§6 验收点逐条勾选 | deepseek-v4.1-flash |
 | v1.2 | v0.8.33 | 2026-10-11 | 修用户报出的「设置页乱飞」：**控件的固有宽度压到隔壁列**（`.field__input` 不设宽度，进 grid 就退回固有宽度）→ 立 `.proplib__row .field__input { width:100%; min-width:0 }`；§3.2 的列宽取值按实现订正（样机那套更宽、790px 卡片放不下），两处下限改 `minmax(0, …)`；降级断点由拍的 900px 改为**按可用宽度反推的 940px**；内置行「操作」格给破折号、「显示名」占位文字缩短 | deepseek-v4.1-flash |
+| v1.3 | v0.8.34 | 2026-10-11 | 按用户第二轮反馈**把「位置与折叠」整块移交新稿**：属性卡搬进正文区左侧贴边面板（见 `docs/modules/MeNote-属性卡与大纲悬浮-设计-v1.md`），本稿**只订正因它失真的三处**——§2.4「未入库」改为行尾 24px 图标按钮（虚线 chip 与 11px 说明行删除）、§2.5 类名清单（删 `__toggle`/`__summary`/`__lib`/`__libline`，增 `__sep`/`__group`/`__icobtn`/`--card`；`__note--warn` 不再使用）、§2.6 折叠态（卡片不再自己折叠，`collapsedSummary` 与旧 key 一并退役）。**卡片行结构、属性库表格、显示名规则、数据契约一字未改** | deepseek-v4.1-flash |
 
 ---
 
@@ -87,23 +88,26 @@
 - 完整解释（"选中别的值才会把它改成 MeNote 的写法"）收进该行 **ⓘ `InfoHint`** 的悬停里。依据 `DESIGN.md` §5.4-2 / §6.1：**警告与错误必须保持可见**（所以短句不藏），说明性文字才进 `InfoHint`。
 - 多个认不出的字段各进各的行，不再合并成一句段级文案。
 
-### 2.4 「未入库」标记
+### 2.4 「未入库」标记（**v1.3 已被取代**）
 
 - 外来键不在属性库里时，值控件下方给一个虚线 chip「未入库」（点击 = 收进属性库，即现 `adoptForeign`），后面跟一句 11px 说明「收进属性库后可改类型与候选值」。
 - 它只表达**状态**，不是另一套版式——外来键与内置键的行结构完全相同。
+- **v1.3（2026-10-11）**：这一处按用户反馈改为**行尾动作格里的 24px 图标按钮**（方框 + 加号，`--primary`），含义进 `aria-label` 与 `title`；那行 11px 说明删掉。理由与取值见 `docs/modules/MeNote-属性卡与大纲悬浮-设计-v1.md` §3.3 与 `DESIGN.md` §5.6-1、-6。
 
 ### 2.5 类名约定（实现沿用，便于 `style-coverage.test.ts` 覆盖）
 
-保名：`.itemprops` / `__inner` / `__toggle` / `__toggle--collapsed` / `__summary`。
-统一：行 `.itemprops__row`、名 `.itemprops__label`、值容器 `.itemprops__ctl`、控件 `.itemprops__input`、提示 `.itemprops__note`（`--warn` 变体）、「未入库」`.itemprops__lib`、操作列 `.itemprops__act`、末行 `.itemprops__foot` + `.itemprops__pick`。
+保名：`.itemprops` / `__inner`（`__toggle` / `__toggle--collapsed` / `__summary` 已随折叠控件一起删除，见 §2.6）。
+统一：行 `.itemprops__row`、名 `.itemprops__label`、值容器 `.itemprops__ctl`、控件 `.itemprops__input`、提示 `.itemprops__note`（`--warn` 变体 **v1.3 起不再使用**）、操作列 `.itemprops__act`、末行 `.itemprops__foot` + `.itemprops__pick`。
+**v1.3 新增**：分组线 `.itemprops__sep` 与分组小字 `.itemprops__group`、行尾图标按钮 `.itemprops__icobtn`（`--danger` 变体给删除）、卡片变体 `.itemprops--card`（进贴边面板后去掉边框与内边距）。「未入库」`.itemprops__lib` 与其说明行 `.itemprops__libline` 删除。
 删除确认仍用 `ConfirmDialog`（标题 `本篇不再用 <键名>？`、确认按钮「从本篇移除」）。
-实现时逐条清理不再被引用的旧规则（`.itemprops__group` / `__group--foreign` / `__head` / `__vals` / `__field` / `__value` / `__value--block` 等）。
+实现时逐条清理不再被引用的旧规则（`.itemprops__group--foreign` / `__head` / `__vals` / `__field` / `__value` / `__value--block` / `__x--row` 等）。
 
-### 2.6 折叠态与空状态
+### 2.6 折叠态与空状态（**折叠态 v1.3 已被取代**）
 
 - 折叠态：一行 `chevron + 「属性」+ 摘要`。摘要在现 `collapsedSummary` 基础上**用显示名**（§4），例：`标签 2 · 状态 unread · 作者 枕鹤 · 链接 1`；一篇什么都没有时摘要为「未设置」。
-- 空状态：一篇完全没有属性时**照样渲染四行内置空行 + 末行按钮**（`DESIGN.md` §5.6-2 的"常显"不变）；空值控件显示占位（枚举「未设置」、日期空、标签只有「+ 添加」）。
-- 空状态、只读态、折叠态三者可叠加（只读 + 空 = 只读说明 + 四行 `disabled`）。
+  - **v1.3（2026-10-11）**：属性卡**不再自己折叠**——它搬进正文区左侧的贴边面板，展开/收起由那条轨道负责（收起态是 **28px 的竖排把手「属性」**，没有摘要行）。`collapsedSummary` / `summaryValue` / `__summary` / `__toggle` 一并删除；本机偏好键由「折叠态」`menote:notes:props-collapsed` 反向迁移成「展开态」`menote:notes:props-open`。见 `DESIGN.md` §5.6-11、-12。
+- 空状态：一篇完全没有属性时**照样渲染四行内置空行 + 末行按钮**（`DESIGN.md` §5.6-2 的"常显"不变）；空值控件显示占位（枚举「未设置」、日期空、标签只有「+ 添加」）。「其他属性」分组头（细线 + 小字）**常显**，空白笔记才有"加一个属性"的去处。
+- 空状态、只读态三者可叠加（只读 + 空 = 只读说明 + 四行 `disabled`）。
 
 ---
 
