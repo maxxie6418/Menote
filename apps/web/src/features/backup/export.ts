@@ -19,7 +19,7 @@ import {
   sha256Hex,
 } from "@menote/shared";
 import { APP_VERSION } from "../../app/about";
-import { getEditableBody, listLocalFolders, listLocalItems } from "../../data/db/repository";
+import { getEditableBody, listLocalFolders, listLocalItems } from "../../data/db";
 import { attachmentUrl } from "../attachments/model";
 import { buildManifest, collectAttachments, type BackupSourceItem } from "./build";
 

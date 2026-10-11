@@ -243,6 +243,12 @@ export interface LivePreviewInput {
    * 光标停进去是合法的。语言不支持 / 还没加载完时调用方不传，代码保持纯文本。
    */
   codeTokenMarks?: ReadonlyArray<{ from: number; to: number; className: string }>;
+  /**
+   * 已补解析的语法树（v0.8.25 可选）：插件层在一次重建里要把**同一棵树**喂给
+   * 装饰构建与代码块收集——各自 `ensureSyntaxTree` 会把补解析预算付两遍（重文档
+   * 挂载最多多 50ms）。纯函数自己也会在没传时兜底取树（jsdom 用例不传照样能跑）。
+   */
+  tree?: ReturnType<typeof syntaxTree>;
 }
 
 export interface LivePreviewDecorations {
@@ -260,8 +266,8 @@ export interface LivePreviewDecorations {
  * 装饰构建只依赖 state 与语法树，不需要视图，所以能在 jsdom 里逐条断言。
  */
 export function buildLivePreviewDecorations(input: LivePreviewInput): LivePreviewDecorations {
-  const { state, from, to, activeRange, codeTokenMarks } = input;
-  const tree = ensureSyntaxTree(state, to, PARSE_BUDGET_MS) ?? syntaxTree(state);
+  const { state, from, to, activeRange, codeTokenMarks, tree: prebuiltTree } = input;
+  const tree = prebuiltTree ?? (ensureSyntaxTree(state, to, PARSE_BUDGET_MS) ?? syntaxTree(state));
   const doc = state.doc;
   const ranges: Range<Decoration>[] = [];
   const atomicRanges: Range<Decoration>[] = [];
@@ -490,10 +496,14 @@ interface FenceSpan {
 const FENCE_INFO_RE = /^[ \t]*(?:`{3,}|~{3,})\s*([A-Za-z0-9_+#-]*)/;
 const FENCE_MARK_RE = /^[ \t]*(?:`{3,}|~{3,})/;
 
-/** 收集视口内的代码块（P2-2）；活动行里的围栏跳过——那一片按源码显示 */
-function fenceSpansIn(state: EditorState, from: number, to: number): FenceSpan[] {
+/** 收集视口内的代码块（P2-2）；活动行里的围栏跳过——那一片按源码显示。树由调用方传入（一次重建只补一次解析） */
+function fenceSpansIn(
+  state: EditorState,
+  from: number,
+  to: number,
+  tree: ReturnType<typeof syntaxTree>,
+): FenceSpan[] {
   const doc = state.doc;
-  const tree = ensureSyntaxTree(state, to, PARSE_BUDGET_MS) ?? syntaxTree(state);
   const spans: FenceSpan[] = [];
   tree.iterate({
     from,
@@ -571,7 +581,8 @@ class LivePreviewPlugin {
   private pendingHighlights = new Set<string>();
 
   constructor(view: EditorView) {
-    const built = buildFor(view, this.collectCodeMarks(view));
+    const tree = ensureSyntaxTree(view.state, view.viewport.to, PARSE_BUDGET_MS) ?? syntaxTree(view.state);
+    const built = buildFor(view, this.collectCodeMarks(view, tree), tree);
     this.decorations = built.decorations;
     this.atomic = built.atomic;
   }
@@ -624,7 +635,9 @@ class LivePreviewPlugin {
    * update 里没有任何分支会再排期，不会成环。
    */
   private rebuild(view: EditorView, notify = false): void {
-    const built = buildFor(view, this.collectCodeMarks(view));
+    // 一次重建只补一次解析：同一棵树喂给代码块收集与装饰构建（v0.8.25 前各付一遍 50ms 预算）
+    const tree = ensureSyntaxTree(view.state, view.viewport.to, PARSE_BUDGET_MS) ?? syntaxTree(view.state);
+    const built = buildFor(view, this.collectCodeMarks(view, tree), tree);
     this.decorations = built.decorations;
     this.atomic = built.atomic;
     if (notify) view.dispatch();
@@ -642,10 +655,13 @@ class LivePreviewPlugin {
    *
    * 空语言 / 不支持的语言 / Prism 加载失败都返回空，代码保持纯文本。
    */
-  private collectCodeMarks(view: EditorView): Array<{ from: number; to: number; className: string }> {
+  private collectCodeMarks(
+    view: EditorView,
+    tree: ReturnType<typeof syntaxTree>,
+  ): Array<{ from: number; to: number; className: string }> {
     const marks: Array<{ from: number; to: number; className: string }> = [];
     const active = view.hasFocus ? activeRangeOf(view.state) : null;
-    for (const fence of fenceSpansIn(view.state, view.viewport.from, view.viewport.to)) {
+    for (const fence of fenceSpansIn(view.state, view.viewport.from, view.viewport.to, tree)) {
       if (active !== null && active.from <= fence.contentFrom && active.to >= fence.contentFrom) continue;
       const key = `${fence.lang}\u0000${fence.code}`;
       const cached = this.codeSpans.get(key);
@@ -680,6 +696,7 @@ class LivePreviewPlugin {
 function buildFor(
   view: EditorView,
   codeTokenMarks: ReadonlyArray<{ from: number; to: number; className: string }> = [],
+  tree: ReturnType<typeof syntaxTree>,
 ): LivePreviewDecorations {
   const { from, to } = view.viewport;
   return buildLivePreviewDecorations({
@@ -700,6 +717,7 @@ function buildFor(
         ? activeRangeOf(view.state)
         : null,
     codeTokenMarks,
+    tree,
   });
 }
 

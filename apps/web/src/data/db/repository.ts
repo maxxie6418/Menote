@@ -20,8 +20,6 @@ import { parseMenoteMeta, stripFrontmatter } from "@menote/mdcore";
 import { db } from "./database";
 import {
   SYNC_STATE_KEY,
-  type BodyRow,
-  type DraftRow,
   type LocalFolder,
   type LocalItem,
   type OutboxEntity,
@@ -394,41 +392,12 @@ export async function listItemSummaries(): Promise<Record<string, string>> {
   return out;
 }
 
-export async function getCachedBody(id: string): Promise<BodyRow | undefined> {
-  return db.bodies.get(id);
-}
-
-export async function getDraft(id: string): Promise<DraftRow | undefined> {
-  return db.drafts.get(id);
-}
-
-/** 编辑器初始内容：优先未上传草稿，其次正文缓存 */
-export async function getEditableBody(id: string): Promise<{ body: string; fromDraft: boolean }> {
-  const draft = await db.drafts.get(id);
-  if (draft) return { body: draft.body, fromDraft: true };
-  const cached = await db.bodies.get(id);
-  return { body: cached?.body ?? "", fromDraft: false };
-}
-
 // ——————————————————————————— 本地写（离线优先） ———————————————————————————
 
-/** 本地草稿：**每 2 秒**写一次，与上传节奏无关（拆解 M04-04） */
-export async function saveDraft(itemId: string, body: string, now: number): Promise<void> {
-  await db.drafts.put({ item_id: itemId, body, updated_at: now });
-}
-
-/** 缓存已确认的正文（上传成功或从服务端取回时调用） */
-export async function putCachedBody(
-  itemId: string,
-  body: string,
-  rev: number,
-  contentHash: string,
-  now: number,
-): Promise<void> {
-  await db.bodies.put({ item_id: itemId, body, rev, content_hash: contentHash, cached_at: now });
-}
-
-/** 本地新建条目：写入 items + bodies + drafts，并入队一条 `create` */
+/**
+ * 本地新建条目：写入 items + bodies + drafts，并入队一条 `create`
+ * （正文/草稿的读写函数在 `./bodies`——v0.8.25 抽出，见该文件头）。
+ */
 export interface NewLocalItemInput {
   id: string;
   type: ItemType;

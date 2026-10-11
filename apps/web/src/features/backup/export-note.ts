@@ -13,7 +13,7 @@
  * 下载与附件下载两个 IO 助手直接同源复用（`export.ts`）。
  */
 import { sha256Hex } from "@menote/shared";
-import { getEditableBody } from "../../data/db/repository";
+import { getEditableBody } from "../../data/db";
 import { extractAttachmentRefsWithNames } from "../attachments/model";
 import { defaultSaveBlob, fetchAttachmentBytes } from "./export";
 

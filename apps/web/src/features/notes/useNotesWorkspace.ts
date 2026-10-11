@@ -17,6 +17,7 @@ import {
   listItemSummaries,
   listLocalFolders,
   listLocalItems,
+  listLocalBodyIds,
   listLocalMemos,
   listMemoContents,
   moveLocalFolder,
@@ -278,6 +279,13 @@ export function useNotesWorkspace(
    * 编辑器回调可能迟到，上一篇的迟到回调不该改掉这一篇的打开基准（见 `notifyUploaded`）。
    */
   const editorIdRef = useRef<string | null>(null);
+  /**
+   * 本地"有正文可读"的条目 id 集合（v0.8.25，数据在 `data/db.listLocalBodyIds`）：
+   * `open()` 靠它**同步**决定要不要抬"正在打开…"占位——缓存命中的切换一次提交就能
+   * 换上正文，不该闪占位；要等服务端补拉的（集合里没有）立刻给反馈（M2-9 钉住的取舍）。
+   * 集合在每轮 `refresh` 时重读主键，`notifyOwnPush` 与打开落地时增量补。
+   */
+  const localBodyIdsRef = useRef<Set<string>>(new Set());
   const gate = options.gate;
 
   /**
@@ -329,14 +337,17 @@ export function useNotesWorkspace(
 
   /** 内容没变就不要替换数组：每次同步都塞新数组会让下游依赖无谓地变身份 */
   const refresh = useCallback(async () => {
-    const [rows, folderRows, counts, bodySummaries, memoRows, memoBodies] = await Promise.all([
+    const [rows, folderRows, counts, bodySummaries, memoRows, memoBodies, bodyIds] = await Promise.all([
       listLocalItems(),
       listLocalFolders(),
       countItemsByFolder(),
       listItemSummaries(),
       listLocalMemos(),
       listMemoContents(),
+      listLocalBodyIds(),
     ]);
+    // "本地有正文"的键集合进内存（v0.8.25）：open() 靠它**同步**判定要不要抬占位
+    localBodyIdsRef.current = bodyIds;
     // 搜索索引按 sync_seq 增量重建（同步后 / 本地写入后各跑一次，代价只落在变了的条目上）
     await refreshSearchIndex();
     setAllItems((previous) => (sameItems(previous, rows) ? previous : rows));
@@ -373,8 +384,11 @@ export function useNotesWorkspace(
   // 首次加载：setState 放在 then 回调里，不在 effect 体内同步触发（react-hooks/set-state-in-effect）
   useEffect(() => {
     let alive = true;
-    void listLocalItems().then((rows) => {
+    // "本地有正文"的键集合与首屏列表一起装（v0.8.25）：第一次切换就不该闪占位——
+    // 不能等下一轮 refresh（引擎同步完才跑），那之前集合是空的
+    void Promise.all([listLocalItems(), listLocalBodyIds()]).then(([rows, bodyIds]) => {
       if (!alive) return;
+      localBodyIdsRef.current = bodyIds;
       setAllItems(rows);
       setLoading(false);
     });
@@ -421,13 +435,14 @@ export function useNotesWorkspace(
       /*
         —— 阶段 1：**同步**给"点到了"的反馈，不发任何 await ——
 
-        只抬 `openingId`（正文区换"正在打开…"占位）。**故意不在这里抬 `selectedId`**：
-        它是整张列表的选中项，抬它会让列表与 App 整棵树多提交一次；而正文通常 1–5ms 就到，
-        那次提交纯属白花（实测缓存命中路径 72ms → 250ms）。选中项与正文在同一次提交里落地。
+        占位只在该等服务端补拉时抬（本地集合里没有这篇，v0.8.25）：缓存命中的切换
+        一次提交就能换上正文，抬了反而让用户**每次切换都看见一帧"正在打开…"**。
+        **故意不在这里抬 `selectedId`**：它是整张列表的选中项，抬它会让列表与 App
+        整棵树多提交一次；选中项与正文在同一次提交里落地。
       */
       editorRef.current?.stop();
       editorRef.current = null; // 旧控制器立即失效：这一帧旧正文区正在卸载，避免它的回调写进新条目
-      setOpeningId(id);
+      if (!localBodyIdsRef.current.has(id)) setOpeningId(id);
       setRemoteChanged(false);
       setConflictCopy(null); // 上一篇的冲突提示不该残留到这一篇
 
@@ -450,8 +465,9 @@ export function useNotesWorkspace(
       applyInitialBody(body);
       applySelectedId(id);
       setDocVersion((previous) => ({ id, epoch: (previous?.epoch ?? 0) + 1 }));
-      // 只清"自己这一次"的占位：更晚的 open 已经抬起新的 openingId 时不要动它
-      setOpeningId((previous) => (previous === id ? null : previous));
+      // 正文已经读到并落地：这篇此后本地有正文（键集合补上），占位无论如何都该收了
+      localBodyIdsRef.current.add(id);
+      setOpeningId(null);
       await syncConflictState(id);
       if (editorRef.current !== editor) return;
       editor.start();
@@ -707,6 +723,7 @@ export function useNotesWorkspace(
         if (!cached) return;
         // 自己的推送刚落地：缓存正文就是编辑器推上去的那份（上传期间又敲的字由
         // `afterBodySynced` 重新入队、下一轮再推），基线跟上去、清掉"别处改过"。
+        localBodyIdsRef.current.add(id);
         applyInitialBody(cached.body);
         setRemoteChanged(false);
       },

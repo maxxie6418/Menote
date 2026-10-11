@@ -23,7 +23,7 @@ import {
   type SearchableRow,
 } from "../../features/search/model";
 import { db } from "./database";
-import { getCachedBody, getDraft } from "./repository";
+import { getCachedBody, getDraft } from "./bodies";
 import type { LocalItem, SearchIndexRow } from "./schema";
 
 /** 判定只需要这几个字段：结构化取出来，避免把整个 LocalItem 传进共享包 */

@@ -239,6 +239,29 @@ describe("点笔记的即时反馈与正文后到", () => {
     expect(requested).toEqual([SECOND]);
   });
 
+  /*
+    缓存命中的切换**不闪占位**（编辑器专项优化 v0.8.25）：本地有正文的条目，
+    open() 靠内存键集合同步判定"不用等"，一次提交直接换上正文——此前每次切换都会
+    抬一帧"正在打开…"（实测 9–20ms，恰在一帧边缘，机器一忙就肉眼可见）。
+    与上一条用例成对：**未命中立刻给反馈**（M2-9 钉住的取舍）保持原样。
+  */
+  it("正文在本机时：切换不出现「正在打开…」占位，直接换上正文", async () => {
+    await seedCachedOnly(FIRST, "第一篇", "第一篇的正文");
+    await seedCachedOnly(SECOND, "第二篇", "第二篇的正文");
+
+    await renderWorkspace(2);
+
+    fireEvent.click(rowOf("第一篇"));
+    // 点击这一帧就不该有占位——缓存命中同步判定，不等 IndexedDB 的异步往返
+    expect(screen.queryByText(/正在打开/)).toBeNull();
+    await waitFor(async () => expect(await editorInitial()).toBe("第一篇的正文"));
+
+    fireEvent.click(rowOf("第二篇"));
+    expect(screen.queryByText(/正在打开/)).toBeNull();
+    await waitFor(async () => expect(await editorInitial()).toBe("第二篇的正文"));
+    expect(rowOf("第二篇").getAttribute("aria-current")).toBe("true");
+  });
+
   it("连点两篇：先点的慢请求回来也不覆盖后点的那篇", async () => {
     await seedSyncedOnly(FIRST, "第一篇");
     await seedSyncedOnly(SECOND, "第二篇");

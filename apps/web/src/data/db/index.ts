@@ -6,6 +6,7 @@
 export * from "./conflicts";
 export * from "./database";
 export * from "./attachments";
+export * from "./bodies";
 export * from "./privacy";
 export * from "./repository";
 export * from "./schema";
