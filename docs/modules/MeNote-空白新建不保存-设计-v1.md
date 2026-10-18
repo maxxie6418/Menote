@@ -2,16 +2,17 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 文档版本 | v1 |
-| 文档状态 | **生效（已实现，v0.8.36）** |
+| 文档版本 | v1.1 |
+| 文档状态 | **生效（已实现，v0.8.36；v1.1 订正回收的失败兜底，v0.8.38）** |
 | 目的和适用范围 | 定义「点了新建、却什么都没写」的那一条该不该保存：判据是什么、什么时候才产生第一条上传操作、什么时候回收、哪些情形不受影响。适用于 `apps/web` 的新建流程（笔记 / 表格 / 快速录入）、outbox 入队漏斗与工作区选中项切换 |
 | 权威级别 | 模块规则（不覆盖 `wiki/`；实现口径已同步 `wiki/Menote-项目架构-v1.md` §6.3 与 `wiki/Menote-功能拆解-v2.md` M04-01 / §9.3） |
-| 最后更新日期 | 2026-10-11 |
+| 最后更新日期 | 2026-10-18 |
 
 ## 修改记录
 
 | 文档版本 | 应用版本 | 日期 | 修改摘要 | 修改模型ID |
 | --- | --- | --- | --- | --- |
+| v1.1 | v0.8.38 | 2026-10-18 | 订正 §3.3 `reapBlankSeedOnLeave` 的契约：`changed` 允许返回 Promise、由回收方 await 并兜住 purge 与 changed 两处失败（原先调用点写成 `() => void refresh()`，刷新成浮动 Promise，库被关掉时炸未处理拒绝——v0.8.38 修） | deepseek-v4.1-flash |
 | v1 | v0.8.36 | 2026-10-11 | 首稿：需求口径、判据只有一份、入队漏斗三处判定点、两个回收触发点、边界与验收点；记录「为什么不做成先建再删」 | deepseek-v4.1-flash |
 
 ---
@@ -85,7 +86,7 @@ export async function purgeBlankSeeds(now: number = Date.now()): Promise<string[
 - `purgeBlankSeeds`：启动兜底，扫 `pending === "create"` 且建了超过 `SEED_GRACE_MS`（30 秒）的条目。**宽限期是给多标签页的**：A 标签页刚建的一篇可能正在写、草稿还没落盘，B 标签页启动一扫就把它删了；留一点时间就没有这个抢删窗口，反正离开它时还会再收一次。
 - 接线在 `apps/web/src/features/notes/blankSeeds.ts`（**单独成模块**：`useNotesWorkspace.ts` 已贴着 500 行预算，而这两件事都值得带注释讲清楚）：
   - `loadFirstScreen()`：先扫一遍空白种子，再取首屏列表 + 「本地有正文」的键集合（先扫再取，列表里不会先闪一条幽灵条目）。
-  - `reapBlankSeedOnLeave(previousId, currentId, changed)`：选中项被换掉的那一刻回收上一篇，**只有真删了才叫 `changed()`**（调用方据此刷新列表，否则列表里会留一条打不开的幽灵行）。`previousId === currentId` 或 `previousId === null` 直接返回。
+  - `reapBlankSeedOnLeave(previousId, currentId, changed)`：选中项被换掉的那一刻回收上一篇，**只有真删了才叫 `changed()`**（调用方据此刷新列表，否则列表里会留一条打不开的幽灵行）。`previousId === currentId` 或 `previousId === null` 直接返回。**`changed` 允许返回 Promise**（调用点写的是 `() => refresh()`），回收方 `await` 它并在末端 `.catch` 同时兜住 `purgeBlankSeed` 与 `changed` 的失败——刷新列表本来就是异步的（7 个并行查询 + 索引重建），写成 `() => void refresh()` 就是一条没人接的浮动 Promise，库被关掉时（切档 / 卸载 / 测试收尾）会以 `DatabaseClosedError` 炸成未处理拒绝（v0.8.38 修；这是「尽力而为」的收尾动作，真漏掉了由启动兜底 `purgeBlankSeeds` 再扫一遍）。
   - 调用点在 `useNotesWorkspace.ts` 的 `applySelectedId`（选中项真正落地的那一刻）——**不是**在 `open()` 的入口：`open()` 是异步的，发请求期间用户可能已经点了别的条目，在入口回收会拿一个过期的「上一篇」去删。
 
 ### 3.4 为什么不做成「先建再删」
