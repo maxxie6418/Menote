@@ -839,7 +839,13 @@ button {
   width: 100%;
   max-width: 800px;
   margin: var(--sp-5) auto;
-  padding: var(--sp-5) 48px 80px;
+  /*
+    `align-items` 默认被 CodeMirror 设成 `flex-start !important`（让行号槽顶在正文上方），
+    那样 `.cm-content` 只有文字那么高，纸面下半张（A4 最小高的余量）不属于内容元素，
+    点上去既不落光标、还会让编辑器失焦（v0.8.39 真机复现）。拉成 stretch 后正文元素铺满纸面。
+    **必须带 `!important`**：库那一条是 important，不带的声明一律输给它（真机实测确认过）。
+  */
+  align-items: stretch !important;
   font-family: var(--mono);
   font-size: var(--fs-body);
   line-height: 1.7;
@@ -850,7 +856,16 @@ button {
   border-radius: var(--radius-lg);
 }
 
+/*
+  内边距落在**正文元素**上而不是纸面（`.cm-scroller`）上（v0.8.39）：CodeMirror 只把鼠标事件
+  绑在 `contentDOM` 上，纸面自己的内边距与下方空白点了没反应。搬到 `.cm-content` 后，左右 48px
+  与上下留白都归它，`posAtCoords` 会把光标落到最近的位置；纸面尺寸与文字列（704）一个字不变。
+  `width:100%` + `box-sizing:border-box` 不能省：不设的话内容盒会变成 800+96 顶出横向滚动条。
+*/
 [data-editor] .cm-content {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-5) 48px 80px;
   min-height: 100%;
   caret-color: var(--primary);
 }
@@ -878,13 +893,18 @@ button {
   background: var(--primary-soft);
 }
 
-/* 活动行只在编辑器真的聚焦时给底色；失焦时不留一条灰带 */
+/*
+  活动行**不给整行底色**（v0.8.39，用户："正在编辑的那一行颜色不要太独特"）。
+  白纸是 `--panel`（#ffffff / #242424），原来那层 `--bg-soft`（#f7f7f7 / #1e1e1e）就是一条
+  很显眼的灰带，而比它更淡的中性令牌不存在（`--panel-2` 更深），所以只能拿掉底色——
+  光标本就是最强的位置提示，行号槽那档（有行号时）另有自己的当前行标记。
+*/
 [data-editor] .cm-activeLine {
   background: transparent;
 }
 
 [data-editor] .cm-focused .cm-activeLine {
-  background: var(--bg-soft);
+  background: transparent;
 }
 
 [data-editor] .cm-gutters {

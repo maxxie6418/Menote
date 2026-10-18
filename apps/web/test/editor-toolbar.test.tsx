@@ -67,3 +67,36 @@ describe("工具栏：禁用态（DESIGN §6.1：禁用必须说明原因）", (
     expect(onCommand).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 添加附件（v0.8.39）：入口从正文右上角的模式切换条旁搬到这里。
+ *
+ * 工具栏**不持有文件输入**：它只把点击交回 `onAttach`，宿主（`NoteWorkspace`）去代点那颗
+ * 隐藏的 `<input type="file">`——上传链路一个字没改。不给 `onAttach` 就不渲染（表格档）。
+ */
+describe("工具栏：添加附件（v0.8.39 搬来的入口）", () => {
+  it("给了 onAttach 才渲染；点它只交回 onAttach，不碰文档", () => {
+    const onAttach = vi.fn();
+    const { onCommand } = setup({ onAttach });
+    const attach = screen.getByTitle("添加附件");
+    expect(attach.getAttribute("data-toolbar-button")).toBe("attach");
+    fireEvent.click(attach);
+    expect(onAttach).toHaveBeenCalledTimes(1);
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("没给 onAttach 就不渲染（表格档没有这个入口）", () => {
+    setup();
+    expect(screen.queryByTitle("添加附件")).toBeNull();
+  });
+
+  it("禁用态：按钮禁用、title 说明原因，点了不代点输入", () => {
+    const onAttach = vi.fn();
+    setup({ onAttach, disabled: true, disabledReason: "解锁后才能添加附件" });
+    const attach = screen.getByLabelText("添加附件") as HTMLButtonElement;
+    expect(attach.disabled).toBe(true);
+    expect(attach.title).toBe("解锁后才能添加附件");
+    fireEvent.click(attach);
+    expect(onAttach).not.toHaveBeenCalled();
+  });
+});

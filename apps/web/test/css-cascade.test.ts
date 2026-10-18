@@ -95,19 +95,31 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "max-width")).toBe("800px");
     // 2026-10-11：纸面上下各留一段间距（`--sp-5`），左右仍是 auto 居中
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "margin")).toBe("var(--sp-5) auto");
-    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "padding")).toBe(
+    // 2026-10-18（v0.8.39）：内边距从纸面搬到正文元素（CodeMirror 只把鼠标事件绑在 contentDOM
+    // 上，挂在纸面 .cm-scroller 的内边距点了不落光标、还会失焦）。边界本身没变：800 / 48 / 文字列 704。
+    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "padding")).toBe("");
+    expect(effectiveValue(rules, "[data-editor] .cm-content", "padding")).toBe(
       "var(--sp-5) 48px 80px",
+    );
+    // 同一批的另外半条：纸面下半张（A4 最小高的余量）也得属于内容元素。库写的是
+    // `flex-start !important`，我们这条**必须带 `!important`** 才盖得住——少了就等于没写。
+    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "align-items")).toBe(
+      "stretch !important",
     );
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "width")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "max-width")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "margin")).toBe("");
     expect(effectiveValue(rules, '[data-editor="live"] .cm-scroller', "padding")).toBe("");
     // 仅预览档是**同一组边界**：逐字比编辑档，而不是各写各的期望值
-    for (const prop of ["max-width", "margin", "padding"]) {
+    // （内边距那一项比的是正文元素 `.cm-content`——它 2026-10-18 起才是给留白的那个）
+    for (const prop of ["max-width", "margin"]) {
       expect(effectiveValue(rules, ".docpane__body .markdown-body", prop)).toBe(
         effectiveValue(rules, "[data-editor] .cm-scroller", prop),
       );
     }
+    expect(effectiveValue(rules, ".docpane__body .markdown-body", "padding")).toBe(
+      effectiveValue(rules, "[data-editor] .cm-content", "padding"),
+    );
   });
 
   /*

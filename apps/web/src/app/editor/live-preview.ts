@@ -22,6 +22,9 @@
  *    可以正常走过去、也看得见自己停在哪。挂成原子区间反而让上面那条规则**永远触发不了**
  *    ——`atomicRanges` 是在 `moveByChar` / 鼠标选区的 `skipAtoms` 里被跳过的，
  *    光标根本进不到标记内部（§4.2 的结论）。
+ * 4. **正在编辑的那一行要冻结**（v0.8.39）：判据一个字没改，改的是重算时机——光标停在一行
+ *    期间，那一行的装饰不换新的。不冻的话，在行首敲 `##` 会被 90ms 后的重算立刻藏掉，
+ *    表现是"标题写不出来 + 快速闪动"（顶层见 `live-preview-lock.ts`）。
  *
  * 首期（2026-09-28）覆盖**文本级**元素：标题 / 强调 / 删除线 / 行内代码 / 链接 / 引用 /
  * 列表 / 分隔线 / 代码块底色；**图片给占位块**。表格与代码围栏保持源码——
@@ -38,7 +41,8 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { highlightSpans, type TokenSpan } from "./code-highlight";
-import { HEADING_CLASSES, childrenOf, revealSpansFor } from "./live-preview-reveal";
+import { freezeLine, insertsLineBreak, lineDecorations, lockHolds, type LineLock } from "./live-preview-lock";
+import { HEADING_CLASSES, childrenOf, revealSpansFor, type Span } from "./live-preview-reveal";
 import { searchPanelOpen } from "@codemirror/search";
 
 /** 补解析的时间预算（超出就先用部分树；与 CM6 自带高亮器同一量级） */
@@ -258,6 +262,12 @@ export interface LivePreviewInput {
 export interface LivePreviewDecorations {
   /** 作用于文档的装饰 */
   decorations: DecorationSet;
+  /**
+   * 这次构建判定为「要显现源码」的标记区间（v0.8.39）。
+   *
+   * 交出去是为了让插件层**不用再扫一遍语法树**：它是「按行冻结」的判据之一（`live-preview-lock.ts`）。
+   */
+  reveal: Span[];
 }
 
 /**
@@ -453,7 +463,7 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
     }
   }
 
-  return { decorations: Decoration.set(ranges, true) };
+  return { decorations: Decoration.set(ranges, true), reveal };
 }
 
 /** 图片的 alt：`![alt](url)` 里两个 LinkMark 之间的内容（没有就空串） */
@@ -512,8 +522,11 @@ function fenceSpansIn(
  *
  * 取 90ms 是跟着"一个连打停顿"的经验值定的：短了没效果（长文档里一次
  * `ensureSyntaxTree` 的补解析预算就是几十毫秒），长了会看见"敲完的那一行迟迟不渲染"。
+ *
  * 这段窗口里**不会**出现"敲了字没反应"——光标停在内容文字里时本来就只有样式、
- * 没有等待渲染的标记（§2.1），而新敲出来的标记在语法树里还不存在，本来就该以源码示人。
+ * 没有等待渲染的标记（§2.1）。但**别以为新敲出来的标记还没进语法树**：增量解析在改动后
+ * 就会重解析那一行，`syntaxTree(state)` 里已经有新标记了（v0.8.39 订正，旧注释把这点写反了）。
+ * 敲行首 `##` 时之所以还看得见自己敲的 `#`，靠的是下面那条「按行冻结」，不是靠解析没跟上。
  */
 const REBUILD_IDLE_MS = 90;
 
@@ -528,6 +541,9 @@ const REBUILD_IDLE_MS = 90;
  * | `selectionSet` / `focusChanged` | 下一帧重算（同帧多次合并成一次） | "光标进标记露源码"是即时渲染的核心交互，必须跟手；但一帧内的多次更新只需算一次 |
  * | 语法树引用变了 | 下一帧重算 | 后台 ParseWorker 补完一段（v0.8.37）：不重算的话滚到的那一片会一直停在源码形态 |
  * | `viewportChanged` | 下一帧重算 | 滚进新区域要有装饰，延迟一帧不可见 |
+ *
+ * 重算**不等于是重画**（v0.8.39）：光标停在哪一行，那一行就沿用锁定那一份装饰，只有其余行
+ * 按新结果渲染——否则在行首敲 `##` 会被重算立刻藏掉（顶层见 `live-preview-lock.ts`）。
  *
  * 与外部项目 inkstone 的 `live-preview.ts` 同一思路（那边是块级缓存 + 90ms 防抖），
  * 差别是我们装饰的是**语法节点**而不是渲染好的 HTML，所以没有"复用未变块的 HTML"这一层，
@@ -555,6 +571,13 @@ class LivePreviewPlugin {
   private codeSpans = new Map<string, TokenSpan[]>();
   /** 已经发出去还没回来的高亮请求（防止同一块重复请求） */
   private pendingHighlights = new Set<string>();
+  /**
+   * 「正在编辑的那一行」的冻结（v0.8.39）：光标停在一行期间，那一行的装饰不换新的。
+   *
+   * `null` = 没有冻结（失焦、有展开选区，都可能让判据不成立）。规则本身在
+   * `live-preview-lock.ts`，这里只存状态、做接线。
+   */
+  private lock: LineLock | null = null;
 
   constructor(view: EditorView) {
     this.treeRef = syntaxTree(view.state);
@@ -566,6 +589,13 @@ class LivePreviewPlugin {
     if (update.docChanged) {
       // 先映射位置：这样即使下面不重算，装饰也不会指向已经不存在的区间
       this.decorations = this.decorations.map(update.changes);
+      /*
+        跨行改动一律解除冻结（回车、粘贴多行）：那种改动本来就要整行重排，冻着会让新内容
+        停在源码形态（设计稿验收点 H）。单行输入（敲 `#`、敲字）不走这条路。
+      */
+      if (insertsLineBreak(update.changes)) this.lock = null;
+      // 锁定行那一份装饰跟着映射走：从**已映射**的集合里按当前这一行重切，位置就不会失效
+      this.refreshLocked(update.state);
     }
     // 输入法组合期间**不重算**（位置已由映射保住）：重算会把组合中的字替换掉、光标乱跳
     if (update.view.composing) return;
@@ -619,13 +649,44 @@ class LivePreviewPlugin {
    *
    * 空事务（`dispatch()` 无参）只走一遍 update 循环、不改文档与选区，代价可忽略；
    * update 里没有任何分支会再排期，不会成环。
+   *
+   * v0.8.39 起这里多一层**按行冻结**：光标停在哪一行，那一行沿用锁定那一份装饰，其余行照常
+   * 按新结果渲染。冻结只针对**点装饰**（`replace` 藏标记、`line` 整行类名）：行内 mark
+   * （代码块 token 高亮、强调）不进锁定快照，始终跟着新内容更新——真机实测过"全行冻结"的版本，
+   * 代码块里打字会出现"刚敲的字没高亮、旧 token 跨越新空格"（验收点 C）。
    */
   private rebuild(view: EditorView, notify = false): void {
     // 一次重建只补一次解析：同一棵树喂给代码块收集与装饰构建（v0.8.25 前各付一遍 50ms 预算）
     const tree = ensureSyntaxTree(view.state, view.viewport.to, PARSE_BUDGET_MS) ?? syntaxTree(view.state);
-    this.decorations = buildFor(view, this.collectCodeMarks(view, tree), tree).decorations;
+    const built = buildFor(view, this.collectCodeMarks(view, tree), tree);
+    const line = lockedLineOf(view);
+
+    if (line !== null && lockHolds(this.lock, line.number, built.reveal)) {
+      // 冻结：这一行换回锁定那一份，其余行用刚算出来的
+      this.decorations = freezeLine(built.decorations, line.from, line.to, this.lock.decos);
+    } else {
+      this.decorations = built.decorations;
+      this.lock = line === null ? null : {
+        line: line.number,
+        reveal: built.reveal,
+        decos: lineDecorations(built.decorations, line.from, line.to),
+      };
+    }
     this.treeRef = syntaxTree(view.state);
     if (notify) view.dispatch();
+  }
+
+  /**
+   * 文档变更后把锁定那一行重新切一次。
+   *
+   * 冻结时写进 `this.decorations` 的就是「锁定那一行 + 其余行」，所以 `map` 之后的集合里
+   * 属于这一行的那一段**就是**映射过的锁定装饰，按当前行边界重切一遍即可，不必单独 map。
+   */
+  private refreshLocked(state: EditorState): void {
+    const lock = this.lock;
+    if (!lock || lock.line > state.doc.lines) return;
+    const line = state.doc.line(lock.line);
+    this.lock = { ...lock, decos: lineDecorations(this.decorations, line.from, line.to) };
   }
 
   destroy(): void {
@@ -707,6 +768,20 @@ function revealAtOf(view: EditorView): number[] {
   const main = view.state.selection.main;
   if (main.empty) return [main.head];
   return searchPanelOpen(view.state) ? [main.from, main.to] : [];
+}
+
+/**
+ * 当前该冻结哪一行（v0.8.39，判据见 `live-preview-lock.ts`）。
+ *
+ * 只有「有焦点 + 折叠光标」才冻：失焦时整篇按渲染呈现，展开选区时用户正在看/复制一段内容，
+ * 这两种情况下都不该有哪一行停住不动。
+ */
+function lockedLineOf(view: EditorView): { number: number; from: number; to: number } | null {
+  if (!view.hasFocus) return null;
+  const main = view.state.selection.main;
+  if (!main.empty) return null;
+  const line = view.state.doc.lineAt(main.head);
+  return { number: line.number, from: line.from, to: line.to };
 }
 
 /**

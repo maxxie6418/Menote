@@ -11,12 +11,13 @@
  * ② 扩展能不能装进 `EditorState`（StateField 不需要视图，`ViewPlugin` 才需要——
  *    v0.8.13 那次「点开页面什么都没有」正是用错了扩展类型，这条能钉住类型选对了）。
  */
-import { EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState } from "@codemirror/state";
 import type { Decoration, DecorationSet } from "@codemirror/view";
 import { parseMenoteMeta } from "@menote/mdcore";
 import { describe, expect, it } from "vitest";
 import {
   buildFrontmatterDecorations,
+  clampSelectionOut,
   frontmatterHide,
   frontmatterRange,
 } from "../src/app/editor/frontmatter-hide";
@@ -219,3 +220,69 @@ describe("扩展能装进 EditorState（扩展类型必须是 StateField，见 v
   });
 });
 
+
+/**
+ * 选区落进隐藏区时**只夹落进去的那一端**（v0.8.39）。
+ *
+ * 旧做法把整个选区换成隐藏区末尾的一个光标，于是"从正文往上拖到顶"和"Ctrl+A 全选"都变成
+ * 光标在原地——用户报的"拖拽变成直接拖动光标位置"就是它（真机复现见
+ * `docs/modules/MeNote-编辑器交互修复-设计-v1.md` §1.2）。
+ *
+ * 这里刻意把判定抽成纯函数 `clampSelectionOut`：jsdom 建不出 `EditorView`，
+ * 但选区夹取与视图无关，能在这里逐条钉住。返回 `null` 表示"不用派发"（自激循环的防线）。
+ */
+describe("选区落进隐藏区：只夹落进去的那一端", () => {
+  const hidden = frontmatterRange(OB);
+  if (!hidden) throw new Error("样本应当有 front matter");
+
+  it("光标落在隐藏区里 → 顶到隐藏区末尾", () => {
+    const next = clampSelectionOut(EditorSelection.single(hidden.from + 2), hidden);
+    expect(next?.main.from).toBe(hidden.to);
+    expect(next?.main.to).toBe(hidden.to);
+  });
+
+  it("从正文往上拖进隐藏区 → 只夹那一端，选区保住（不塌成光标）", () => {
+    const body = hidden.to + 20;
+    const next = clampSelectionOut(EditorSelection.single(hidden.from + 3, body), hidden);
+    expect(next?.main.from).toBe(hidden.to);
+    expect(next?.main.to).toBe(body);
+    expect(next?.main.empty).toBe(false);
+  });
+
+  it("Ctrl+A 形状的全选 → 变成选中可见正文（旧做法是选不上）", () => {
+    const all = EditorSelection.single(0, OB.length);
+    const next = clampSelectionOut(all, hidden);
+    expect(next?.main.from).toBe(hidden.to);
+    expect(next?.main.to).toBe(OB.length);
+    expect(next?.main.empty).toBe(false);
+  });
+
+  it("选区整段都在隐藏区里 → 退成隐藏区末尾的光标（保持原行为）", () => {
+    const next = clampSelectionOut(EditorSelection.single(hidden.from + 1, hidden.from + 3), hidden);
+    expect(next?.main.empty).toBe(true);
+    expect(next?.main.head).toBe(hidden.to);
+  });
+
+  it("选区本来就在隐藏区之外 → 不派发（null）", () => {
+    expect(clampSelectionOut(EditorSelection.single(hidden.to + 5), hidden)).toBeNull();
+    expect(clampSelectionOut(EditorSelection.single(hidden.to + 1, hidden.to + 9), hidden)).toBeNull();
+  });
+
+  it("已经夹到该在的位置 → 不派发（自激保护）", () => {
+    expect(clampSelectionOut(EditorSelection.single(hidden.to), hidden)).toBeNull();
+  });
+
+  it("多光标各夹各的，主光标位置不变", () => {
+    // 注意：这一版 `EditorSelection.cursor/range` 返回的是 **SelectionRange**（不是 EditorSelection），
+    // 所以光标形状要用 `EditorSelection.single(...)`，多光标才用 `create([...SelectionRange])`。
+    const selection = EditorSelection.create(
+      [EditorSelection.cursor(hidden.from + 1), EditorSelection.cursor(OB.length)],
+      1,
+    );
+    const next = clampSelectionOut(selection, hidden);
+    expect(next?.ranges.length).toBe(2);
+    expect(next?.ranges[0]?.head).toBe(hidden.to);
+    expect(next?.ranges[1]?.head).toBe(OB.length);
+    expect(next?.mainIndex).toBe(1);
+  });
+});

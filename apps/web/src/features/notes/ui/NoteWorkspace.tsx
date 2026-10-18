@@ -411,6 +411,10 @@ export function NoteWorkspace({
           **表格条目不显示它**：附件的占位与落库都要插进 Markdown 正文（`EditorHandle.insert`），
           表格没有这个句柄——文件会照传上去，但**没有任何引用指向它**，30 天后按孤儿清掉
           （界面稿 §3 的表格正文头也只列了标题 + 锁标识 + 更多菜单，没有添加附件）。
+
+          **按钮本身只在「仅预览」档与锁定时留在这里**（v0.8.39）：编辑档与即时渲染档的入口
+          搬进了顶部格式工具栏（`EditorToolbar` 的 `onAttach`），预览档没有工具栏、正文锁定时
+          工具栏也不出现，这两处不留就没有入口。输入框留在原处当触发源，两处点的是同一个。
         */}
         {onFiles && !isTable ? (
           <>
@@ -429,15 +433,17 @@ export function NoteWorkspace({
                 if (files.length > 0) onFiles(files);
               }}
             />
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={bodyLocked}
-              title={bodyLocked ? "解锁后才能添加附件" : undefined}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              添加附件
-            </Button>
+            {shownMode === "preview" || bodyLocked ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={bodyLocked}
+                title={bodyLocked ? "解锁后才能添加附件" : undefined}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                添加附件
+              </Button>
+            ) : null}
           </>
         ) : null}
 
@@ -509,11 +515,16 @@ export function NoteWorkspace({
         格式命令无从谈起；表格条目有自己的工具条；正文锁定时编辑器根本没挂（下面是锁定占位），
         工具栏跟着不出现——没有"看得见但点不了"的控件（DESIGN §6.1）。
         命令只转发给编辑器句柄：工具栏不碰文档，句柄不在（还没挂上）时点了也无害。
+
+        「添加附件」（v0.8.39）：附件入口原先挤在正文右上角的模式切换条旁，与"即时渲染 /
+        仅预览"这种**看**的开关混在一排；现在编辑档与即时渲染档从这里进，只点宿主那颗隐藏的
+        `<input type="file">`（上传链路一个字没改）。仅预览档没有工具栏，入口仍留在切换条旁。
       */}
       {!isTable && !bodyLocked && (shownMode === "edit" || shownMode === "live") ? (
         <EditorToolbar
           onCommand={(command, arg) => editorHandle?.applyFormat(command, arg)}
           onFind={() => editorHandle?.openSearch("find")}
+          onAttach={onFiles ? () => fileInputRef.current?.click() : undefined}
         />
       ) : null}
 

@@ -43,12 +43,13 @@
  *    本模块只把它转成装饰。**别再在这里另写一份判据**——2026-10-11 一天里就因"两边各写一份"
  *    踩了两次：先漏 BOM（卡片读得到、编辑器露着 YAML），后漏前导空行（同一症状）。
  * 2. **光标不许钻进被藏起来的那一段**：否则用户会「明明看不见却能改，改完还找不到」。
- *    选区落进去就顶到隐藏区末尾；已经在该位置就不再派发，避免自激循环。
+ *    落进去的那**一端**顶到隐藏区末尾，**另一端保持不动**（v0.8.39 改，原先是整段塌成光标）；
+ *    选区没变就不再派发，避免自激循环。
  * 3. **隐藏区是原子的**（`EditorView.atomicRanges`）：不然在边界上退格会只吃掉围栏、把
  *    `title: …` 裸露到正文里——那是**看不见的编辑**，最难查（与 `live-preview.ts` 同一手法）。
  * 4. **一个字都不显示**：无 widget、无类名，所以也**没有**任何可点元素（设计 §7）。
  */
-import { StateField, type Extension } from "@codemirror/state";
+import { EditorSelection, StateField, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { frontmatterRange } from "@menote/mdcore";
 
@@ -95,7 +96,35 @@ const frontmatterField = StateField.define<DecorationSet>({
 });
 
 /**
- * 选区落进隐藏区时把它顶到隐藏区末尾；已经在该位置就不派发（否则自激）。
+ * 把落进隐藏区的选区夹出来（**纯函数**，所以能进 CI——jsdom 建不出真的 `EditorView`）。
+ *
+ * 只夹**落进去的那一端**：`clamp(pos) = pos < range.to ? range.to : pos` 对 `anchor` / `head`
+ * 分别施加，另一端原样保留。返回 `null` 表示"选区本来就在隐藏区之外、或者夹完还是原样"，
+ * 调用方据此决定要不要派发（不派发是自激循环的唯一防线）。
+ */
+export function clampSelectionOut(
+  selection: EditorSelection,
+  range: { from: number; to: number },
+): EditorSelection | null {
+  const inside = selection.ranges.some((one) => one.from < range.to && one.to > range.from);
+  if (!inside) return null;
+
+  const clamp = (pos: number): number => (pos < range.to ? range.to : pos);
+  const next = EditorSelection.create(
+    selection.ranges.map((one) => EditorSelection.range(clamp(one.anchor), clamp(one.head))),
+    selection.mainIndex,
+  );
+  return next.eq(selection) ? null : next;
+}
+
+/**
+ * 选区落进隐藏区时把**落进去的那一端**顶到隐藏区末尾（v0.8.39 改）。
+ *
+ * 旧做法是把整个选区换成隐藏区末尾的一个光标（`anchor = head = range.to`）：只要选区与隐藏区
+ * 相交，用户手里那一段选择就整体消失——从正文往上拖到顶、或者按 Ctrl+A 全选，都表现为
+ * 「拖拽变成了拖光标 / 全选选不上」（真机复现见 `docs/modules/MeNote-编辑器交互修复-设计-v1.md` §1.2）。
+ * 现在的做法见 `clampSelectionOut`：「正文往上拖到顶」会停在隐藏区之后，Ctrl+A 则变成
+ * 「选中可见正文」——都还是用户想要的那段选择。
  *
  * **必须走 `updateListener` 而不是字段的 `update`**：字段更新期间再 dispatch 是不允许的。
  * 即便有 `atomicRanges` 兜着（光标不会主动进去），这里仍然保留：文档在光标底下被外部改写
@@ -107,12 +136,10 @@ function keepCursorOut(update: ViewUpdate): void {
   const range = frontmatterRange(update.state.doc.toString());
   if (!range) return;
 
-  const { selection } = update.state;
-  const inside = selection.ranges.some((one) => one.from < range.to && one.to > range.from);
-  if (!inside) return;
-  if (selection.main.from === range.to && selection.main.to === range.to) return;
+  const next = clampSelectionOut(update.state.selection, range);
+  if (!next) return;
 
-  update.view.dispatch({ selection: { anchor: range.to, head: range.to }, scrollIntoView: false });
+  update.view.dispatch({ selection: next, scrollIntoView: false });
 }
 
 /** 装到编辑器上的那一个扩展（`Editor.tsx` 把它放进扩展列表） */

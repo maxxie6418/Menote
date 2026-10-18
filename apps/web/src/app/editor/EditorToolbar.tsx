@@ -23,6 +23,11 @@ export interface EditorToolbarProps {
   onCommand: (command: FormatCommandId, arg?: FormatCommandArg) => void;
   /** 打开查找面板（P3）：工具栏不持有视图，转发给宿主 → `EditorHandle.openSearch("find")` */
   onFind: () => void;
+  /**
+   * 添加附件（v0.8.39 从模式切换条旁搬来）：工具栏同样**不持有文件输入**，
+   * 只转发给宿主的隐藏 `<input type="file">`。不传就不渲染这颗按钮（表格档没有它）。
+   */
+  onAttach?: () => void;
 }
 
 /** 一枚格式按钮需要的最小描述 */
@@ -102,9 +107,10 @@ function GroupSeparator() {
   return <span className="editor-toolbar__sep" aria-hidden="true" />;
 }
 
-export function EditorToolbar({ disabled, disabledReason, onCommand, onFind }: EditorToolbarProps) {
+export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onAttach }: EditorToolbarProps) {
   const heading = headingItems(onCommand);
   const findHint = hintFor("find", "查找与替换");
+  const attachHint = hintFor("attach", "添加附件");
   return (
     <div className="editor-toolbar" role="toolbar" aria-label="格式" aria-disabled={disabled || undefined}>
       {/*
@@ -175,6 +181,24 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind }: E
             onCommand={onCommand}
           />
         ))}
+        {/*
+          添加附件排在插入组之后（v0.8.39）：它是"插入一个附件引用"的动作，与链接、代码块同类，
+          原先挤在正文区右上角的模式切换条旁，与"即时渲染 / 仅预览"这种**看**的开关混在一排。
+        */}
+        {onAttach ? (
+          <>
+            <GroupSeparator />
+            <IconButton
+              label={disabled ? "添加附件" : attachHint}
+              icon="image"
+              size={13}
+              disabled={disabled}
+              title={disabled ? disabledReason : attachHint}
+              data-toolbar-button="attach"
+              onClick={onAttach}
+            />
+          </>
+        ) : null}
       </div>
     </div>
   );
