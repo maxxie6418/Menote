@@ -23,6 +23,7 @@ import { isInVault } from "../../features/privacy/vault";
 import { groupNotesByFolder } from "../../features/notes/groups";
 import { exportNoteMarkdown } from "../../features/backup/export-note";
 import { NoteWorkspace } from "../../features/notes/ui/NoteWorkspace";
+import { scheduleEditorPreload } from "../editor/loader";
 import { VersionHistoryPanel } from "../../features/versions/ui/VersionHistoryPanel";
 import { useVersions } from "../../features/versions/useVersions";
 import { useAttachments } from "../../features/attachments/useAttachments";
@@ -139,6 +140,15 @@ export function NotesPane({
   useEffect(() => {
     refreshSharedItems();
   }, [refreshSharedItems]);
+
+  /**
+   * 空闲后台预载编辑器代码（设计 v1 §3.1）。触发点：认证通过、主工作区已经可交互之后
+   * ——能渲染到这里就说明已经进到工作区了。调度、网络策略、取消与失败回退都在
+   * `app/editor/loader.ts` 里（只有第一次调用生效，重复挂载不会重复预载）。
+   */
+  useEffect(() => {
+    scheduleEditorPreload();
+  }, []);
   const attachments = useAttachments({
     itemId: workspace.selectedId,
     handle: editorHandle,

@@ -4,22 +4,21 @@
  *
  * 全仓测试都**不能**创建真实的 `EditorView`（CM6 要布局 API，jsdom 跑不动），所以这一层
  * 刻意做成**纯函数** `buildLivePreviewDecorations(state, …) → DecorationSet`：
- * 只依赖 `EditorState` 与 Lezer 语法树，于是"哪些标记被藏了、活动行有没有露源码、
+ * 只依赖 `EditorState` 与 Lezer 语法树，于是"哪些标记被藏了、光标进标记有没有露源码、
  * 列表/图片的 widget 长什么样"这些都能进 CI，不必靠肉眼。
  *
  * 覆盖首期的语法与装饰（与 `docs/modules/Menote-即时渲染-设计-v1.md` 的覆盖表一一对应）：
  * 标题 / 强调 / 删除线 / 行内代码 / 链接 / 引用 / 列表（含有序） / 分隔线 / `#pending` 上传占位 / 内联真图 / 代码块底色，
- * 以及**光标所在行显示源码**这条核心交互；任务清单 widget 在本文件后续用例覆盖，Prism token 高亮另由 `apps/web/test/code-highlight.test.ts` 覆盖。
+ * 以及**光标进标记才显现源码**这条核心交互（v0.8.37 取代"光标所在行显示源码"，见
+ * `docs/modules/Menote-编辑器体验优化-设计-v1.md` §2.3）；任务清单 widget 在本文件后续用例覆盖，
+ * Prism token 高亮另由 `apps/web/test/code-highlight.test.ts` 覆盖。
  */
 import { ensureSyntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import type { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
-import {
-  activeRangeOf,
-  buildLivePreviewDecorations,
-} from "../src/app/editor/live-preview";
+import { buildLivePreviewDecorations } from "../src/app/editor/live-preview";
 
 interface Piece {
   from: number;
@@ -58,12 +57,12 @@ function pieces(state: EditorState, set: DecorationSet): Piece[] {
  * 三个条件缺一不可：上样式的 `mark` 与行装饰的 `line` 都没有 widget，光看 widget 会把
  * "粗体文字""整行标题"也当成被藏起来的标记（第一版就是这么写错的）。
  */
-function hidden(state: EditorState, doc: string, activeRange: { from: number; to: number } | null = null): string[] {
+function hidden(state: EditorState, doc: string, revealAt: readonly number[] = []): string[] {
   const built = buildLivePreviewDecorations({
     state,
     from: 0,
     to: state.doc.length,
-    activeRange,
+    revealAt,
   });
   return pieces(state, built.decorations)
     .filter((piece) => piece.widget === null && piece.className === null)
@@ -71,7 +70,7 @@ function hidden(state: EditorState, doc: string, activeRange: { from: number; to
 }
 
 function lineClasses(state: EditorState, doc: string): string[] {
-  const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+  const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
   return pieces(state, built.decorations)
     .filter((piece) => piece.className !== null && piece.from === piece.to)
     .map((piece) => piece.className as string);
@@ -85,7 +84,7 @@ function lineClasses(state: EditorState, doc: string): string[] {
  * 断言要盯的是**用户看到的东西**，不是装饰的内部区间。
  */
 function visibleMarks(state: EditorState, doc: string): Array<{ text: string; className: string }> {
-  const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+  const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
   const all = pieces(state, built.decorations);
   const hiddenRanges = all.filter((piece) => piece.widget === null && piece.className === null);
 
@@ -102,7 +101,7 @@ function visibleMarks(state: EditorState, doc: string): Array<{ text: string; cl
 }
 
 function widgets(state: EditorState, doc: string): Array<{ text: string; node: HTMLElement }> {
-  const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+  const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
   return pieces(state, built.decorations)
     .filter((piece) => piece.widget !== null)
     .map((piece) => ({
@@ -252,74 +251,102 @@ describe("即时渲染：标记藏起来、内容留样式", () => {
   });
 });
 
-describe("即时渲染：光标所在行显示源码", () => {
+/*
+  §2.3 的显现规则（v0.8.37 起取代「光标所在行显示源码」）：
+  **光标落进被藏起来的标记里**才显那一小段源码；停在内容文字里（哪怕那些字已经格式化过）
+  保持渲染。命中判据是半开区间 `[from, to)`；同一位置命中多个属主时显现**最内层**。
+*/
+describe("即时渲染：光标进标记才显现源码", () => {
   const doc = "# 标题\n\n**粗体** 与 `代码`\n\n- 列表";
 
-  it("光标在强调那一行：那一行的标记不藏，别的行照藏", () => {
+  it("光标停在内容文字里：标记照藏（这就是本次改动的核心）", () => {
     const state = makeState(doc);
-    const line3 = state.doc.line(3);
-    const hiddenInLine3 = hidden(state, doc, { from: line3.from, to: line3.to });
-
-    // 第 3 行的 `**` 与反引号都露出来了；第 1 行的 `# ` 仍然藏着
-    expect(hiddenInLine3).toEqual(["# "]);
+    // 8 = 第 3 行「粗体」的「粗」：在节点内容里，不在任何被藏的标记里
+    expect(hidden(state, doc, [8])).toEqual(["# ", "**", "**", "`", "`"]);
   });
 
-  it("光标在列表那一行：项目符号回到源码（不给 widget），标题仍然渲染", () => {
+  it("光标落进 `**`：整段强调源码都露出来，别的行照藏", () => {
+    const state = makeState(doc);
+    // 6 在第 3 行开头那个 `**`（[6,8)）里：同一节点的另一个 `**` 一起露，行内代码仍藏
+    expect(hidden(state, doc, [6])).toEqual(["# ", "`", "`"]);
+  });
+
+  it("标题：光标落进 `##` 时 `## ` 露出来（联动的空格一起）", () => {
+    const state = makeState(doc);
+    expect(hidden(state, doc, [1])).toEqual(["**", "**", "`", "`"]);
+  });
+
+  it("半开区间 `[from, to)`：位置等于标记末尾不算命中", () => {
+    const state = makeState(doc);
+    // 6 是 `**` 的起点（命中）；8 是它的末尾（不命中——那是「粗」的位置）
+    expect(hidden(state, doc, [6])).toEqual(["# ", "`", "`"]);
+    expect(hidden(state, doc, [8])).toEqual(["# ", "**", "**", "`", "`"]);
+  });
+
+  it("嵌套：显现最内层——地址里露完整链接，`**` 里露外层强调", () => {
+    const doc2 = "**[文档](https://e.com)**";
+    const state = makeState(doc2);
+    // 8 在 URL（[7,20)）里 → 显现链接自己的标记（含括号与地址），外层强调照藏
+    expect(hidden(state, doc2, [8])).toEqual(["**", "**"]);
+    // 1 在强调标记里 → 显现强调，链接仍按渲染呈现
+    expect(hidden(state, doc2, [1])).toEqual(["[", "]", "(", "https://e.com", ")"]);
+  });
+
+  it("图片：光标进到语法里就整段回源码（不给 widget、什么都不藏）", () => {
+    const doc2 = "![照片](/api/h/abc)";
+    const state = makeState(doc2);
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc2.length, revealAt: [3] });
+    expect(pieces(state, built.decorations).filter((piece) => piece.widget !== null)).toEqual([]);
+    expect(hidden(state, doc2, [3])).toEqual([]);
+  });
+
+  it("列表符号：光标落进 `- ` 时不给 `•` widget（回到源码）", () => {
     const state = makeState(doc);
     const line5 = state.doc.line(5);
     const built = buildLivePreviewDecorations({
       state,
       from: 0,
       to: doc.length,
-      activeRange: { from: line5.from, to: line5.to },
+      revealAt: [line5.from + 1],
     });
-    const all = pieces(state, built.decorations);
-    expect(all.some((piece) => piece.widget !== null)).toBe(false);
-    expect(all.some((piece) => piece.className === "cm-live-h1")).toBe(true);
+    expect(pieces(state, built.decorations).filter((piece) => piece.widget !== null)).toEqual([]);
   });
 
-  it("跨行选区：选区覆盖的行都露源码（复制出来仍是带标记的 md）", () => {
-    const state = makeState(doc);
-    const from = state.doc.line(3).from;
-    const to = state.doc.line(5).to;
-    expect(hidden(state, doc, { from, to })).toEqual(["# "]);
+  it("分隔线：光标落进 `---` 时整段露出来，那条线还在", () => {
+    const doc2 = "上\n\n---\n\n下";
+    const state = makeState(doc2);
+    expect(hidden(state, doc2, [5])).toEqual([]);
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc2.length, revealAt: [5] });
+    expect(
+      pieces(state, built.decorations)
+        .filter((piece) => piece.className === "cm-live-hr")
+        .length,
+    ).toBe(1);
   });
 
-  it("`activeRangeOf`：单光标就是那一行；跨行选区是整个跨度", () => {
+  it("`revealAt` 为空（展开的选区 / 失焦）就什么都不显现", () => {
     const state = makeState(doc);
-    const single = state.update({ selection: { anchor: state.doc.line(3).from + 2 } }).state;
-    expect(activeRangeOf(single)).toEqual({
-      from: single.doc.line(3).from,
-      to: single.doc.line(3).to,
-    });
-
-    const multi = state.update({
-      selection: { anchor: state.doc.line(3).from, head: state.doc.line(5).to },
-    }).state;
-    expect(activeRangeOf(multi)).toEqual({
-      from: multi.doc.line(3).from,
-      to: multi.doc.line(5).to,
-    });
+    expect(hidden(state, doc, [])).toEqual(["# ", "**", "**", "`", "`"]);
   });
 });
 
-describe("即时渲染：原子区间", () => {
-  it("藏掉的标记同时进 `atomic`（方向键与退格不许钻进去）", () => {
+describe("即时渲染：不再挂原子区间", () => {
+  it("构建结果里没有 `atomic`（标记要进得去，才谈得上显现）", () => {
     const doc = "**粗体**";
     const state = makeState(doc);
-    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
-
-    const atomicText = pieces(state, built.atomic).map((piece) => doc.slice(piece.from, piece.to));
-    expect(atomicText).toEqual(["**", "**"]);
-    // 只是上样式的文字（粗体内容）不能进原子区间，否则光标跨不过去
-    expect(atomicText).not.toContain("粗体");
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
+    /*
+      v0.8.37 撤掉了 `atomicRanges`：挂上之后方向键在 `moveByChar` 里被 `skipAtoms` 跳过、
+      鼠标点进去也无反应，§2.3 的"进标记显现源码"永远触发不了。这条钉住"别把它加回来"。
+    */
+    expect("atomic" in built).toBe(false);
+    expect(hidden(state, doc)).toEqual(["**", "**"]);
   });
 
   it("空文档 / 全空行不炸，返回空装饰", () => {
     const state = makeState("");
-    const built = buildLivePreviewDecorations({ state, from: 0, to: 0, activeRange: null });
+    const built = buildLivePreviewDecorations({ state, from: 0, to: 0, revealAt: [] });
     expect(built.decorations.size).toBe(0);
-    expect(built.atomic.size).toBe(0);
   });
 });
 
@@ -332,7 +359,7 @@ describe("即时渲染：任务清单复选框", () => {
   it("TaskMarker 换成复选框 widget，勾选状态跟文档走", () => {
     const doc = "- [ ] 待办：买牛奶\n- [x] 已办结";
     const state = makeState(doc);
-    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
 
     const boxes = pieces(state, built.decorations).filter((piece) => piece.widget !== null && piece.from !== piece.to && doc.slice(piece.from, piece.to).startsWith("["));
     expect(boxes).toHaveLength(2);
@@ -344,7 +371,7 @@ describe("即时渲染：任务清单复选框", () => {
   it("任务项的列表符号整个让位（不再渲染 •）", () => {
     const doc = "- [ ] 待办：买牛奶\n- 普通项";
     const state = makeState(doc);
-    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
 
     const hiddenText = pieces(state, built.decorations)
       .filter((piece) => piece.widget === null && piece.className === null)
@@ -354,46 +381,41 @@ describe("即时渲染：任务清单复选框", () => {
     expect(hiddenText).not.toContain("[ ]");
   });
 
-  it("光标（活动行）落在任务行时保持源码", () => {
+  it("光标落进 `[ ]` 里：该标记回源码，`- ` 仍让位给复选框（显现的是最内层）", () => {
     const doc = "- [ ] 待办：买牛奶";
     const state = makeState(doc);
-    const built = buildLivePreviewDecorations({
-      state,
-      from: 0,
-      to: doc.length,
-      activeRange: { from: 0, to: doc.length },
-    });
-    expect(built.decorations.size).toBe(0);
+    // 3 = 方括号里那个空格的位置
+    expect(hidden(state, doc, [3])).toEqual(["- "]);
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [3] });
+    expect(pieces(state, built.decorations).filter((piece) => piece.widget !== null)).toEqual([]);
   });
 
-  it("复选框进原子区间（退格不许钻进去）", () => {
+  it("构建结果里没有 `atomic`：复选框不再靠原子区间挡光标", () => {
     const doc = "- [ ] 待办";
     const state = makeState(doc);
-    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, activeRange: null });
-    const atomicText = pieces(state, built.atomic).map((piece) => doc.slice(piece.from, piece.to));
-    expect(atomicText).toContain("[ ]");
-    expect(atomicText).toContain("- ");
+    const built = buildLivePreviewDecorations({ state, from: 0, to: doc.length, revealAt: [] });
+    expect("atomic" in built).toBe(false);
+    expect(pieces(state, built.decorations).filter((piece) => piece.widget !== null)).toHaveLength(1);
   });
 
   /*
     代码块高亮区间（编辑器专项优化 P2-2）：纯函数只负责把插件层算好的 token 区间
-    拼成 mark 装饰——上色不藏内容、**不进原子区间**（光标停在 token 上是合法的）。
+    拼成 mark 装饰——上色不藏内容（光标停在 token 上是合法的）。
   */
-  it("codeTokenMarks 拼成上色 mark，不进原子区间", () => {
+  it("codeTokenMarks 拼成上色 mark，不藏内容、没有原子区间", () => {
     const doc = "```js\nconst x = 1;\n```";
     const state = makeState(doc);
     const built = buildLivePreviewDecorations({
       state,
       from: 0,
       to: doc.length,
-      activeRange: null,
+      revealAt: [],
       codeTokenMarks: [{ from: 6, to: 11, className: "tok-keyword" }],
     });
     const marks = pieces(state, built.decorations).filter(
       (piece) => piece.className !== null && piece.from !== piece.to,
     );
     expect(marks.some((piece) => piece.className === "tok-keyword" && piece.text === "const")).toBe(true);
-    const atomicText = pieces(state, built.atomic).map((piece) => doc.slice(piece.from, piece.to));
-    expect(atomicText).not.toContain("const");
+    expect("atomic" in built).toBe(false);
   });
 });

@@ -4,7 +4,7 @@
  * 编辑器与 Markdown 渲染都走**动态 import**（架构 §14.1：编辑器与渲染各自独立分包，不进首屏）。
  * 切换条目由 `key={item.id}` 重新挂载编辑器；切换编辑/预览模式**不重建文档**（架构 §3.3）。
  */
-import { Suspense, lazy, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useMemo, useRef, useState } from "react";
 import { type EditorMode, isProductEditorMode, normalizeEditorModes } from "@menote/shared";
 import { EmptyDocPanel } from "../../../app/workarea/EmptyDocPanel";
 import { Button } from "../../../app/ui/Controls";
@@ -28,12 +28,23 @@ import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
 import { useTableDoc } from "../../tables/useTableDoc";
 import { renderTableDocument } from "@menote/mdcore";
 import { EditorToolbar } from "../../../app/editor/EditorToolbar";
+import { loadEditorModule, resetEditorLoad } from "../../../app/editor/loader";
+import { EditorLoadBoundary } from "../../../app/editor/EditorLoadBoundary";
 import type { EditorHandle } from "../../../app/editor/Editor";
 
-const Editor = lazy(async () => {
-  const mod = await import("../../../app/editor/Editor");
-  return { default: mod.Editor };
-});
+/**
+ * 编辑器按需加载。**必须走共享加载函数**（`loader.ts`）：空闲预载（§3.1）与这里的按需加载
+ * 共用同一个进行中的 Promise，否则预载在途时用户点进编辑会把同一份代码下载两遍（§3.3）。
+ *
+ * 用工厂而不是模块级常量：加载失败后要把这个 `lazy` 组件**换成新的一个**才能重试
+ * ——lazy 会把失败结果缓存在组件对象上（见 `EditorLoadBoundary` 的说明）。
+ */
+function createEditorLazy() {
+  return lazy(async () => {
+    const mod = await loadEditorModule("user");
+    return { default: mod.Editor };
+  });
+}
 
 /** 表格界面按需加载（与编辑器同一理由：不进首屏；表格只有表格条目才用得上） */
 const TableEditor = lazy(async () => {
@@ -266,6 +277,16 @@ export function NoteWorkspace({
   const [degradeOpen, setDegradeOpen] = useState(false);
   // 打开条目时的初始正文；之后由 handleInput 持续跟上编辑器的最新内容
   const [previewSource, setPreviewSource] = useState(initialBody);
+
+  /**
+   * 编辑器懒加载组件。放 state 里是为了「加载失败 → 重试」能换一个新组件：
+   * `lazy` 把被拒的 Promise 缓存在组件对象上，不换对象就永远重试不了（§3.4）。
+   */
+  const [Editor, setEditor] = useState(createEditorLazy);
+  const retryEditor = useCallback(() => {
+    resetEditorLoad();
+    setEditor(() => createEditorLazy());
+  }, []);
 
   /** 加密且本次未解密：正文区换占位，编辑器不挂载 */
   const bodyLocked = encryption?.encrypted === true && !encryption.unlocked;
@@ -580,6 +601,7 @@ export function NoteWorkspace({
               />
             ) : null}
 
+            <EditorLoadBoundary onRetry={retryEditor}>
             <Suspense fallback={<div className="docpane__center">编辑器加载中…</div>}>
             {shownMode === "edit" || shownMode === "live" ? (
             /*
@@ -610,6 +632,7 @@ export function NoteWorkspace({
             </div>
           )}
           </Suspense>
+            </EditorLoadBoundary>
           </>
         )}
 

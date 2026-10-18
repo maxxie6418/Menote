@@ -1,10 +1,15 @@
 /**
- * 即时渲染（live preview）：正文直接呈现渲染样式，**光标所在行显示源码**。
+ * 即时渲染（live preview）：正文直接呈现渲染样式，**光标进到标记里才显现那一小段源码**。
  *
  * 这是 `wiki/` 里早已定下的需求与技术路线，不是新发明：
  * - 设计文档 §7.1：类 Typora / Obsidian 的即时渲染，四档编辑模式之一（默认仍是双栏）；
  * - 项目架构 §3.3：**基于 Lezer 语法树的装饰**（`Decoration.replace` / `widget`），
- *   **只对视口内的节点计算装饰**，光标所在行显示源码。
+ *   **只对视口内的节点计算装饰**。
+ *
+ * 「光标所在行显示源码」已于 v0.8.37 按《编辑器体验优化设计 v1》§2 收窄为
+ * 「**光标落进某个标记 → 显现包含该标记的最小受支持节点**」（设计稿 §2.3）：
+ * 光标停在内容文字里（哪怕停在已经格式化过的文字内部）语法保持渲染，
+ * 停在 `**` / `[` / `#` 这类被藏起来的标记里时才回那一小段源码。
  *
  * 三条实现纪律（每条都对应一个真实的坑）：
  * 1. **只算视口**：Lezer 的树是**懒解析**的（建 state 后只覆盖开头一小段），所以插件里用
@@ -13,8 +18,10 @@
  *    「重算时机」表：打字路径还要等停手 90ms 才重算。
  * 2. **中文输入法**：`view.composing` 期间**不重算**装饰，只把已有装饰按变更映射
  *    （`RangeSet.map`）。重算会把输入法正在组合的字/候选区替换掉，中文优先的产品不能踩这条。
- * 3. **隐藏掉的标记要进 `atomicRanges`**：否则方向键与退格会"钻"进看不见的 `**` 里，
- *    光标看着卡住不动。
+ * 3. **不给隐藏标记挂 `atomicRanges`**（v0.8.37 起）：标记本身已随光标显现，方向键与退格
+ *    可以正常走过去、也看得见自己停在哪。挂成原子区间反而让上面那条规则**永远触发不了**
+ *    ——`atomicRanges` 是在 `moveByChar` / 鼠标选区的 `skipAtoms` 里被跳过的，
+ *    光标根本进不到标记内部（§4.2 的结论）。
  *
  * 首期（2026-09-28）覆盖**文本级**元素：标题 / 强调 / 删除线 / 行内代码 / 链接 / 引用 /
  * 列表 / 分隔线 / 代码块底色；**图片给占位块**。表格与代码围栏保持源码——
@@ -24,13 +31,14 @@ import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import {
   Decoration,
-  EditorView,
   ViewPlugin,
   WidgetType,
   type DecorationSet,
+  type EditorView,
   type ViewUpdate,
 } from "@codemirror/view";
 import { highlightSpans, type TokenSpan } from "./code-highlight";
+import { HEADING_CLASSES, childrenOf, revealSpansFor } from "./live-preview-reveal";
 import { searchPanelOpen } from "@codemirror/search";
 
 /** 补解析的时间预算（超出就先用部分树；与 CM6 自带高亮器同一量级） */
@@ -58,20 +66,13 @@ const CONTENT_CLASSES: Record<string, string> = {
 };
 
 /**
- * 标题层级 → 行装饰类名。
+ * 标题层级 → 行装饰类名：`HEADING_CLASSES` 在 `./live-preview-reveal`（认"标题节点的标记属主"
+ * 也要用这张表，**同一份表只能有一处**）。
  *
- * 字号**只用现有 6 档刻度**（`tokens.css` 的 `--fs-display/title/body-lg/body/small/micro`），
+ * 字号只用现有 6 档刻度（`tokens.css` 的 `--fs-display/title/body-lg/body/small/micro`），
  * 不新增令牌、不写裸 px：h1 20 / h2 17 / h3 14 / h4 13 / h5 12 / h6 11。
  * h5/h6 比正文小是刻意的（与 Obsidian 一致：小标题本就比正文小）。
  */
-const HEADING_CLASSES: Record<string, string> = {
-  ATXHeading1: "cm-live-h1",
-  ATXHeading2: "cm-live-h2",
-  ATXHeading3: "cm-live-h3",
-  ATXHeading4: "cm-live-h4",
-  ATXHeading5: "cm-live-h5",
-  ATXHeading6: "cm-live-h6",
-};
 
 /** 列表的项目符号（换成 `•`）；有序列表的数字保留——数字本身有信息量 */
 const BULLET_MARKS = new Set(["-", "*", "+"]);
@@ -233,10 +234,13 @@ export interface LivePreviewInput {
   from: number;
   to: number;
   /**
-   * 光标（或选区）覆盖的行区间：这一片**显示源码**。
-   * 单光标就是它所在的那一行；跨行选区是整个跨度（这样复制出来的仍是带标记的 md）。
+   * 要**显现源码**的位置（设计稿 §2.3）。通常只有一个：折叠光标所在的位置。
+   *
+   * 位置落进某个隐藏标记的**半开区间** `[from, to)` 时，显现「包含该标记的最小受支持节点」
+   * 的全部标记（嵌套时显现最内层）；位置在内容文字里时什么都不显现——这就是
+   * 「光标停在已格式化的文字内部也保持渲染」。
    */
-  activeRange: { from: number; to: number } | null;
+  revealAt: readonly number[];
   /**
    * 代码块的语法高亮区间（P2-2，**绝对坐标**）：由插件层异步算好（`code-highlight.ts`）
    * 传进来，纯函数只负责拼装成 mark 装饰。不进 `atomicRanges`——它们只是上色，
@@ -254,33 +258,30 @@ export interface LivePreviewInput {
 export interface LivePreviewDecorations {
   /** 作用于文档的装饰 */
   decorations: DecorationSet;
-  /** 被藏掉/替换掉的区间：进 `atomicRanges`，方向键与退格不许钻进去 */
-  atomic: DecorationSet;
 }
 
 /**
  * **纯函数**：`EditorState` + 区间 → 装饰集。
  *
  * 单独抽出来的理由（重要）：全仓测试都把 CodeMirror 整个 mock 掉（真实 CM6 要布局 API，
- * jsdom 跑不动），而"哪些标记被藏了、活动行有没有露源码"这条逻辑必须能进 CI。
+ * jsdom 跑不动），而"哪些标记被藏了、光标进标记有没有露源码"这条逻辑必须能进 CI。
  * 装饰构建只依赖 state 与语法树，不需要视图，所以能在 jsdom 里逐条断言。
  */
 export function buildLivePreviewDecorations(input: LivePreviewInput): LivePreviewDecorations {
-  const { state, from, to, activeRange, codeTokenMarks, tree: prebuiltTree } = input;
+  const { state, from, to, revealAt, codeTokenMarks, tree: prebuiltTree } = input;
   const tree = prebuiltTree ?? (ensureSyntaxTree(state, to, PARSE_BUDGET_MS) ?? syntaxTree(state));
   const doc = state.doc;
   const ranges: Range<Decoration>[] = [];
-  const atomicRanges: Range<Decoration>[] = [];
+  const reveal = revealSpansFor(tree, from, to, doc, revealAt);
 
-  /** 命中活动行（或跨行选区）的区间不隐藏：这就是"光标所在行显示源码" */
-  const inActive = (start: number, end: number): boolean =>
-    activeRange !== null && start <= activeRange.to && end >= activeRange.from;
+  /** 这一段标记要按源码显现吗（§2.3：光标落在它里面） */
+  const isRevealed = (start: number, stop: number): boolean =>
+    reveal.some((span) => span.from <= start && stop <= span.to);
 
-  const hide = (start: number, end: number): void => {
-    if (end <= start || inActive(start, end)) return;
-    const range = Decoration.replace({}).range(start, end);
-    ranges.push(range);
-    atomicRanges.push(range);
+  const hide = (start: number, end: number, prefix = false): void => {
+    const stop = prefix && doc.sliceString(end, end + 1) === " " ? end + 1 : end;
+    if (stop <= start || isRevealed(start, stop)) return;
+    ranges.push(Decoration.replace({}).range(start, stop));
   };
 
   /**
@@ -289,10 +290,7 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
    * 不藏那个空格的话，渲染出来的标题/引用会带一个前导空格——比"少藏一个字符"显眼得多。
    * 列表名目不需要（`- ` 的空格正好是 `•` 与文字之间的间距）。
    */
-  const hideMarkWithSpace = (start: number, end: number): void => {
-    const hasSpace = doc.sliceString(end, end + 1) === " ";
-    hide(start, hasSpace ? end + 1 : end);
-  };
+  const hideMarkWithSpace = (start: number, end: number): void => hide(start, end, true);
 
   const addLine = (lineDecoration: Decoration, pos: number): void => {
     ranges.push(lineDecoration.range(doc.lineAt(Math.min(pos, doc.length)).from));
@@ -370,18 +368,18 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
           return;
         }
         case "Image": {
-          if (inActive(node.from, node.to)) return; // 光标在这一行：看源码（含地址）
+          if (isRevealed(node.from, node.to)) return; // 光标进到图片语法里：整段看源码（含地址）
           const alt = altOf(doc, node.from, node.to);
           const urlNode = childrenOf(node.node).find((child) => child.name === "URL");
           const raw = urlNode ? doc.sliceString(urlNode.from, urlNode.to) : "";
           // 尖括号包地址（`![a](<u x>)`）剥掉壳；`#pending`/空地址是上传中占位，保持文字占位块
           const src = raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw;
           const isPending = src === "" || src.includes("#pending") || src.startsWith("#");
-          const range = Decoration.replace({
-            widget: isPending ? new ImagePlaceholderWidget(alt) : new ImageInlineWidget(alt, src),
-          }).range(node.from, node.to);
-          ranges.push(range);
-          atomicRanges.push(range);
+          ranges.push(
+            Decoration.replace({
+              widget: isPending ? new ImagePlaceholderWidget(alt) : new ImageInlineWidget(alt, src),
+            }).range(node.from, node.to),
+          );
           return;
         }
         case "ListMark": {
@@ -395,22 +393,20 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
             return;
           }
           if (BULLET_MARKS.has(text)) {
-            if (inActive(node.from, node.to)) return;
-            const range = bulletWidget.range(node.from, node.to);
-            ranges.push(range);
-            atomicRanges.push(range);
+            if (isRevealed(node.from, node.to)) return;
+            ranges.push(bulletWidget.range(node.from, node.to));
           }
           return;
         }
         case "TaskMarker": {
-          // 任务复选框（P2-1）：光标落在这一行时看源码，与其余替换同一口径
-          if (inActive(node.from, node.to)) return;
+          // 任务复选框（P2-1）：光标进到 `[x]` 里面时看源码，与其余替换同一口径
+          if (isRevealed(node.from, node.to)) return;
           const marker = doc.sliceString(node.from, node.to);
-          const range = Decoration.replace({
-            widget: new TaskCheckboxWidget(/x/i.test(marker), doc.lineAt(node.from).number),
-          }).range(node.from, node.to);
-          ranges.push(range);
-          atomicRanges.push(range);
+          ranges.push(
+            Decoration.replace({
+              widget: new TaskCheckboxWidget(/x/i.test(marker), doc.lineAt(node.from).number),
+            }).range(node.from, node.to),
+          );
           return;
         }
         case "Link": {
@@ -446,7 +442,7 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
   });
 
   /*
-    代码块高亮区间（P2-2）最后拼进去：它们是纯上色的 mark，不隐藏内容、不进 atomicRanges。
+    代码块高亮区间（P2-2）最后拼进去：它们是纯上色的 mark，不隐藏内容，光标停进去是合法的。
     坐标由插件层换算好（绝对坐标），这里不认识"第几个围栏"。
   */
   if (codeTokenMarks) {
@@ -457,10 +453,7 @@ export function buildLivePreviewDecorations(input: LivePreviewInput): LivePrevie
     }
   }
 
-  return {
-    decorations: Decoration.set(ranges, true),
-    atomic: Decoration.set(atomicRanges, true),
-  };
+  return { decorations: Decoration.set(ranges, true) };
 }
 
 /** 图片的 alt：`![alt](url)` 里两个 LinkMark 之间的内容（没有就空串） */
@@ -468,19 +461,6 @@ function altOf(doc: EditorState["doc"], from: number, to: number): string {
   const text = doc.sliceString(from, to);
   const matched = /^!\[([\s\S]*?)\]/.exec(text);
   return (matched?.[1] ?? "").replace(/\n/g, " ").trim();
-}
-
-/** 直接子节点清单（`SyntaxNode` 的 firstChild/nextSibling 链） */
-function childrenOf(node: {
-  firstChild: unknown;
-}): Array<{ name: string; from: number; to: number }> {
-  const out: Array<{ name: string; from: number; to: number }> = [];
-  let child = node.firstChild as { name: string; from: number; to: number; nextSibling: unknown } | null;
-  while (child) {
-    out.push({ name: child.name, from: child.from, to: child.to });
-    child = child.nextSibling as typeof child;
-  }
-  return out;
 }
 
 /**
@@ -527,25 +507,13 @@ function fenceSpansIn(
   return spans;
 }
 
-/** 光标（或选区）覆盖的行区间；单光标就是它所在那一行 */
-export function activeRangeOf(state: EditorState): { from: number; to: number } | null {
-  if (state.selection.ranges.length === 0) return null;
-  let from = Number.POSITIVE_INFINITY;
-  let to = Number.NEGATIVE_INFINITY;
-  for (const range of state.selection.ranges) {
-    from = Math.min(from, state.doc.lineAt(range.from).from);
-    to = Math.max(to, state.doc.lineAt(range.to).to);
-  }
-  return { from, to };
-}
-
 /**
  * 打字之后的静默窗口：停手这么久才重算装饰。
  *
  * 取 90ms 是跟着"一个连打停顿"的经验值定的：短了没效果（长文档里一次
  * `ensureSyntaxTree` 的补解析预算就是几十毫秒），长了会看见"敲完的那一行迟迟不渲染"。
- * 这段窗口里**不会**出现"敲了字没反应"——光标行本来就显示源码（§三-1），
- * 而新敲出来的标记在语法树里还不存在，本来就该以源码示人。
+ * 这段窗口里**不会**出现"敲了字没反应"——光标停在内容文字里时本来就只有样式、
+ * 没有等待渲染的标记（§2.1），而新敲出来的标记在语法树里还不存在，本来就该以源码示人。
  */
 const REBUILD_IDLE_MS = 90;
 
@@ -557,7 +525,8 @@ const REBUILD_IDLE_MS = 90;
  * | 触发 | 策略 | 为什么 |
  * |---|---|---|
  * | `docChanged` | 停手 `REBUILD_IDLE_MS` 后重算 | 连续打字时一次都不补解析语法树。位置已由上面的 `map` 保住，装饰不会指向已消失的区间 |
- * | `selectionSet` / `focusChanged` | 下一帧重算（同帧多次合并成一次） | "光标那一行露源码"是即时渲染的核心交互，必须跟手；但一帧内的多次更新只需算一次 |
+ * | `selectionSet` / `focusChanged` | 下一帧重算（同帧多次合并成一次） | "光标进标记露源码"是即时渲染的核心交互，必须跟手；但一帧内的多次更新只需算一次 |
+ * | 语法树引用变了 | 下一帧重算 | 后台 ParseWorker 补完一段（v0.8.37）：不重算的话滚到的那一片会一直停在源码形态 |
  * | `viewportChanged` | 下一帧重算 | 滚进新区域要有装饰，延迟一帧不可见 |
  *
  * 与外部项目 inkstone 的 `live-preview.ts` 同一思路（那边是块级缓存 + 90ms 防抖），
@@ -566,7 +535,14 @@ const REBUILD_IDLE_MS = 90;
  */
 class LivePreviewPlugin {
   decorations: DecorationSet;
-  atomic: DecorationSet;
+  /**
+   * 上次见过的**语法树引用**（`syntaxTree(state)` 换过对象才算变过）：后台 ParseWorker
+   * 补完一段就会换一次树，装饰得跟着重算（设计稿 §4.3）。
+   *
+   * 基准必须是「state 当前的树」而不是「上次 build 用的树」：本插件自己也在补解析
+   * （`ensureSyntaxTree`），拿 build 结果当基准会永远对不上，形成逐帧重建的环。
+   */
+  private treeRef: ReturnType<typeof syntaxTree>;
   /** 打字重算的定时器（0 = 当前没有排期） */
   private idleTimer = 0;
   /** 帧合并的句柄（0 = 当前没有排期） */
@@ -581,22 +557,32 @@ class LivePreviewPlugin {
   private pendingHighlights = new Set<string>();
 
   constructor(view: EditorView) {
+    this.treeRef = syntaxTree(view.state);
     const tree = ensureSyntaxTree(view.state, view.viewport.to, PARSE_BUDGET_MS) ?? syntaxTree(view.state);
-    const built = buildFor(view, this.collectCodeMarks(view, tree), tree);
-    this.decorations = built.decorations;
-    this.atomic = built.atomic;
+    this.decorations = buildFor(view, this.collectCodeMarks(view, tree), tree).decorations;
   }
 
   update(update: ViewUpdate): void {
     if (update.docChanged) {
       // 先映射位置：这样即使下面不重算，装饰也不会指向已经不存在的区间
       this.decorations = this.decorations.map(update.changes);
-      this.atomic = this.atomic.map(update.changes);
     }
     // 输入法组合期间**不重算**（位置已由映射保住）：重算会把组合中的字替换掉、光标乱跳
     if (update.view.composing) return;
+    /*
+      语法树推进了：后台 ParseWorker 补完一段会 dispatch `Language.setState`（换掉 state 上的树），
+      装饰得跟着重算，否则滚到的那一片会一直停在"还没解析"的源码形态（设计稿 §4.3）。
+      这里只认**树引用变化**，不引入 `parseProgressEffect` 那套 generation / taskSeq 协议。
+    */
+    const tree = syntaxTree(update.state);
     if (update.docChanged) {
+      this.treeRef = tree;
       this.scheduleIdle(update.view);
+      return;
+    }
+    if (tree !== this.treeRef) {
+      this.treeRef = tree;
+      this.scheduleFrame(update.view);
       return;
     }
     if (update.viewportChanged || update.selectionSet || update.focusChanged) {
@@ -637,9 +623,8 @@ class LivePreviewPlugin {
   private rebuild(view: EditorView, notify = false): void {
     // 一次重建只补一次解析：同一棵树喂给代码块收集与装饰构建（v0.8.25 前各付一遍 50ms 预算）
     const tree = ensureSyntaxTree(view.state, view.viewport.to, PARSE_BUDGET_MS) ?? syntaxTree(view.state);
-    const built = buildFor(view, this.collectCodeMarks(view, tree), tree);
-    this.decorations = built.decorations;
-    this.atomic = built.atomic;
+    this.decorations = buildFor(view, this.collectCodeMarks(view, tree), tree).decorations;
+    this.treeRef = syntaxTree(view.state);
     if (notify) view.dispatch();
   }
 
@@ -660,9 +645,7 @@ class LivePreviewPlugin {
     tree: ReturnType<typeof syntaxTree>,
   ): Array<{ from: number; to: number; className: string }> {
     const marks: Array<{ from: number; to: number; className: string }> = [];
-    const active = view.hasFocus ? activeRangeOf(view.state) : null;
     for (const fence of fenceSpansIn(view.state, view.viewport.from, view.viewport.to, tree)) {
-      if (active !== null && active.from <= fence.contentFrom && active.to >= fence.contentFrom) continue;
       const key = `${fence.lang}\u0000${fence.code}`;
       const cached = this.codeSpans.get(key);
       if (cached) {
@@ -703,33 +686,38 @@ function buildFor(
     state: view.state,
     from,
     to,
-    /*
-      「光标所在行显示源码」只在**编辑器真的聚焦时**成立。
-      否则刚打开一篇笔记（CM6 的选区默认落在文档开头）会让第一行一直露着 `##`——
-      看着像"没渲染"。失焦状态下整篇按渲染呈现，点进哪一行哪一行才回到源码。
-
-      查找面板打开时**整篇回落源码**（P3）：面板在数匹配、结果要对着源码看，
-      被渲染样式盖着的标记会让人找不到北。
-    */
-    activeRange: searchPanelOpen(view.state)
-      ? { from: 0, to: view.state.doc.length }
-      : view.hasFocus
-        ? activeRangeOf(view.state)
-        : null,
+    revealAt: revealAtOf(view),
     codeTokenMarks,
     tree,
   });
 }
 
-/** 即时渲染扩展（`Editor` 按模式挂它） */
+/**
+ * 该显现源码的位置（设计稿 §2.3）。
+ *
+ * - **失焦**：一个位置都没有 → 整篇按渲染呈现。否则刚打开一篇笔记（CM6 的选区默认落在
+ *   文档开头）会让第一行一直露着 `##`，看着像"没渲染"。
+ * - **折叠光标**：一个位置；落进哪个标记就显现哪个节点。
+ * - **展开的选区**：不显现，整篇保持渲染——复制拿到的仍是底层 Markdown（那是 `Editor`
+ *   的剪贴板规则管的）。例外：查找面板打开时按选区两端显现，命中的那一段能对着源码看；
+ *   以前这里是把**整篇**回落成源码，与"完整语法立即呈现"直接打架（P3 的旧口径）。
+ */
+function revealAtOf(view: EditorView): number[] {
+  if (!view.hasFocus) return [];
+  const main = view.state.selection.main;
+  if (main.empty) return [main.head];
+  return searchPanelOpen(view.state) ? [main.from, main.to] : [];
+}
+
+/**
+ * 即时渲染扩展（`Editor` 按模式挂它）。
+ *
+ * **不再挂 `EditorView.atomicRanges`**（v0.8.37）：标记要"进得去、看得见"才谈得上 §2.3 的
+ * 显现规则；挂成原子区间后方向键被 `moveByChar` 跳过、鼠标点进去也一样够不着，
+ * 那条规则永远触发不了。见文件头纪律 3。
+ */
 export function livePreview(): Extension {
-  const plugin = ViewPlugin.fromClass(LivePreviewPlugin, {
+  return ViewPlugin.fromClass(LivePreviewPlugin, {
     decorations: (instance) => instance.decorations,
   });
-
-  return [
-    plugin,
-    // 藏掉的标记成为"原子区间"：方向键/退格一次跨过去，不会停在看不见的标记中间
-    EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomic ?? Decoration.none),
-  ];
 }
