@@ -17,7 +17,7 @@
 import "fake-indexeddb/auto";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { noPrivacyGate } from "@menote/shared";
 import {
   createLocalItem,
@@ -33,6 +33,7 @@ import {
   saveDraft,
 } from "../src/data/db";
 import { patchItemTags } from "../src/features/notes/actions";
+import { reapBlankSeedOnLeave } from "../src/features/notes/blankSeeds";
 import { useNotesWorkspace, type NotesWorkspace } from "../src/features/notes/useNotesWorkspace";
 
 /** 无门禁的 gate 是单例（稳定引用） */
@@ -223,6 +224,47 @@ describe("离开这一篇：空白种子整条回收", () => {
       expect(await getLocalItem(id)).toBeDefined();
     });
     expect((await listItemOutbox(id)).map((row) => row.op)).toEqual(["create"]);
+  });
+
+  /*
+    回归：回收是**尽力而为**的收尾动作，库在查询途中被关掉（切档 / 卸载 / 测试收尾）时
+    不许把拒绝漏到全局。此前 `void purgeBlankSeed(...).then(...)` 没有 catch，
+    孤儿查询会以 `DatabaseClosedError` 的 unhandled rejection 炸上来 —— vitest 会因此
+    把**整轮**测试判失败（本机 CI 就这么红的），浏览器里则是控制台里一条未处理拒绝。
+  */
+  it("回收途中库被关掉 → 只记一条 warn，不漏未处理拒绝", async () => {
+    await seed("maybe", Date.now());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const changed = vi.fn();
+
+    db.close();
+    expect(() => reapBlankSeedOnLeave("maybe", "n1", changed)).not.toThrow();
+
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(changed).not.toHaveBeenCalled();
+
+    warn.mockRestore();
+    await db.open();
+  });
+
+  /*
+    同一条回归的另一半：真回收成功时会去刷新列表，那条刷新的 Promise 也是"没有人接"的
+    （调用点是 `() => refresh()`）——回收方必须等它、并把它失败也兜住。
+  */
+  it("回收成功后刷新列表失败 → 同样只记一条 warn", async () => {
+    await seed("blank", Date.now());
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const changed = vi.fn(async () => {
+      throw new Error("刷新失败");
+    });
+
+    reapBlankSeedOnLeave("blank", "n1", changed);
+
+    await waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(await getLocalItem("blank")).toBeUndefined();
+
+    warn.mockRestore();
   });
 });
 

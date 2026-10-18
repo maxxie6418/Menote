@@ -27,14 +27,29 @@ export async function loadFirstScreen(): Promise<[LocalItem[], Set<string>]> {
 /**
  * 离开这一篇时回收：只有它确实是"空白种子"才会真删（判据在回收里，见 `data/db/seed`）。
  * `changed()` 只在真删掉的那一刻叫一次——调用方据此刷新列表（否则列表里会留一条打不开的幽灵行）。
+ *
+ * `changed` 允许返回 Promise（`() => refresh()`）：**回收方负责等它、也负责兜住它的失败**。
+ * 调用方若写成 `() => void refresh()`，那条刷新就成了一条没人接的浮动 Promise——
+ * 它多半会晚于"库被关掉"发生（切档 / 卸载 / 测试收尾），于是炸成一条未处理拒绝。
  */
 export function reapBlankSeedOnLeave(
   previousId: string | null,
   currentId: string | null,
-  changed: () => void,
+  changed: () => void | Promise<void>,
 ): void {
   if (previousId === null || previousId === currentId) return;
-  void purgeBlankSeed(previousId).then((purged) => {
-    if (purged) changed();
-  });
+  void purgeBlankSeed(previousId)
+    .then(async (purged) => {
+      if (purged) await changed();
+    })
+    /*
+      这是"尽力而为"的收尾动作，**不许把拒绝漏到全局**：库被关掉（退出登录、隐私锁切档、
+      测试收尾）或页面正要卸载时，这条查询会变成孤儿，`DatabaseClosedError` 会以
+      "unhandled rejection" 的形式炸到窗口上（CI 里直接把整轮测试判失败）。
+      这里既没有补救手段、也不该打断正在进行的切档——真漏掉了，下一次启动的
+      `purgeBlankSeeds` 兜底扫一遍；刷新失败也只是列表暂时旧一帧。
+    */
+    .catch((error: unknown) => {
+      console.warn("[blank-seed] 回收空白种子失败，留给启动兜底", error);
+    });
 }

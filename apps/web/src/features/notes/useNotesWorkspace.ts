@@ -384,7 +384,8 @@ export function useNotesWorkspace(
    * 唯一落点，`open` 被更晚的点击取代时不会误回收仍然显示着的那一篇。
    */
   const applySelectedId = useCallback((id: string | null) => {
-    reapBlankSeedOnLeave(selectedIdRef.current, id, () => void refresh());
+    // 把 `refresh` 的 Promise 交回回收方去等、去兜失败：写成 `() => void refresh()` 就是一条浮动的刷新
+    reapBlankSeedOnLeave(selectedIdRef.current, id, () => refresh());
     selectedIdRef.current = id;
     setSelectedId(id);
   }, [refresh]);
