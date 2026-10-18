@@ -1,9 +1,9 @@
-# Menote 编辑器体验优化设计 v1（文档版本 v1.3）
+# Menote 编辑器体验优化设计 v1（文档版本 v1.4）
 
 | 项 | 值 |
 |---|---|
-| 文档版本 | v1.3 |
-| 文档状态 | 生效（两项目标已实现并随 v0.8.37 落地；§2、§4.2 的门槛改动经用户 2026-10-18 放行，四份定稿的冲突口径已按「文档回写不用问」回填，见 §六）。 |
+| 文档版本 | v1.4 |
+| 文档状态 | 生效（两项目标已实现并随 v0.8.37 落地；§2、§4.2 的门槛改动经用户 2026-10-18 放行，四份定稿的冲突口径已按「文档回写不用问」回填；**v1.4 回写 v0.8.39 的「正在编辑的那一行冻结」并订正一句与事实不符的注释**，见 §六）。 |
 | 目的和适用范围 | 编辑器首次可用等待、即时渲染交互与其验收；面向产品维护者与后续 AI/开发者。 |
 | 权威级别 | 模块规则 |
 | 最后更新日期 | 2026-10-18 |
@@ -12,6 +12,7 @@
 
 | 文档版本 | 应用版本 | 日期 | 修改摘要 | 修改模型ID |
 |---|---|---|---|---|
+| v1.4 | v0.8.39 | 2026-10-18 | **回写「正在编辑的那一行冻结」**（用户 2026-10-18 选择不动判据、只改重算时机；设计见 `docs/modules/MeNote-编辑器交互修复-设计-v1.md` v1.1）：①§4.3 的重算时机补一条例外——光标所在行期间该行保持进入时的装饰，`{L, R}` 变化或跨行改动才解锁；②**冻结只吃 point 装饰**（`Decoration.replace` / `Decoration.line`），代码高亮 token 是 `Decoration.mark`、永远现场重算（首版漏了这个过滤，真机出现「旁边上色、这一行不上色」）；③**订正 §4.3 里「新敲出来的标记在语法树里还不存在」那半句**——增量解析在改动后就把该行重新解析了，`syntaxTree(state)` 里已有新标记，闪烁的成因不是"树里没有"而是"每次重算都把它藏起来"；④§6.1 落点表补 `live-preview-lock.ts`。同批修的三件事（划选塌陷、纸面留白不落光标、当前行整行底色）见同目录 `MeNote-编辑器交互修复-设计-v1.md`。 | deepseek-v4.1-flash |
 | v1.3 | v0.8.37 | 2026-10-18 | **两项目标落地 + 首轮评审 10 项处置**：①§2/§4.2 门槛获放行——行为由「光标所在行显示源码」改为「光标进标记才显现源码」，**并明确不再给隐藏标记挂 `atomicRanges`**（否则揭示规则永远不可达）；②§4.3 的 `parseProgressEffect` 外部续解析协议**未采用**，改为在 `LivePreviewPlugin.update` 里比较 `syntaxTree(state)` 引用变化即重建（更简、无代次协议）；③补目标①的端到端门槛与预载代价项、真图标记命中行、退格/删除、A3.12 分隔线无内容文字等缺项；④新增 §六 记录实现落点、简化项与未验证项。 | deepseek-v4.1-flash |
 | v1.2 | v0.8.36 | 2026-10-18 | 补全首轮基线的实现位置：任务清单预览渲染另由 `apps/web/src/app/editor/markdown.ts` 配置，与编辑侧真复选框区分。 | gpt-6-luna |
 | v1.1 | v0.8.36 | 2026-10-18 | **变基到 v0.8.36 后按真实现状重写**：①图片一项按即时渲染 v6（v0.8.22 内联真图）改口径，占位块只留给 `#pending`；②代码块补 v5（v0.8.21）已有的 Prism 高亮现状；③新增 A3.15 任务清单真复选框（v4 / v0.8.20）；④§4.3 的现状论证重写——v4（v0.8.20）已用空事务强制重画补掉「定时器重算停在源码」的缺陷，原前提已不成立，`parseProgressEffect` 改为论证「外部续解析通道无通知路径」；⑤长文夹具图片行改 `#pending` 以免外部请求，800KB 字节账本随之重算；⑥门槛改动按用户 2026-10-18 决定**标为待议提案、明确不改定稿**，并点名冲突的三份现行文档。 | MiniMax-M3.1-Flash-Preview |
@@ -169,6 +170,8 @@ const closed = open + "\n" + "```";
 ### 4.3 解析预算与装饰刷新
 
 > **v1.3 落地结论：本节的 `parseProgressEffect` 外部续解析协议未采用。** 实际缺口比 v1.1 描述的更窄——`LivePreviewPlugin.update()` 原先只认 `docChanged` / `selectionSet` / `focusChanged` / `viewportChanged`，**不认「语法树换了」**；而后台解析推进（ParseWorker 产出新树后自己 `view.dispatch({ effects: Language.setState })`）与语言树被取树这两条路径都只改树、不改文档。因此实现改为：在 `update()` 里比较 `syntaxTree(update.state)` 的**引用**是否变化，变了就 `scheduleFrame` 重建一次（重建内的 `ensureSyntaxTree(50ms)` 会继续推进解析，从而形成有界的「有进展才重算」循环）。这把整条链收回插件内部，不再需要 generation / taskSeq / docVersion / viewportFrom / viewportTo 协议，也不再需要外部 `forceParsing` 与 2s watchdog。**基准必须取「state 当前的树引用」而不是「上次 build 用的树」**，否则本插件自己的 `ensureSyntaxTree` 会造成逐帧重建死循环；`docChanged` 分支先更新基准再 `return`，避免与 90ms 空闲重算重复做功。以下 v1.1 原文作为候选方案记录保留，不再作为实现依据。
+
+> **v1.4 补一条时机例外（v0.8.39）**：重建时机里多了「**正在编辑的那一行冻结**」——光标停在某一行期间，那一行的装饰保持进入时的样子，只有光标离开该行、该行的显现结论（`revealAt` 算出的区间集合）变化、或改动含跨行变更才重算；**冻结只吃 point 装饰**（`Decoration.replace` / `Decoration.line`），代码高亮 token 是 `Decoration.mark`、永远跟着内容走。于是「敲 `#` 立刻被藏起来」不再是必然：光标停在标记的 `to` 上不属于命中区间、`R = ∅` 不变 → 该行一直冻结 → 新敲的字符以源码示人。**同时订正上一段的老口径**：原文说「新敲出来的标记在语法树里还不存在」，这半句是错的——增量解析在改动之后已经把改动行重新解析了（`syntaxTree(state)` 里就有新标记），闪烁的成因恰恰相反：树里有、每次重算都把它藏起来。判据（半开区间 `[from, to)`）一字未改。
 
 - **现状（v0.8.36，`apps/web/src/app/editor/live-preview.ts`）**：以 `const PARSE_BUDGET_MS = 50` 调 `ensureSyntaxTree(view.state, view.viewport.to, PARSE_BUDGET_MS) ?? syntaxTree(view.state)` 取视口语法树，未完成时回退到部分树；重建时机按即时渲染 v3（v0.6.5）定为「打字停手 90ms（`REBUILD_IDLE_MS = 90`）重算、`selectionSet`/`focusChanged` 走下一帧且同帧多次合并成一次」。**v4（v0.8.20）已修掉一个相关缺陷**：早期定时器重算只改插件自己的 decorations 字段、CodeMirror 只在下次 `update` 才重读，导致粘贴后永远停在源码；定稿记为「重算发生在 `update` 之外时**必须触发一次 update**」，实现是定时器回调里 `if (notify) view.dispatch();`。已核对仓库锁定的 `@codemirror/language@6.12.4`：`forceParsing` 有限时推进解析、返回是否到达目标，并在解析树引用变化时调用 `view.dispatch({})`。
 - **因此本节的缺口不是「空事务不生效」**：v0.8.20 之后，插件**自身路径**（`update()` 与 90ms 定时器）里的空事务确实会触发重算。真正的缺口是——本稿设想的续解析链跑在插件**之外**，由自己的低优先级调度任务调 `forceParsing`，没有任何路径通知 `LivePreviewPlugin.update`，因而必须有一个显式、可判旧的信号把「现在可以重算了」送进去。`parseProgressEffect` 的作用是这个，**不是**绕过 v0.8.20 的缺陷。若实现阶段发现能让整条链从插件内部发起（从而无需外部 effect），优先采用更简单的方案，但必须重新验证停止条件与时延结论不变。
@@ -359,16 +362,18 @@ function generateByteFixture(targetBytes = 800_000) {
 | `apps/web/src/app/editor/loader.ts`（新建） | 共享加载器 + 空闲预载调度 + 网络策略 + 状态/重置。预载与按需加载**共用同一个 Promise**；失败不自动重试；`skipped` 只表示"预载没跑"，不阻断按需。 |
 | `apps/web/src/app/editor/EditorLoadBoundary.tsx`（新建） | 正文区片内懒加载错误边界：失败显示错误态 + 「重试」，重试先清加载器的失败状态再重建 lazy 组件。 |
 | `apps/web/src/app/editor/live-preview-reveal.ts`（新建） | 揭示判定的唯一实现（`revealSpansFor` / `HEADING_CLASSES` / `childrenOf`）。抽出原因：`live-preview.ts` 触到 `max-lines: 500` 预算，且标题节点名→类名本就该只有一份来源。 |
-| `apps/web/src/app/editor/live-preview.ts`（改） | `LivePreviewInput.activeRange` → `revealAt: readonly number[]`；`LivePreviewDecorations` 去掉 `atomic`；`livePreview()` 不再挂 `EditorView.atomicRanges`；插件按**语法树引用变化**重算。 |
+| `apps/web/src/app/editor/live-preview.ts`（改） | `LivePreviewInput.activeRange` → `revealAt: readonly number[]`；`LivePreviewDecorations` 去掉 `atomic`；`livePreview()` 不再挂 `EditorView.atomicRanges`；插件按**语法树引用变化**重算。**v1.4（v0.8.39）再改**：`LivePreviewDecorations` 加 `reveal: Span[]`，插件内维护 `LineLock`（`refreshLocked` / `lockedLineOf`），重建时对光标所在行按 `lockHolds` 决定冻结或换锁。 |
+| `apps/web/src/app/editor/live-preview-lock.ts`（新建，v1.4 / v0.8.39） | 「正在编辑的那一行冻结」的纯函数实现：`lockHolds`（行号 + 显现区间都没变才继续冻）、`lineDecorations` / `freezeLine`（按行切/换装饰，**只收 point 装饰**——`isFreezable` 排掉 `Decoration.mark`，代码高亮 token 因此永远现场重算）、`insertsLineBreak`（跨行改动解锁）、`sameReveal`。抽出原因同 `live-preview-reveal.ts`：`live-preview.ts` 触 `max-lines` 预算，且 jsdom 里建不出真 `EditorView`，判定必须是纯函数才可测。 |
 | `apps/web/src/features/notes/ui/NoteWorkspace.tsx`（改） | 懒加载改走共享加载器；`<Suspense>` 外包一层 `EditorLoadBoundary`；重试路径 `resetEditorLoad()` + 重建 lazy。 |
 | `apps/web/src/app/workarea/NotesPane.tsx`（改） | 主工作区挂载即 `scheduleEditorPreload()`——§3.1 的「认证 + 主工作区可交互」在本应用里就是这一处。 |
-| 用例 | `apps/web/test/live-preview.test.ts`（32 条）、`apps/web/test/editor-loader.test.ts`（7 条）、`apps/web/test/editor-load-boundary.test.tsx`（3 条）。 |
+| 用例 | `apps/web/test/live-preview.test.ts`（32 条）、`apps/web/test/editor-loader.test.ts`（7 条）、`apps/web/test/editor-load-boundary.test.tsx`（3 条）；**v1.4（v0.8.39）补** `apps/web/test/live-preview-lock.test.ts`（10 条：冻结/解锁/跨行/行切/point 过滤）、`apps/web/test/frontmatter-hide.test.ts` 的选区夹取用例、`apps/web/test/editor-toolbar.test.tsx` 的 `onAttach` 三条。 |
 
 ### 6.2 交互契约的实现口径（与 §2 对应）
 
 - 揭示判定的输入是**一组位置**（`revealAt: number[]`）：失焦 → 空（整篇渲染，保留原细化）；折叠光标 → `[head]`；非折叠选区 → 空（按 §2.3 保持渲染态、`text/plain` 仍取底层 Markdown）；**查找面板打开时** → 选区端点 `[from, to]`。
 - 命中判定用半开区间 `[from, to)`；命中后显现的是**包含该标记的最小受支持节点的全部标记**（嵌套取跨度最小者；`Image` / `HorizontalRule` 这类整节点直接整段显现）。位置落在内容文字上不显现任何标记。
 - `hide(start, end, prefix)` 在 `prefix` 为真时把"标记 + 后随空白"一起隐藏（`## `、`> `、`- ` 这类）；一个位点被揭示时该段的隐藏整体让位。
+- **【v1.4 / v0.8.39】正在编辑的那一行冻结**：重建时若光标所在行号与"该行应显现的区间集合"都没变、且本次改动不含跨行变更，则该行改用锁定那份装饰（`freezeLine`），其余行照常重算；`insertsLineBreak` 为真一律解锁。**冻结只作用于 point 装饰**（`Decoration.replace` / `Decoration.line`），`Decoration.mark` 不进锁——代码高亮 token 因此与本行内容同步（这是首版实测暴露的缺陷，见 §6.2 之后 v1.4 的设计稿 §6.1-C）。
 
 ### 6.3 首轮评审 10 项处置
 
