@@ -7,9 +7,9 @@
  * 只依赖 `EditorState` 与 Lezer 语法树，于是"哪些标记被藏了、活动行有没有露源码、
  * 列表/图片的 widget 长什么样"这些都能进 CI，不必靠肉眼。
  *
- * 覆盖首期的语法清单（与 `docs/modules/Menote-即时渲染-设计-v1.md` 的覆盖表一一对应）：
- * 标题 / 强调 / 删除线 / 行内代码 / 链接 / 引用 / 列表（含有序） / 分隔线 / 图片占位 / 代码块底色，
- * 以及**光标所在行显示源码**这条核心交互。
+ * 覆盖首期的语法与装饰（与 `docs/modules/Menote-即时渲染-设计-v1.md` 的覆盖表一一对应）：
+ * 标题 / 强调 / 删除线 / 行内代码 / 链接 / 引用 / 列表（含有序） / 分隔线 / `#pending` 上传占位 / 内联真图 / 代码块底色，
+ * 以及**光标所在行显示源码**这条核心交互；任务清单 widget 在本文件后续用例覆盖，Prism token 高亮另由 `apps/web/test/code-highlight.test.ts` 覆盖。
  */
 import { ensureSyntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -237,7 +237,7 @@ describe("即时渲染：标记藏起来、内容留样式", () => {
     expect(img?.getAttribute("src")).toBe("https://example.com/a.png");
   });
 
-  it("代码块：围栏与语言保持源码可见，只给行底色（首期不做语言高亮）", () => {
+  it("代码块：围栏与语言保持源码可见，行底色覆盖代码行（Prism 高亮另测）", () => {
     const doc = "```js\nconst a = 1;\n```";
     const state = makeState(doc);
     expect(hidden(state, doc)).toEqual([]);
