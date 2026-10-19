@@ -924,9 +924,32 @@ button {
   border-radius: 1px;
 }
 
-[data-editor] .cm-selectionBackground,
+/*
+  选区：一律用主题主色的半透明色，不再露出系统默认的亮蓝（v0.8.41，用户：「深色主题选择后
+  是亮蓝色，反差很刺眼」）。
+  `!important` 是必需的：CodeMirror 的 baseTheme 自带两档选择色（未聚焦 `#d9d9d9`、
+  聚焦 `#d7d4f0`），聚焦那一档的选择器是
+  `.cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground`，
+  比这里的 `[data-editor] .cm-selectionBackground` 长一截；而本仓库**没有**给 CM 设
+  `darkTheme`（它一直按浅色算），所以深色主题下落在 `--panel`（#242424）上的正是那道
+  `#d7d4f0`（浅藕荷）——就是用户看到的那条刺眼亮带。
+  透明度取 30%：`--primary-soft`（0.12 / 0.16）作选区太淡，拖选时几乎看不出选到哪。
+*/
+[data-editor] .cm-selectionBackground {
+  background: color-mix(in srgb, var(--primary) 30%, transparent) !important;
+}
+
+/* 原生选区在编辑器里由 CM 的选区层接管（它自己会置成 transparent），这条只是兜底。 */
 [data-editor] .cm-content ::selection {
-  background: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+/*
+  编辑器之外的文字（条目列表、面板、设置页）也走同一套选区色：
+  此前全仓只有上面那条编辑器规则，其余地方是浏览器原生选区，深色主题下同样是刺眼的亮蓝。
+*/
+::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
 }
 
 /*
