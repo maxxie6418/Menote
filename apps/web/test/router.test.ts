@@ -24,9 +24,14 @@ describe("设置分类的路由往返", () => {
     // 原「数据管理」改名「附件」但**id 仍是 `data`**（老书签与深链不失效）。
     // **【v0.8.30】9 类 → 10 类**：新增「属性库」（`prop-library`，设计 §6.2，
     // 账号级偏好的键值字典；它是删条目的唯一入口）。
+    // **【v0.8.40】10 类 → 11 类**：新增「编辑设置」（`editor`，用户 2026-10-19）——
+    // 正文排版 / 标题样式 / 工具栏大小，加上从「通用」搬回来的编辑模式卡。
+    // **id 复用 `editor`**：老书签 `#/settings/editor` 当年想看的就是编辑器设置，
+    // 现在落到这个新页（不再是重定向到「通用」，见下一条）。
     expect([...SETTINGS_PAGES].sort()).toEqual(
       [
         "general",
+        "editor",
         "account",
         "backup",
         "shares",
@@ -40,19 +45,22 @@ describe("设置分类的路由往返", () => {
     );
   });
 
-  it("撤销的两个分类：老 hash 仍落到「通用」，不是死链（v0.8.4）", () => {
+  it("撤销的分类：老 hash 仍落到「通用」，不是死链（v0.8.4；v0.8.40 起只剩 about）", () => {
     /*
       这条是本次调整里**最容易漏、后果最隐蔽**的一条：分类从 `SETTINGS_PAGES` 拿掉后，
       `parseRoute` 里那句"匹配不到就回落 general"会自动接住它们——表现与 2026-09-27
       修过的那个 bug **完全同形**（不报错、不白屏，只是安静地落在别处）。
-      所以显式的 `LEGACY_SETTINGS_PAGES` 与"清单里不该再有它们"两件事都要钉住。
+      所以显式的 `LEGACY_SETTINGS_PAGES` 与"清单里不该再有它"两件事都要钉住。
+
+      **v0.8.40**：`editor` 重新进了 `SETTINGS_PAGES`（新分类「编辑设置」），所以它那条
+      重定向被删掉、它自己成了一个真页面——这里的期望值随之改：只剩 `about` 是重定向。
     */
-    expect(LEGACY_SETTINGS_PAGES).toEqual({ editor: "general", about: "general" });
-    expect(parseRoute("#/settings/editor")).toEqual({ name: "settings", page: "general" });
+    expect(LEGACY_SETTINGS_PAGES).toEqual({ about: "general" });
     expect(parseRoute("#/settings/about")).toEqual({ name: "settings", page: "general" });
+    // 老书签不再被夹到「通用」，而是落到新的编辑设置页
+    expect(parseRoute("#/settings/editor")).toEqual({ name: "settings", page: "editor" });
 
     // 真正的原因是"已撤销"而不是"拼错了"——两者界面上都落到通用，但只有前者该被有意保留
-    expect([...SETTINGS_PAGES]).not.toContain("editor");
     expect([...SETTINGS_PAGES]).not.toContain("about");
   });
 

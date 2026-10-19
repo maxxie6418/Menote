@@ -92,7 +92,12 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
    */
   it("编辑器各档与仅预览共享同一内容边界", () => {
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "width")).toBe("100%");
-    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "max-width")).toBe("800px");
+    // v0.8.40：纸面宽度可由用户调（设置 › 编辑设置 › 正文排版），取值成了带兜底的变量——
+    // **兜底仍是 800**，所以"没配过"的渲染与加这个设置之前逐像素相同。仅预览档引同一个变量
+    // （下面那组逐字比就是这条的守卫：两档不可能各自漂）。
+    expect(effectiveValue(rules, "[data-editor] .cm-scroller", "max-width")).toBe(
+      "var(--doc-paper-w, 800px)",
+    );
     // 2026-10-11：纸面上下各留一段间距（`--sp-5`），左右仍是 auto 居中
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "margin")).toBe("var(--sp-5) auto");
     // 2026-10-18（v0.8.39）：内边距从纸面搬到正文元素（CodeMirror 只把鼠标事件绑在 contentDOM
@@ -136,7 +141,9 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
       expect(editor, prop).not.toBe("");
     }
     expect(effectiveValue(rules, "[data-editor] .cm-scroller", "min-height")).toBe(
-      "calc(800px * 297 / 210)",
+      // v0.8.40：纸面宽度可调后，A4 下限跟着宽度走（比例不变）——
+      // 变量兜底仍是 800，所以默认渲染与加设置之前逐像素相同
+      "calc(var(--doc-paper-w, 800px) * 297 / 210)",
     );
     // 桌面色（纸外那圈）挂在外层滚动容器上
     expect(effectiveValue(rules, ".docpane__body", "background")).toBe("var(--bg-soft)");
@@ -153,7 +160,8 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
   */
   it("格式工具栏与正文纸面共用同一列宽口径", () => {
     for (const selector of [".itemprops__inner", ".editor-toolbar__inner"]) {
-      expect(effectiveValue(rules, selector, "max-width")).toBe("800px");
+      // v0.8.40：与纸面引**同一个**变量（不是另抄一个 800），两者才不会各自漂
+      expect(effectiveValue(rules, selector, "max-width")).toBe("var(--doc-paper-w, 800px)");
       expect(effectiveValue(rules, selector, "margin")).toBe("0 auto");
       expect(effectiveValue(rules, selector, "padding")).toBe("0 48px");
     }
@@ -163,7 +171,9 @@ describe("级联覆盖（同选择器同属性不许被后置规则改值）", (
   it("memo / 待办那三条显示修复的取值被钉住", () => {
     expect(effectiveValue(rules, ".markdown-body", "max-width")).toBe("");
     expect(effectiveValue(rules, ".markdown-body", "padding")).toBe("");
-    expect(effectiveValue(rules, ".docpane__body .markdown-body", "max-width")).toBe("800px");
+    expect(effectiveValue(rules, ".docpane__body .markdown-body", "max-width")).toBe(
+      "var(--doc-paper-w, 800px)",
+    );
     expect(effectiveValue(rules, ".docpane__body .markdown-body", "padding")).toBe(
       "var(--sp-5) 48px 80px",
     );

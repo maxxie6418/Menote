@@ -314,6 +314,70 @@ export const PropLibraryEntrySchema = v.object({
 });
 export type PropLibraryEntry = v.InferOutput<typeof PropLibraryEntrySchema>;
 
+/**
+ * 编辑器排版的**可选覆盖**（2026-10-19，设计 `docs/modules/Menote-编辑设置-设计-v1.md` §4）。
+ *
+ * 语义一句话：**空 = 跟随主题**。所有字段都 optional，没有值就用 `DESIGN.md` §3.3 的令牌值；
+ * 于是"全新账号"与"把项清空"是同一种状态，不需要另外存一份"默认值快照"来回位。
+ *
+ * 边界值（字号 11–24、纸面 640–1100）**只写一份在这里**：设置页的输入控件与读侧的夹取都引它，
+ * 两份清单迟早漂移（v0.4.34 在 `VERSIONS_MIN/MAX` 上吃过这个亏）。
+ *
+ * 它只管**账号级**的正文排版；编辑器顶部工具栏的大小是**本机**偏好（`menote:editor:toolbar-size`），
+ * 不进这份契约——理由是"我这块屏幕看着小"与设备绑定，同主题、「上次用的那一档」。
+ */
+export const EDITOR_FONT_FAMILIES = ["sans", "mono"] as const;
+export const EditorFontFamilySchema = v.picklist(EDITOR_FONT_FAMILIES);
+export type EditorFontFamily = v.InferOutput<typeof EditorFontFamilySchema>;
+
+/** 正文字号的取值区间（px）——**设置页与读侧共用这一份** */
+export const EDITOR_FONT_SIZE_MIN = 11;
+export const EDITOR_FONT_SIZE_MAX = 24;
+/** 纸面宽度的取值区间（px）——同上 */
+export const EDITOR_PAPER_WIDTH_MIN = 640;
+export const EDITOR_PAPER_WIDTH_MAX = 1100;
+/**
+ * 标题字号的取值区间（px）——比正文宽：H1 的令牌值就有 20px，
+ * 想让标题"再大一点"是这条需求的一半诉求。上限 40 是"再大就会把行挤断"的经验值。
+ */
+export const HEADING_FONT_SIZE_MIN = 10;
+export const HEADING_FONT_SIZE_MAX = 40;
+
+/** 可调样式的标题级别（键即 CSS 里的级别名，顺序即界面里的行顺序） */
+export const HEADING_LEVELS = ["h1", "h2", "h3", "h4", "h5", "h6"] as const;
+export type HeadingLevel = (typeof HEADING_LEVELS)[number];
+/** 粗细候选（下拉用；不选 = 跟随主题） */
+export const HEADING_WEIGHTS = [400, 500, 600, 700] as const;
+
+export const HeadingStyleSchema = v.object({
+  /** 字号（px）；缺省 = 该级的令牌字号 */
+  size: v.optional(v.number()),
+  /** 字重；缺省 = 该级令牌值（h1–h6 都是 700） */
+  weight: v.optional(v.number()),
+  /** 任意 CSS 颜色；缺省 = 该级令牌色（h1–h4 继承正文，h5/h6 是 `--text-2` / `--muted`） */
+  color: v.optional(v.string()),
+});
+export type HeadingStyle = v.InferOutput<typeof HeadingStyleSchema>;
+
+export const EditorTypographySchema = v.object({
+  font_size: v.optional(v.number()),
+  font_family: v.optional(EditorFontFamilySchema),
+  paper_width: v.optional(v.number()),
+  /** 键是 `h1`…`h6`；没有这个键、或键里没这个字段 = 该级跟随主题 */
+  headings: v.optional(v.record(v.string(), HeadingStyleSchema), {}),
+});
+export type EditorTypography = v.InferOutput<typeof EditorTypographySchema>;
+
+/**
+ * 读侧要接的**输入**形状（`headings` 在 schema 里有默认值 `{}`，所以输出类型里它是必填，
+ * 而读老数据 / 读另一实例写下来的 JSON 时它可能整个缺失）。
+ * 纯函数（`editorTypographyVars` / `paperWidthOf`）收它，输出类型与部分对象都能直接传进来。
+ */
+export type EditorTypographyInput = v.InferInput<typeof EditorTypographySchema>;
+
+/** 全空 = 全部跟随主题（新账号与"全部清空"是同一种状态） */
+export const DEFAULT_EDITOR_TYPOGRAPHY: EditorTypography = { headings: {} };
+
 export const UserSettingsSchema = v.object({
   start_view: StartViewSchema,
   timezone: v.string(),
@@ -342,6 +406,12 @@ export const UserSettingsSchema = v.object({
    * 顺序由 {@link normalizeEditorModes} 收口，不依赖存储里的顺序。
    */
   editor_modes: v.optional(v.array(EditorModeSchema), () => [...DEFAULT_EDITOR_MODES]),
+  /**
+   * 正文排版的可选覆盖（2026-10-19，设置 › 编辑设置）。**optional + 默认值**：
+   * 老行与旧客户端 PUT 不带它不会被 422，读侧由 schema 补默认值（**不需要迁移**：设置是整份 JSON）。
+   * **空 = 跟随主题**，语义见 `EditorTypographySchema`。
+   */
+  editor_typography: v.optional(EditorTypographySchema, () => ({ headings: {} })),
   /** 选中的功能项；**数组顺序即菜单里的显示顺序** */
   quick_menu: v.array(QuickMenuFeatureSchema),
   /**
@@ -400,6 +470,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   timezone: "Asia/Shanghai",
   editor_mode: "live",
   editor_modes: [...DEFAULT_EDITOR_MODES],
+  editor_typography: { headings: {} },
   quick_menu: QUICK_MENU_FEATURES.filter((feature) => feature.defaultOn).map(
     (feature) => feature.id,
   ),

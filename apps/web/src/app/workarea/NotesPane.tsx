@@ -6,7 +6,7 @@
  * 2. **单篇加密的四个动作**（加密此篇 / 取消加密 / 锁上此篇 / 锁上全部单篇）与它们的可用性说明，
  *    都来自隐私锁组装层，界面只负责呈现原因（禁用必须带 `title`）。
  */
-import type { EditorMode, PrivacyGate } from "@menote/shared";
+import type { EditorMode, EditorTypography, PrivacyGate } from "@menote/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/Controls";
 import { Modal } from "../ui/Modal";
@@ -78,6 +78,8 @@ export interface NotesPaneProps {
   onPropLibraryChange?: (next: PropLibraryEntry[]) => void;
   /** 属性显示名（2026-10-11 重设计 v1 §4）：只读转发，写入只在设置页的属性库 */
   propLabels?: PropLabels;
+  /** 正文排版（v0.8.40，账号级 `user_settings.editor_typography`）：只读转发给正文区 */
+  editorTypography?: EditorTypography;
 }
 
 export function NotesPane({
@@ -92,6 +94,7 @@ export function NotesPane({
   propLibrary,
   onPropLibraryChange,
   propLabels,
+  editorTypography,
 }: NotesPaneProps) {
   const selected = workspace.selected;
   /** 待确认删除的条目 id（确认框在下方渲染；列表行只报事件） */
@@ -345,6 +348,7 @@ export function NotesPane({
             propLibrary={propLibrary}
             onPropLibraryChange={onPropLibraryChange}
             propLabels={propLabels}
+            editorTypography={editorTypography}
             initialBody={workspace.initialBody}
             snapshot={workspace.snapshot}
             initialMode={editorMode}

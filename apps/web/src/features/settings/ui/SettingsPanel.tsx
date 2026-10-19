@@ -16,7 +16,8 @@ import { InfoHint } from "../../../app/ui/InfoHint";
 import type { ThemeMode } from "../../../app/theme/useTheme";
 import { SETTINGS_PAGES, type SettingsPageId } from "../../../app/router";
 import { CardQuickMenu } from "./CardQuickMenu";
-import { AboutCard, EditorModesCard, LocalOnlyTag } from "./GeneralCards";
+import { AboutCard, LocalOnlyTag } from "./GeneralCards";
+import { EditorSettingsPage } from "./EditorSettingsPage";
 // 「编辑试验」暂时收起（2026-10-01，与 `router.ts` / `PAGE_META` 同步注释）：
 // import { EditorLabPage } from "../../editor-lab/ui/EditorLabPage";
 import { BackupPage } from "../../backup/ui/BackupPage";
@@ -37,12 +38,18 @@ import { InstancePage } from "./InstancePage";
  * 原 11 类里「编辑器」与「关于」被撤销、内容并进「通用」；原「数据管理」改名「附件」
  * （**id 仍是 `data`**，只换显示名，老书签与深链照旧能用）。
  * **【v0.8.30】10 类**：新增「属性库」（`prop-library`，用户 2026-10-11 拍板，设计 §6.2）。
+ * **【v0.8.40】11 类**：新增「编辑设置」（`editor`，用户 2026-10-19 拍板）——正文排版、标题样式、
+ * 工具栏大小，以及从「通用」搬回来的「编辑模式」卡（原来那个 `editor` 分类的 id 复用）。
  * 简述不进页面正文，只进页头那个 ⓘ（DESIGN.md §5.4-1：说明性文字不平铺）。
  */
 const PAGE_META: Record<SettingsPageId, { title: string; summary: string }> = {
   general: {
     title: "通用",
-    summary: "界面与编辑偏好、启动视图、时区、快捷菜单，以及版本号",
+    summary: "界面偏好、启动视图、时区、快捷菜单，以及版本号",
+  },
+  editor: {
+    title: "编辑设置",
+    summary: "编辑模式、正文排版与标题样式（跟随账号），以及工具栏大小（本机）",
   },
   account: { title: "账户与安全", summary: "登录密码与会话" },
   backup: { title: "备份与导出", summary: "把数据送到外部备份，或从备份恢复" },
@@ -64,8 +71,8 @@ const PAGE_META: Record<SettingsPageId, { title: string; summary: string }> = {
 };
 
 /**
- * 导航顺序即当前生效的 10 类（v0.8.4 起 9 类，v0.8.30 加「属性库」）：
- * 通用 / 账户与安全 / 隐私锁 / 版本与回收站 / 备份与导出 / 分享 / MCP / 附件 / 属性库 / 实例管理。
+ * 导航顺序即当前生效的 11 类（v0.8.4 起 9 类，v0.8.30 加「属性库」，v0.8.40 加「编辑设置」）：
+ * 通用 / 编辑设置 / 账户与安全 / 隐私锁 / 版本与回收站 / 备份与导出 / 分享 / MCP / 附件 / 属性库 / 实例管理。
  * 「实例管理」只对 owner 列出（见下方 `pages` 的过滤）。
  *
  * **清单直接引用路由那一份**：两处各写一份会漂移——M3 加「隐私锁」时只加了
@@ -427,11 +434,10 @@ export function SettingsPanel({
             </section>
 
             {/*
-              「编辑体验」（v0.8.4 由原「编辑器」分类搬来，见 `docs/modules/Menote-M8-设置页信息架构-v1.md` §2.1）。
-              内容抽到 `GeneralCards.tsx`：原「编辑器」整页只有 3 个开关却独占一个一级分类，
-              而「隐私锁」有 5 张卡——粒度差 12 倍。搬运时控件与不变式一条没变。
+              「编辑体验」卡 v0.8.40 搬去「编辑设置」页（`EditorSettingsPage.tsx`）——
+              用户 2026-10-19 的口径是"新建独立分类 + 把它搬进来"，所以这里**一份不留**：
+              同一张卡在两处各写一遍，迟早一处改了另一处没改。
             */}
-            <EditorModesCard userSettings={userSettings} onPatchSettings={onPatchSettings} />
 
             <CardQuickMenu
               selected={userSettings.quick_menu}
@@ -451,6 +457,14 @@ export function SettingsPanel({
         {/* 「编辑试验」暂时收起（2026-10-01，与 `router.ts` / `PAGE_META` 同步注释）：
             试验区按桌面稿排布，窄面板里会挤成一条。恢复时把这一行与 import 一起放回即可。 */}
         {/* {page === "editor-lab" ? <EditorLabPage /> : null} */}
+
+        {/* 编辑设置（v0.8.40）：四张卡都在页面组件里，含从「通用」搬来的「编辑模式」卡 */}
+        {page === "editor" ? (
+          <EditorSettingsPage
+            userSettings={userSettings}
+            onPatchSettings={onPatchSettings}
+          />
+        ) : null}
 
         {page === "backup" ? <BackupPage /> : null}
 

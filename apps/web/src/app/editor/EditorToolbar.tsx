@@ -14,6 +14,12 @@ import { DropdownMenu, type MenuItemSpec } from "../ui/Menu";
 import { Icon, type IconName } from "../ui/Icon";
 import type { FormatCommandArg, FormatCommandId } from "./format-commands";
 import { hintFor } from "./shortcuts";
+import {
+  DEFAULT_TOOLBAR_SIZE,
+  TOOLBAR_ICON_SIZE,
+  type ToolbarIconSize,
+  type ToolbarSize,
+} from "./toolbar-size";
 
 export interface EditorToolbarProps {
   /** 整条禁用（如正文锁定），此时必须给 `disabledReason`（DESIGN §6.1：禁用要说明原因） */
@@ -28,6 +34,14 @@ export interface EditorToolbarProps {
    * 只转发给宿主的隐藏 `<input type="file">`。不传就不渲染这颗按钮（表格档没有它）。
    */
   onAttach?: () => void;
+  /**
+   * 工具栏大小（v0.8.40，设置 › 编辑设置 › 工具栏）：**本机偏好**，不传按「中」。
+   *
+   * 为什么是 props 而不是让这里自己读 localStorage：`NoteWorkspace` 才是"本机偏好"的读取处
+   * （它与 `editor-mode.ts` / `props-collapse.ts` 同层），工具栏保持**只做呈现与转发**——
+   * 组件里混一次存储读取，测试就得为它造 localStorage。
+   */
+  size?: ToolbarSize;
 }
 
 /** 一枚格式按钮需要的最小描述 */
@@ -78,11 +92,13 @@ function headingItems(onCommand: EditorToolbarProps["onCommand"]): MenuItemSpec[
 
 function ToolButton({
   spec,
+  iconSize,
   disabled,
   disabledReason,
   onCommand,
 }: {
   spec: ToolSpec;
+  iconSize: ToolbarIconSize;
   disabled?: boolean;
   disabledReason?: string;
   onCommand: EditorToolbarProps["onCommand"];
@@ -93,7 +109,7 @@ function ToolButton({
       /* 禁用时的可访问名就是动作本身；键位提示只属于可用的按钮 */
       label={disabled ? spec.label : hint}
       icon={spec.icon}
-      size={13}
+      size={iconSize}
       disabled={disabled}
       title={disabled ? disabledReason : hint}
       data-toolbar-button={spec.id}
@@ -107,12 +123,27 @@ function GroupSeparator() {
   return <span className="editor-toolbar__sep" aria-hidden="true" />;
 }
 
-export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onAttach }: EditorToolbarProps) {
+export function EditorToolbar({
+  disabled,
+  disabledReason,
+  onCommand,
+  onFind,
+  onAttach,
+  size = DEFAULT_TOOLBAR_SIZE,
+}: EditorToolbarProps) {
   const heading = headingItems(onCommand);
   const findHint = hintFor("find", "查找与替换");
   const attachHint = hintFor("attach", "添加附件");
+  /* 图标尺寸只能走 prop（图标的 width/height 由组件写出）；盒子的内边距由 `app.css` 按 `data-size` 调 */
+  const iconSize = TOOLBAR_ICON_SIZE[size];
   return (
-    <div className="editor-toolbar" role="toolbar" aria-label="格式" aria-disabled={disabled || undefined}>
+    <div
+      className="editor-toolbar"
+      role="toolbar"
+      aria-label="格式"
+      data-size={size}
+      aria-disabled={disabled || undefined}
+    >
       {/*
         按钮排在内层盒子里：收窄与居中的那组规则与属性带共用（见 `app.css` 的
         `.itemprops__inner`），这样按钮列和文章左边界对齐，而分隔线仍留在整条带上。
@@ -125,7 +156,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
         <IconButton
           label={findHint}
           icon="search"
-          size={13}
+          size={iconSize}
           disabled={disabled}
           title={disabled ? disabledReason : findHint}
           data-toolbar-button="find"
@@ -137,7 +168,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
           为禁用态给它加参数，比在这里放一个"点了还是会开"的菜单划算。
         */}
         {disabled ? (
-          <IconButton label="标题样式" icon="heading" size={13} disabled title={disabledReason} />
+          <IconButton label="标题样式" icon="heading" size={iconSize} disabled title={disabledReason} />
         ) : (
           <DropdownMenu
             /* 不叫「标题」：正文区的标题输入框已经占了这个可访问名，重名会砸了按名查询的用例 */
@@ -145,7 +176,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
             align="left"
             trigger={
               <span className="editor-toolbar__menu-trigger" aria-hidden="true">
-                <Icon name="heading" size={13} />
+                <Icon name="heading" size={iconSize} />
               </span>
             }
             items={heading}
@@ -156,6 +187,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
           <ToolButton
             key={spec.id}
             spec={spec}
+            iconSize={iconSize}
             disabled={disabled}
             disabledReason={disabledReason}
             onCommand={onCommand}
@@ -166,6 +198,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
           <ToolButton
             key={spec.id}
             spec={spec}
+            iconSize={iconSize}
             disabled={disabled}
             disabledReason={disabledReason}
             onCommand={onCommand}
@@ -176,6 +209,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
           <ToolButton
             key={spec.id}
             spec={spec}
+            iconSize={iconSize}
             disabled={disabled}
             disabledReason={disabledReason}
             onCommand={onCommand}
@@ -191,7 +225,7 @@ export function EditorToolbar({ disabled, disabledReason, onCommand, onFind, onA
             <IconButton
               label={disabled ? "添加附件" : attachHint}
               icon="image"
-              size={13}
+              size={iconSize}
               disabled={disabled}
               title={disabled ? disabledReason : attachHint}
               data-toolbar-button="attach"

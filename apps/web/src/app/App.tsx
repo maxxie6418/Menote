@@ -638,6 +638,8 @@ export default function App() {
             propLibrary={userSettings.settings.prop_library}
             onPropLibraryChange={patchPropLibrary}
             propLabels={userSettings.settings.prop_labels}
+            /* 正文排版（v0.8.40）：账号级偏好，正文区把它翻成一组 CSS 变量挂在 `.docpane` 上 */
+            editorTypography={userSettings.settings.editor_typography}
           />
         )}
       </AppShell>

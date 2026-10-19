@@ -5,7 +5,12 @@
  * 切换条目由 `key={item.id}` 重新挂载编辑器；切换编辑/预览模式**不重建文档**（架构 §3.3）。
  */
 import { Suspense, lazy, useCallback, useMemo, useRef, useState } from "react";
-import { type EditorMode, isProductEditorMode, normalizeEditorModes } from "@menote/shared";
+import {
+  type EditorMode,
+  type EditorTypography,
+  isProductEditorMode,
+  normalizeEditorModes,
+} from "@menote/shared";
 import { EmptyDocPanel } from "../../../app/workarea/EmptyDocPanel";
 import { Button } from "../../../app/ui/Controls";
 import { Modal } from "../../../app/ui/Modal";
@@ -28,6 +33,8 @@ import { TableDegradeNotice } from "../../tables/ui/TableDegradeNotice";
 import { useTableDoc } from "../../tables/useTableDoc";
 import { renderTableDocument } from "@menote/mdcore";
 import { EditorToolbar } from "../../../app/editor/EditorToolbar";
+import { readToolbarSize } from "../../../app/editor/toolbar-size";
+import { editorTypographyVars, paperWidthOf } from "../../settings/editor-typography";
 import { loadEditorModule, resetEditorLoad } from "../../../app/editor/loader";
 import { EditorLoadBoundary } from "../../../app/editor/EditorLoadBoundary";
 import type { EditorHandle } from "../../../app/editor/Editor";
@@ -203,6 +210,13 @@ export interface NoteWorkspaceProps {
    * **只读**：界面怎么叫由设置页决定，正文侧一个字都不写它——写回 md 的永远是源键名。
    */
   propLabels?: PropLabels;
+  /**
+   * 正文排版（v0.8.40；账号级偏好 `user_settings.editor_typography`）：字号 / 字族 / 纸面宽度 /
+   * 各级标题的字号粗细颜色。这里**只转发**——设置翻成 CSS 变量的活由
+   * `features/settings/editor-typography.ts` 的纯函数干，正文区只把它挂到 `.docpane` 上，
+   * 编辑档、即时渲染档、仅预览档、格式工具栏四处一起继承（它们唯一的共同祖先就是这一层）。
+   */
+  editorTypography?: EditorTypography;
 }
 
 export function NoteWorkspace({
@@ -237,6 +251,7 @@ export function NoteWorkspace({
   propLibrary = [],
   onPropLibraryChange,
   propLabels,
+  editorTypography,
 }: NoteWorkspaceProps) {
   /** 用户在设置里**开着**的档（`editor_modes`）；这里同时收口"产品允许哪几档" */
   const available = useMemo(() => normalizeEditorModes(availableModes), [availableModes]);
@@ -314,7 +329,7 @@ export function NoteWorkspace({
     `bodyRef` 挂在真正滚动的 `.doc-split__pane` 上（编辑/预览两档共用同一个位置），
     大纲靠它知道"现在滚到哪儿了"、以及仅预览时那些标题在哪。
   */
-  const rails = useRails();
+  const rails = useRails(paperWidthOf(editorTypography));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   /** 大纲只在普通 Markdown 条目出现：表格档有自己的界面，Memo 没有独立正文 */
   const outlineEnabled = item != null && item.type !== "memo" && !isTable;
@@ -343,7 +358,7 @@ export function NoteWorkspace({
   }
 
   return (
-    <div className="docpane">
+    <div className="docpane" style={editorTypographyVars(editorTypography)}>
       {conflict ? (
         <div className="banner banner--warn" role="status">
           <span>
@@ -525,6 +540,7 @@ export function NoteWorkspace({
           onCommand={(command, arg) => editorHandle?.applyFormat(command, arg)}
           onFind={() => editorHandle?.openSearch("find")}
           onAttach={onFiles ? () => fileInputRef.current?.click() : undefined}
+          size={readToolbarSize()}
         />
       ) : null}
 

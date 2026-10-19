@@ -439,15 +439,10 @@ describe("设置壳", () => {
     // 「编辑试验」2026-10-01 暂时收起（用户 2026-10-01），故不在下列清单里。
     // **【v0.8.4】11 类 → 9 类**：「编辑器」与「关于」不再是独立分类（内容并进「通用」），
     // 原「数据管理」改名「附件」。
+    // **【v0.8.40】分类回到 11 类**：新增「编辑设置」（`editor`）——它**不是**当年被撤销的「编辑器」，名称与内容都不同。
     for (const label of [
-      "通用",
-      "账户与安全",
-      "备份与导出",
-      "隐私锁",
-      "版本与回收站",
-      "MCP",
-      "附件",
-      "实例管理",
+      "通用", "编辑设置", "账户与安全", "备份与导出", "隐私锁",
+      "版本与回收站", "MCP", "附件", "实例管理",
     ]) {
       expect(within(nav).getByRole("button", { name: label })).toBeTruthy();
     }
@@ -492,11 +487,17 @@ describe("设置壳", () => {
       expect(within(row).queryByText("本机"), name).toBeNull();
     }
 
-    // 编辑体验卡同口径：开关跟账号（不标），"上次用的那一档"记本机（标）
+    // 编辑模式卡同口径：开关跟账号（不标），"上次用的那一档"记本机（标）。
+    // **v0.8.40 起这张卡在「编辑设置」页**，所以换一页渲染再断言（通用页已没有它）。
+    cleanup();
+    render(<SettingsPanel {...baseProps} page="editor" />);
     const modeRow = screen.getByRole("switch", { name: "仅编辑" }).closest(".setrow") as HTMLElement;
     expect(within(modeRow).queryByText("本机")).toBeNull();
     const lastUsed = screen.getByText("打开时用哪一档").closest(".setrow") as HTMLElement;
     expect(within(lastUsed).getByText("本机")).toBeTruthy();
+    // 工具栏大小是这一页里第二处「本机」例外（屏幕尺度跟设备走，不跟账号）
+    const toolbarRow = screen.getByText("大小").closest(".setrow") as HTMLElement;
+    expect(within(toolbarRow).getByText("本机")).toBeTruthy();
   });
 
   it("「关于」并进「通用」页底部：版本号与项目仓库地址（v0.8.4）", () => {
@@ -508,15 +509,38 @@ describe("设置壳", () => {
     expect(link.target).toBe("_blank");
   });
 
-  it("「编辑体验」并进「通用」页：三个编辑模式开关与那张卡都在（v0.8.4）", () => {
-    render(<SettingsPanel {...baseProps} page="general" />);
+  it("「编辑模式」卡在「编辑设置」页：三个开关与那张卡都在（v0.8.4 搬进通用，v0.8.40 再搬到这里）", () => {
+    render(<SettingsPanel {...baseProps} page="editor" />);
 
     // 按**卡片的 aria-label** 定位而不是标题：卡片标题里内嵌着 ⓘ 按钮，
     // 它的可访问名不等于纯文本（`getByRole("heading", {name})` 会取不到）
-    const card = within(screen.getByRole("region", { name: "编辑体验" }));
+    const card = within(screen.getByRole("region", { name: "编辑模式" }));
     for (const mode of ["仅编辑", "仅预览", "即时渲染"]) {
       expect(card.getByRole("switch", { name: mode }), mode).toBeTruthy();
     }
+    // 通用页已经**一份不留**（同一张卡两处各写一遍，迟早一处改了一处没改）
+    cleanup();
+    render(<SettingsPanel {...baseProps} page="general" />);
+    expect(screen.queryByRole("region", { name: "编辑模式" })).toBeNull();
+  });
+
+  it("「编辑设置」页的四张卡与排版的三个入口都在（v0.8.40）", () => {
+    render(<SettingsPanel {...baseProps} page="editor" />);
+
+    for (const card of ["编辑模式", "正文排版", "标题样式", "工具栏"]) {
+      expect(screen.getByRole("region", { name: card }), card).toBeTruthy();
+    }
+    // 正文排版三项 + 工具栏档位。数字框是 `inputMode="numeric"` 的文本框（不是 `type=number`，
+    // 与「版本与回收站」那两处数字输入同一写法：手机上给数字键盘，同时避开 number 的取值怪癖）
+    expect(screen.getByRole("textbox", { name: "正文字号" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "字体" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "纸面宽度" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "工具栏大小" })).toBeTruthy();
+    // 文字列是纸面宽 − 96（每侧 48），按当前纸面宽实时显示
+    expect(screen.getByText(/文字列 704px/)).toBeTruthy();
+    // 六级标题各有一行（字号是数字框、粗细是下拉、颜色是取色器）
+    expect(screen.getAllByRole("textbox", { name: /标题字号$/ })).toHaveLength(6);
+    expect(screen.getByRole("combobox", { name: "一级标题粗细" })).toBeTruthy();
   });
 
   it("通用页：启动视图与快捷菜单开关都会即时回调", async () => {

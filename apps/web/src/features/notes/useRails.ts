@@ -31,12 +31,24 @@ export const RAIL_OPEN_WIDTH = 240;
 export const RAIL_GAP = 12;
 /** 一侧展开实占的宽度 */
 export const RAIL_SLOT = RAIL_OPEN_WIDTH + RAIL_GAP;
-/** 纸面宽度（`DESIGN.md` §2.8，`app.css` 的 `.cm-scroller { max-width: 800px }`）。
- *  注意 §2.3 的 740px 是**文字列**上限，纸面两侧各有 48px 内边距，所以文字列是 704px。 */
+/** 纸面宽度（`DESIGN.md` §2.8，`app.css` 的 `.cm-scroller { max-width: var(--doc-paper-w, 800px) }`）。
+ *  注意 §2.3 的 740px 是**文字列**上限，纸面两侧各有 48px 内边距，所以文字列是 704px。
+ *  **v0.8.40 起纸面宽度可由用户在「设置 › 编辑设置 › 正文排版」里改**——这个常量只是缺省值，
+ *  让位判据请用 {@link bothRailsMinPane}(用户纸面宽度)，否则窄纸面下会"明明放得下却只开一侧"。 */
 export const DOC_PAPER_MAX = 800;
 
-/** 两侧同时展开所需的最小正文区宽度：252 + 800 + 252 = **1304px** */
-export const BOTH_RAILS_MIN_PANE = 2 * RAIL_SLOT + DOC_PAPER_MAX;
+/**
+ * 两侧同时展开所需的最小正文区宽度 = 252 + 纸面宽 + 252。
+ *
+ * 纸面 800 时是 **1304px**（v0.8.35 起的值）。纸面宽度可调之后它成了一个**随设置走**的值：
+ * 用户在设置里把纸面调窄，门槛要跟着降下来，否则两侧明明放得下，面板还是只让开一侧。
+ */
+export function bothRailsMinPane(paperWidth: number = DOC_PAPER_MAX): number {
+  return 2 * RAIL_SLOT + paperWidth;
+}
+
+/** 缺省纸面宽度下的门槛（1304）——保留这个名字：注释与既有用例都引它 */
+export const BOTH_RAILS_MIN_PANE = bothRailsMinPane();
 
 export interface RailOpenState {
   props: boolean;
@@ -49,8 +61,12 @@ export interface RailOpenState {
  * `paneWidth === 0` 当作"还没量到"（首帧、`ResizeObserver` 不可用的环境）：**不抢跑**，
  * 按用户意图渲染。否则一进来就会在宽度未知时先收掉一侧，闪一下才回来。
  */
-export function railOpenState(intent: RailsIntent, paneWidth: number): RailOpenState {
-  const tooNarrow = paneWidth > 0 && paneWidth < BOTH_RAILS_MIN_PANE;
+export function railOpenState(
+  intent: RailsIntent,
+  paneWidth: number,
+  paperWidth: number = DOC_PAPER_MAX,
+): RailOpenState {
+  const tooNarrow = paneWidth > 0 && paneWidth < bothRailsMinPane(paperWidth);
   if (tooNarrow && intent.propsOpen && intent.outlineOpen) {
     return intent.last === "outline"
       ? { props: false, outline: true }
@@ -70,7 +86,7 @@ export interface RailsApi {
   attachPane: (node: HTMLElement | null) => void;
 }
 
-export function useRails(): RailsApi {
+export function useRails(paperWidth: number = DOC_PAPER_MAX): RailsApi {
   const [intent, setIntent] = useState<RailsIntent>(readRailsIntent);
   const [paneWidth, setPaneWidth] = useState(0);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -112,21 +128,21 @@ export function useRails(): RailsApi {
         否则意图里两侧都开着，下次窗口一变宽又冒出来，像在跟用户抢。
       */
       setIntent((previous) => {
-        const now = railOpenState(previous, paneWidth);
+        const now = railOpenState(previous, paneWidth, paperWidth);
         const opening = side === "props" ? !now.props : !now.outline;
         const next: RailsIntent = { ...previous, last: side };
         if (side === "props") next.propsOpen = opening;
         else next.outlineOpen = opening;
-        if (opening && paneWidth > 0 && paneWidth < BOTH_RAILS_MIN_PANE) {
+        if (opening && paneWidth > 0 && paneWidth < bothRailsMinPane(paperWidth)) {
           if (side === "props") next.outlineOpen = false;
           else next.propsOpen = false;
         }
         return next;
       });
     },
-    [paneWidth],
+    [paneWidth, paperWidth],
   );
 
-  const open = railOpenState(intent, paneWidth);
+  const open = railOpenState(intent, paneWidth, paperWidth);
   return { propsOpen: open.props, outlineOpen: open.outline, toggle, attachPane };
 }

@@ -735,6 +735,36 @@ button {
 }
 
 /*
+  工具栏大小档位（v0.8.40，设置 › 编辑设置 › 工具栏）：**本机**偏好。
+  图标尺寸走 props（`IconButton` 的 13 / 16 / 20 三档，不为这个功能扩公共组件的类型），
+  盒子与分隔线在这里跟着放大。缺省档 `sm` 就是现状（24px 盒子）——**不写规则**，
+  于是"没配过"的用户看到的工具栏与 v0.8.39 逐像素相同。
+*/
+.editor-toolbar[data-size="md"] .iconbtn {
+  width: 28px;
+  height: 28px;
+}
+
+.editor-toolbar[data-size="lg"] .iconbtn {
+  width: 32px;
+  height: 32px;
+}
+
+.editor-toolbar[data-size="md"] .editor-toolbar__menu-trigger {
+  width: 28px;
+  height: 28px;
+}
+
+.editor-toolbar[data-size="lg"] .editor-toolbar__menu-trigger {
+  width: 32px;
+  height: 32px;
+}
+
+.editor-toolbar[data-size="lg"] .editor-toolbar__sep {
+  height: 20px;
+}
+
+/*
   标题菜单触发按钮的悬停反馈。`DropdownMenu` 的触发按钮不吃 className，
   只能从内层盒子的**直接子级**（它自己的定位容器）往下点——范围收得很窄，不会碰到别的按钮。
 */
@@ -837,7 +867,12 @@ button {
 */
 [data-editor] .cm-scroller {
   width: 100%;
-  max-width: 800px;
+  /*
+    纸面宽度与正文字号从 v0.8.40 起可调（设置 › 编辑设置 › 正文排版）：变量挂在正文区根上
+    （`NoteWorkspace` 的 `.docpane`，见 `features/settings/editor-typography.ts`），**兜底就是
+    `DESIGN.md` §2.8 / §3.3 的现值**——没配过的用户看到的与加这个设置之前逐像素相同。
+  */
+  max-width: var(--doc-paper-w, 800px);
   margin: var(--sp-5) auto;
   /*
     `align-items` 默认被 CodeMirror 设成 `flex-start !important`（让行号槽顶在正文上方），
@@ -846,11 +881,11 @@ button {
     **必须带 `!important`**：库那一条是 important，不带的声明一律输给它（真机实测确认过）。
   */
   align-items: stretch !important;
-  font-family: var(--mono);
-  font-size: var(--fs-body);
+  font-family: var(--doc-font, var(--mono));
+  font-size: var(--doc-fs-body, var(--fs-body));
   line-height: 1.7;
-  /* 纸面（见 `.docpane__body` 那处注释）：A4 比例 = 800 : 297/210 */
-  min-height: calc(800px * 297 / 210);
+  /* 纸面（见 `.docpane__body` 那处注释）：A4 比例 = 纸面宽 : 297/210，随可调宽度一起缩放 */
+  min-height: calc(var(--doc-paper-w, 800px) * 297 / 210);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -872,7 +907,8 @@ button {
 
 /* 即时渲染：正文换界面字族，行高与预览的 `.markdown-body` 同一个值 */
 [data-editor="live"] .cm-scroller {
-  font-family: var(--sans);
+  /* 即时渲染档的缺省字族是无衬线；用户在设置里选了字族时同一个变量在两档都生效 */
+  font-family: var(--doc-font, var(--sans));
   line-height: 1.75;
 }
 
@@ -1037,46 +1073,51 @@ button {
 /* 标题：预览侧是 h1–h6 元素，编辑器侧是整行装饰类，字号映射必须同表 */
 .markdown-body h1,
 .cm-live-h1 {
-  font-size: var(--fs-display);
-  font-weight: 700;
+  /* v0.8.40：「设置 › 编辑设置 › 标题样式」可覆盖字号 / 粗细 / 颜色，兜底仍是原令牌值 */
+  font-size: var(--doc-h1-size, var(--fs-display));
+  font-weight: var(--doc-h1-weight, 700);
+  color: var(--doc-h1-color, inherit);
   line-height: 1.35;
 }
 
 .markdown-body h2,
 .cm-live-h2 {
-  font-size: var(--fs-title);
-  font-weight: 700;
+  font-size: var(--doc-h2-size, var(--fs-title));
+  font-weight: var(--doc-h2-weight, 700);
+  color: var(--doc-h2-color, inherit);
   line-height: 1.4;
 }
 
 .markdown-body h3,
 .cm-live-h3 {
-  font-size: var(--fs-body-lg);
-  font-weight: 700;
+  font-size: var(--doc-h3-size, var(--fs-body-lg));
+  font-weight: var(--doc-h3-weight, 700);
+  color: var(--doc-h3-color, inherit);
   line-height: 1.45;
 }
 
 .markdown-body h4,
 .cm-live-h4 {
-  font-size: var(--fs-body);
-  font-weight: 700;
+  font-size: var(--doc-h4-size, var(--fs-body));
+  font-weight: var(--doc-h4-weight, 700);
+  color: var(--doc-h4-color, inherit);
   line-height: 1.5;
 }
 
 .markdown-body h5,
 .cm-live-h5 {
-  font-size: var(--fs-small);
-  font-weight: 700;
+  font-size: var(--doc-h5-size, var(--fs-small));
+  font-weight: var(--doc-h5-weight, 700);
   line-height: 1.5;
-  color: var(--text-2);
+  color: var(--doc-h5-color, var(--text-2));
 }
 
 .markdown-body h6,
 .cm-live-h6 {
-  font-size: var(--fs-micro);
-  font-weight: 700;
+  font-size: var(--doc-h6-size, var(--fs-micro));
+  font-weight: var(--doc-h6-weight, 700);
   line-height: 1.5;
-  color: var(--muted);
+  color: var(--doc-h6-color, var(--muted));
 }
 
 /* 强调三件套 */
@@ -1208,7 +1249,11 @@ button {
 }
 .itemprops__inner,
 .editor-toolbar__inner {
-  max-width: 800px;
+  /*
+    与纸面同轴的共享口径（v0.8.27）：工具栏/属性带居中时左边界要对上正文左边界。
+    v0.8.40 起它跟着**用户可调的纸面宽度**走——纸面窄了而这条不跟，工具栏就会比正文宽出去一截。
+  */
+  max-width: var(--doc-paper-w, 800px);
   margin: 0 auto;
   padding: 0 48px;
 }
@@ -2196,10 +2241,11 @@ button {
 /* 正文阅读区的宽度与内边距（`DESIGN.md` §2.8：纸面 800px、两侧各 48px；文字列 704px，
   仍在 §2.3 的 740 上限内）+ 同一张纸面 */
 .docpane__body .markdown-body {
-  max-width: 800px;
+  max-width: var(--doc-paper-w, 800px);
   margin: var(--sp-5) auto;
   padding: var(--sp-5) 48px 80px;
-  min-height: calc(800px * 297 / 210);
+  min-height: calc(var(--doc-paper-w, 800px) * 297 / 210);
+  font-size: var(--doc-fs-body, var(--fs-body));
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -4572,6 +4618,36 @@ button {
   flex: none;
   color: var(--muted);
   font-size: var(--fs-micro);
+}
+
+/*
+  标题样式卡（v0.8.40）里的两个控件与取色器。
+  数字框与下拉**必须自己收窄**：`.field__input` 不设宽度时退回固有宽度（`<input>` 约 153px、
+  `<select>` 随最长选项），一行里摆三个就会把左边的标题名挤掉——v0.8.33 在属性库表格上
+  吃过同一个亏（"表格里的控件必须自己填满格子"的反面：这里要的恰好是**自己定宽**）。
+*/
+.heading-style__size {
+  width: 74px;
+}
+
+.heading-style__weight {
+  width: 96px;
+}
+
+/* 原生取色器：与 `.field__input` 同一套描边，但不吃它的内边距（48px 宽的色块才好点） */
+.colorfield {
+  width: 44px;
+  height: 28px;
+  padding: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* 这一级还没设过颜色（跟随主题）：压淡一点，跟"设成了某个颜色"区分开 */
+.colorfield--auto {
+  opacity: 0.55;
 }
 
 /* 标签格的 chip 编辑（M4-9 补）：输入框跟在 chip 后面，整体像一格里的多个值 */
